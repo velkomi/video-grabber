@@ -21,4 +21,26 @@ public sealed class ToolLocatorTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void Locator_finds_tools_in_explicit_user_tools_directory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"VideoGrabber-Test-{Guid.NewGuid():N}");
+        var userTools = Path.Combine(root, "user-tools");
+        Directory.CreateDirectory(userTools);
+        var expected = Path.Combine(userTools, "deno.exe");
+        File.WriteAllText(expected, string.Empty);
+
+        try
+        {
+            var locator = new ToolLocator(Path.Combine(root, "app"), userTools);
+
+            Assert.Equal(userTools, locator.LocalToolsDirectory);
+            Assert.Equal(expected, locator.Deno);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using VideoGrabber.Core.Security;
 
 namespace VideoGrabber.App;
 
@@ -43,7 +44,10 @@ internal static class AppDiagnostics
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-            File.AppendAllText(LogPath, $"{DateTimeOffset.Now:O} {message}{Environment.NewLine}");
+            var safeMessage = SensitiveDataRedactor.Redact(message)
+                .Replace('\r', ' ')
+                .Replace('\n', ' ');
+            File.AppendAllText(LogPath, $"{DateTimeOffset.Now:O} {safeMessage}{Environment.NewLine}");
         }
         catch
         {

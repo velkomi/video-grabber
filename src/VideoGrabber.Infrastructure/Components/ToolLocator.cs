@@ -4,10 +4,16 @@ public sealed class ToolLocator
 {
     private readonly string _baseDirectory;
 
-    public ToolLocator(string? baseDirectory = null)
+    public ToolLocator(string? baseDirectory = null, string? localToolsDirectory = null)
     {
         _baseDirectory = baseDirectory ?? AppContext.BaseDirectory;
+        LocalToolsDirectory = localToolsDirectory ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VideoGrabber",
+            "tools");
     }
+
+    public string LocalToolsDirectory { get; }
 
     public string YtDlp => Find("yt-dlp.exe", "yt-dlp");
     public string Ffmpeg => Find("ffmpeg.exe", "ffmpeg");
@@ -20,7 +26,7 @@ public sealed class ToolLocator
         {
             Path.Combine(_baseDirectory, "tools", windowsName),
             Path.Combine(_baseDirectory, windowsName),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoGrabber", "tools", windowsName)
+            Path.Combine(LocalToolsDirectory, windowsName)
         };
 
         return candidates.FirstOrDefault(File.Exists) ?? fallback;

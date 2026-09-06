@@ -65,6 +65,7 @@ public sealed class MainWindow : Window
     private TextBlock _denoStatus = null!;
     private WebView2? _mediaBrowser;
     private CancellationTokenSource? _operation;
+    private bool _isInstallingComponents;
 
     public MainWindow()
     {
@@ -364,6 +365,22 @@ public sealed class MainWindow : Window
             return;
         }
 
+        if (!RequiredComponentsAvailable())
+        {
+            _downloadButton.IsEnabled = false;
+            SetDownloadState("Подготавливаю компоненты…", "Первый запуск может занять несколько минут.");
+            if (!await InstallComponentsAsync(forceUpdate: false))
+            {
+                _downloadButton.IsEnabled = true;
+                SetDownloadState(
+                    "Не удалось установить компоненты.",
+                    "Проверьте интернет и повторите в разделе «Компоненты».",
+                    true);
+                ShowPage("settings");
+                return;
+            }
+        }
+
         var quality = (_qualityBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "best";
         var cookies = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
         cookies = string.IsNullOrWhiteSpace(cookies) ? null : cookies;
@@ -372,6 +389,7 @@ public sealed class MainWindow : Window
         _cancelButton.IsEnabled = true;
         SetProgress(null);
         SetDownloadState("Анализирую страницу…", uri.Host);
+        AppDiagnostics.Write($"Download started host={uri.Host}");
 
         var progress = new Progress<DownloadProgress>(value =>
         {
@@ -391,14 +409,17 @@ public sealed class MainWindow : Window
                 _operation.Token);
             SetDownloadState(result.Message, result.OutputPath, !result.Success);
             SetProgress(result.Success ? 100 : 0);
+            AppDiagnostics.Write($"Download completed success={result.Success} host={uri.Host}");
         }
         catch (OperationCanceledException)
         {
             SetDownloadState("Загрузка отменена.", "Повторный запуск сможет использовать временные файлы.");
+            AppDiagnostics.Write($"Download cancelled host={uri.Host}");
         }
         catch (Exception exception)
         {
             SetDownloadState("Не удалось скачать видео.", exception.Message, true);
+            AppDiagnostics.Write($"Download failed host={uri.Host} error={exception.Message}");
         }
         finally
         {
@@ -549,26 +570,109 @@ public sealed class MainWindow : Window
         return (await picker.PickSaveFileAsync())?.Path;
     }
 
-    private void InstallComponents_Click(object sender, RoutedEventArgs e)
+    private async void InstallComponents_Click(object sender, RoutedEventArgs e)
     {
+        await InstallComponentsAsync(forceUpdate: true);
+    }
+
+    private async Task<bool> InstallComponentsAsync(bool forceUpdate)
+    {
+        if (!forceUpdate && RequiredComponentsAvailable())
+        {
+            return true;
+        }
+        if (_isInstallingComponents)
+        {
+            return false;
+        }
+
         var script = FindInstallationScript();
         if (script is null)
         {
             _ytDlpStatus.Text = "Установщик компонентов не найден рядом с приложением.";
-            return;
+            AppDiagnostics.Write("Component installer script is missing");
+            return false;
         }
-        Process.Start(new ProcessStartInfo
+
+        _isInstallingComponents = true;
+        _ytDlpStatus.Text = "Устанавливаю компоненты…";
+        _ffmpegStatus.Text = "Загрузка из официальных GitHub Releases";
+        _ffprobeStatus.Text = "Проверяю контрольные суммы SHA-256";
+        _denoStatus.Text = "Пожалуйста, не закрывайте приложение";
+        AppDiagnostics.Write("Component installation started");
+
+        try
         {
-            FileName = Path.Combine(
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.Windows),
                 "System32",
                 "WindowsPowerShell",
                 "v1.0",
                 "powershell.exe"),
-            Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Destination \"{Path.Combine(AppContext.BaseDirectory, "tools")}\"",
-            UseShellExecute = true
-        });
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+            foreach (var argument in new[]
+            {
+                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
+                "-Destination", _tools.LocalToolsDirectory
+            })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            using var process = new Process { StartInfo = startInfo };
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("Не удалось запустить установщик компонентов.");
+            }
+
+            var standardOutput = process.StandardOutput.ReadToEndAsync();
+            var standardError = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var output = await standardOutput;
+            var error = await standardError;
+            AppDiagnostics.Write($"Component installation finished exit={process.ExitCode}");
+            if (process.ExitCode != 0)
+            {
+                var details = LastNonEmptyLine(error) ?? LastNonEmptyLine(output) ?? "Неизвестная ошибка установщика.";
+                AppDiagnostics.Write($"Component installation failed error={details}");
+                _ytDlpStatus.Text = $"Ошибка установки: {details}";
+                return false;
+            }
+
+            RefreshComponentStatus();
+            var ready = RequiredComponentsAvailable();
+            if (!ready)
+            {
+                AppDiagnostics.Write("Component installation ended but required files are missing");
+            }
+            return ready;
+        }
+        catch (Exception exception)
+        {
+            AppDiagnostics.Write($"Component installation exception={exception.Message}");
+            _ytDlpStatus.Text = $"Ошибка установки: {exception.Message}";
+            return false;
+        }
+        finally
+        {
+            _isInstallingComponents = false;
+        }
     }
+
+    private bool RequiredComponentsAvailable() =>
+        File.Exists(_tools.YtDlp) &&
+        File.Exists(_tools.Ffmpeg) &&
+        File.Exists(_tools.Ffprobe) &&
+        File.Exists(_tools.Deno);
+
+    private static string? LastNonEmptyLine(string value) =>
+        value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
 
     private void RefreshComponentStatus()
     {
