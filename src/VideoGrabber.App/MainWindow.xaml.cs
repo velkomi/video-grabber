@@ -19,10 +19,11 @@ namespace VideoGrabber.App;
 
 public sealed class MainWindow : Window
 {
-    private static readonly SolidColorBrush CardBrush = new(ColorHelper.FromArgb(255, 23, 26, 33));
-    private static readonly SolidColorBrush CardBorderBrush = new(ColorHelper.FromArgb(255, 44, 52, 66));
+    private static readonly SolidColorBrush CardBrush = new(ColorHelper.FromArgb(255, 255, 255, 255));
+    private static readonly SolidColorBrush CardBorderBrush = new(ColorHelper.FromArgb(255, 216, 224, 234));
     private static readonly SolidColorBrush AccentBrush = new(ColorHelper.FromArgb(255, 45, 125, 255));
-    private static readonly SolidColorBrush MutedBrush = new(ColorHelper.FromArgb(255, 166, 176, 194));
+    private static readonly SolidColorBrush MutedBrush = new(ColorHelper.FromArgb(255, 81, 93, 111));
+    private static readonly SolidColorBrush TextBrush = new(ColorHelper.FromArgb(255, 31, 41, 55));
 
     private readonly ToolLocator _tools = new();
     private readonly YtDlpDownloader _downloader;
@@ -70,7 +71,8 @@ public sealed class MainWindow : Window
         AppDiagnostics.Write("MainWindow constructor started");
         _rootHost = new Grid
         {
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 15, 17, 23))
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 245, 247, 251)),
+            RequestedTheme = ElementTheme.Light
         };
         Content = _rootHost;
         AppDiagnostics.Write("Code-only host initialized");
@@ -81,6 +83,11 @@ public sealed class MainWindow : Window
         _rootHost.Children.Add(BuildShell());
 
         Title = "VideoGrabber";
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "VideoGrabber.ico");
+        if (File.Exists(iconPath))
+        {
+            AppWindow.SetIcon(iconPath);
+        }
         AppWindow.Resize(new SizeInt32(1100, 760));
         if (_outputFolderBox is not null)
         {
@@ -121,14 +128,15 @@ public sealed class MainWindow : Window
             Text = "VideoGrabber",
             FontSize = 17,
             FontWeight = FontWeights.SemiBold,
+            Foreground = TextBrush,
             VerticalAlignment = VerticalAlignment.Center
         });
         brand.Children.Add(new Border
         {
             Padding = new Thickness(9, 4, 9, 4),
             CornerRadius = new CornerRadius(9),
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 36, 50, 74)),
-            Child = new TextBlock { Text = "локально на вашем ПК", FontSize = 11 }
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 232, 240, 255)),
+            Child = new TextBlock { Text = "локально на вашем ПК", FontSize = 11, Foreground = TextBrush }
         });
         _titleBar.Children.Add(brand);
         shell.Children.Add(_titleBar);
@@ -150,7 +158,7 @@ public sealed class MainWindow : Window
         sidebar.Children.Add(settingsItem);
         contentArea.Children.Add(new Border
         {
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 18, 21, 28)),
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 255, 255, 255)),
             BorderBrush = CardBorderBrush,
             BorderThickness = new Thickness(0, 0, 1, 0),
             Child = sidebar
@@ -215,7 +223,7 @@ public sealed class MainWindow : Window
         _downloadProgressTrack = new Grid
         {
             Height = 8,
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 42, 48, 60))
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 226, 232, 240))
         };
         _downloadProgressFill = new Border
         {
@@ -595,7 +603,7 @@ public sealed class MainWindow : Window
     {
         _downloadStatus.Text = status;
         _downloadDetails.Text = string.IsNullOrWhiteSpace(details) ? " " : details;
-        _downloadStatus.Foreground = new SolidColorBrush(isError ? Colors.IndianRed : Colors.White);
+        _downloadStatus.Foreground = new SolidColorBrush(isError ? Colors.Firebrick : ColorHelper.FromArgb(255, 31, 41, 55));
     }
 
     private void ShowEditorMessage(string message, InfoBarSeverity severity)
@@ -689,7 +697,8 @@ public sealed class MainWindow : Window
     {
         Text = text,
         FontSize = 18,
-        FontWeight = FontWeights.SemiBold
+        FontWeight = FontWeights.SemiBold,
+        Foreground = TextBrush
     };
 
     private static TextBlock MutedText(string text) => new()

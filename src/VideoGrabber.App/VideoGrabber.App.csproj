@@ -11,6 +11,7 @@
     <PublishSingleFile>false</PublishSingleFile>
     <UseWinUI>true</UseWinUI>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\VideoGrabber.ico</ApplicationIcon>
     <RootNamespace>VideoGrabber.App</RootNamespace>
     <AssemblyName>VideoGrabber</AssemblyName>
   </PropertyGroup>
@@ -29,5 +30,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="../../scripts/Install-Components.ps1" Link="scripts/Install-Components.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\VideoGrabber.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\VideoGrabber.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -2,6 +2,5 @@
     x:Class="VideoGrabber.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid x:Name="RootHost" Background="#0F1117" RequestedTheme="Dark" />
+    <Grid x:Name="RootHost" Background="#F5F7FB" RequestedTheme="Light" />
 </Window>
-
