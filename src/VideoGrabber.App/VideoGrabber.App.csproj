@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <UseWinUI>true</UseWinUI>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace>VideoGrabber.App</RootNamespace>
+    <AssemblyName>VideoGrabber</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="Microsoft.Web.WebView2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../VideoGrabber.Core/VideoGrabber.Core.csproj" />
+    <ProjectReference Include="../VideoGrabber.Infrastructure/VideoGrabber.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Page Remove="MainWindow.xaml" />
+    <None Include="MainWindow.xaml" />
+    <Compile Remove="SmokeWindow.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../../scripts/Install-Components.ps1" Link="scripts/Install-Components.ps1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

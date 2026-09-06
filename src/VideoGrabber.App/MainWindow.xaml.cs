@@ -1,0 +1,728 @@
+using System.Diagnostics;
+using Microsoft.UI;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Text;
+using Microsoft.Web.WebView2.Core;
+using VideoGrabber.Core.Downloads;
+using VideoGrabber.Core.Editing;
+using VideoGrabber.Core.Security;
+using VideoGrabber.Infrastructure.Components;
+using VideoGrabber.Infrastructure.Downloads;
+using VideoGrabber.Infrastructure.Editing;
+using VideoGrabber.Infrastructure.Processes;
+using Windows.Graphics;
+using Windows.Storage.Pickers;
+
+namespace VideoGrabber.App;
+
+public sealed class MainWindow : Window
+{
+    private static readonly SolidColorBrush CardBrush = new(ColorHelper.FromArgb(255, 23, 26, 33));
+    private static readonly SolidColorBrush CardBorderBrush = new(ColorHelper.FromArgb(255, 44, 52, 66));
+    private static readonly SolidColorBrush AccentBrush = new(ColorHelper.FromArgb(255, 45, 125, 255));
+    private static readonly SolidColorBrush MutedBrush = new(ColorHelper.FromArgb(255, 166, 176, 194));
+
+    private readonly ToolLocator _tools = new();
+    private readonly YtDlpDownloader _downloader;
+    private readonly FfmpegVideoEditor _editor;
+    private readonly List<string> _joinFiles = [];
+
+    private Grid _titleBar = null!;
+    private Grid _rootHost = null!;
+    private ScrollViewer _downloadPage = null!;
+    private ScrollViewer _editorPage = null!;
+    private ScrollViewer _settingsPage = null!;
+    private TextBox _urlBox = null!;
+    private TextBox _outputFolderBox = null!;
+    private ComboBox _qualityBox = null!;
+    private ComboBox _cookiesBox = null!;
+    private CheckBox _audioOnlyBox = null!;
+    private Button _downloadButton = null!;
+    private Button _cancelButton = null!;
+    private Grid _downloadProgressTrack = null!;
+    private Border _downloadProgressFill = null!;
+    private TextBlock _downloadProgressLabel = null!;
+    private double _downloadPercent;
+    private TextBlock _downloadStatus = null!;
+    private TextBlock _downloadDetails = null!;
+    private Border _browserCard = null!;
+    private Grid _browserHost = null!;
+    private TextBlock _browserHint = null!;
+    private TextBox _trimInputBox = null!;
+    private TextBox _trimStartBox = null!;
+    private TextBox _trimDurationBox = null!;
+    private TextBox _trimOutputBox = null!;
+    private ListView _joinFilesList = null!;
+    private TextBox _joinOutputBox = null!;
+    private Border _editorInfo = null!;
+    private TextBlock _editorInfoText = null!;
+    private TextBlock _ytDlpStatus = null!;
+    private TextBlock _ffmpegStatus = null!;
+    private TextBlock _ffprobeStatus = null!;
+    private TextBlock _denoStatus = null!;
+    private WebView2? _mediaBrowser;
+    private CancellationTokenSource? _operation;
+
+    public MainWindow()
+    {
+        AppDiagnostics.Write("MainWindow constructor started");
+        _rootHost = new Grid
+        {
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 15, 17, 23))
+        };
+        Content = _rootHost;
+        AppDiagnostics.Write("Code-only host initialized");
+
+        var runner = new ProcessRunner();
+        _downloader = new YtDlpDownloader(runner, _tools);
+        _editor = new FfmpegVideoEditor(runner, _tools);
+        _rootHost.Children.Add(BuildShell());
+
+        Title = "VideoGrabber";
+        AppWindow.Resize(new SizeInt32(1100, 760));
+        if (_outputFolderBox is not null)
+        {
+            _outputFolderBox.Text = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
+                "VideoGrabber");
+        }
+        if (_ytDlpStatus is not null)
+        {
+            RefreshComponentStatus();
+        }
+        AppDiagnostics.Write("MainWindow constructor completed");
+    }
+
+    private Grid BuildShell()
+    {
+        var shell = new Grid();
+        shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
+        shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        _titleBar = new Grid { Padding = new Thickness(18, 0, 18, 0) };
+        var brand = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 10,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        brand.Children.Add(new Border
+        {
+            Width = 30,
+            Height = 30,
+            CornerRadius = new CornerRadius(9),
+            Background = AccentBrush,
+            Child = new FontIcon { Glyph = "\uE896", Foreground = new SolidColorBrush(Colors.White) }
+        });
+        brand.Children.Add(new TextBlock
+        {
+            Text = "VideoGrabber",
+            FontSize = 17,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        brand.Children.Add(new Border
+        {
+            Padding = new Thickness(9, 4, 9, 4),
+            CornerRadius = new CornerRadius(9),
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 36, 50, 74)),
+            Child = new TextBlock { Text = "локально на вашем ПК", FontSize = 11 }
+        });
+        _titleBar.Children.Add(brand);
+        shell.Children.Add(_titleBar);
+
+        var contentArea = new Grid();
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(contentArea, 1);
+        var sidebar = Vertical(8);
+        sidebar.Padding = new Thickness(14, 18, 14, 18);
+        var downloadItem = NavigationButton("↓  Загрузчик");
+        var editorItem = NavigationButton("✂  Редактор");
+        var settingsItem = NavigationButton("⚙  Компоненты");
+        downloadItem.Click += (_, _) => ShowPage("download");
+        editorItem.Click += (_, _) => ShowPage("editor");
+        settingsItem.Click += (_, _) => ShowPage("settings");
+        sidebar.Children.Add(downloadItem);
+        sidebar.Children.Add(editorItem);
+        sidebar.Children.Add(settingsItem);
+        contentArea.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 18, 21, 28)),
+            BorderBrush = CardBorderBrush,
+            BorderThickness = new Thickness(0, 0, 1, 0),
+            Child = sidebar
+        });
+        var pageHost = new Grid { Padding = new Thickness(28, 18, 28, 28) };
+        Grid.SetColumn(pageHost, 1);
+        _downloadPage = BuildDownloadPage();
+        _editorPage = BuildEditorPage();
+        _settingsPage = BuildSettingsPage();
+        _editorPage.Visibility = Visibility.Collapsed;
+        _settingsPage.Visibility = Visibility.Collapsed;
+        pageHost.Children.Add(_downloadPage);
+        pageHost.Children.Add(_editorPage);
+        pageHost.Children.Add(_settingsPage);
+        contentArea.Children.Add(pageHost);
+        shell.Children.Add(contentArea);
+        return shell;
+    }
+
+    private ScrollViewer BuildDownloadPage()
+    {
+        var body = PageStack();
+        body.Children.Add(PageHeading(
+            "Скачать видео",
+            "Вставьте ссылку на страницу или прямой поток. Защищённые DRM-потоки не обходятся."));
+
+        _urlBox = new TextBox { Header = "Ссылка на видео", PlaceholderText = "https://…" };
+        _outputFolderBox = new TextBox { Header = "Папка сохранения", IsReadOnly = true };
+        var chooseFolder = SecondaryButton("Выбрать…");
+        chooseFolder.Click += BrowseOutputFolder_Click;
+
+        _qualityBox = new ComboBox { Header = "Качество", SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        _qualityBox.Items.Add(ComboItem("Лучшее доступное", "best"));
+        _qualityBox.Items.Add(ComboItem("До 1080p", "1080p"));
+        _qualityBox.Items.Add(ComboItem("До 720p", "720p"));
+        _qualityBox.Items.Add(ComboItem("До 4K", "4K"));
+
+        _cookiesBox = new ComboBox { Header = "Вход на сайте", SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
+        _cookiesBox.Items.Add(ComboItem("Не использовать cookies", ""));
+        _cookiesBox.Items.Add(ComboItem("Chrome — только для этой загрузки", "chrome"));
+        _cookiesBox.Items.Add(ComboItem("Edge — только для этой загрузки", "edge"));
+        _cookiesBox.Items.Add(ComboItem("Firefox — только для этой загрузки", "firefox"));
+
+        _audioOnlyBox = new CheckBox { Content = "Скачать только аудиодорожку" };
+        _downloadButton = PrimaryButton("Скачать");
+        _downloadButton.Click += Download_Click;
+        _cancelButton = SecondaryButton("Отменить");
+        _cancelButton.IsEnabled = false;
+        _cancelButton.Click += (_, _) => _operation?.Cancel();
+        var browserButton = SecondaryButton("Открыть во встроенном браузере");
+        browserButton.Click += OpenBrowser_Click;
+
+        var downloadForm = Vertical(14);
+        downloadForm.Children.Add(_urlBox);
+        downloadForm.Children.Add(TwoColumn(_outputFolderBox, chooseFolder, secondAuto: true));
+        downloadForm.Children.Add(TwoColumn(_qualityBox, _cookiesBox));
+        downloadForm.Children.Add(_audioOnlyBox);
+        downloadForm.Children.Add(Horizontal(_downloadButton, _cancelButton, browserButton));
+        body.Children.Add(Card(downloadForm));
+
+        _downloadStatus = new TextBlock { Text = "Готово к работе", FontWeight = FontWeights.SemiBold };
+        _downloadProgressTrack = new Grid
+        {
+            Height = 8,
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 42, 48, 60))
+        };
+        _downloadProgressFill = new Border
+        {
+            Background = AccentBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(4)
+        };
+        _downloadProgressTrack.Children.Add(_downloadProgressFill);
+        _downloadProgressTrack.SizeChanged += (_, _) => UpdateProgressWidth();
+        _downloadProgressLabel = MutedText("0%");
+        _downloadDetails = MutedText("Компоненты проверяются перед первой загрузкой.");
+        var status = Vertical(10);
+        status.Children.Add(_downloadStatus);
+        status.Children.Add(_downloadProgressTrack);
+        status.Children.Add(_downloadProgressLabel);
+        status.Children.Add(_downloadDetails);
+        body.Children.Add(Card(status));
+
+        _browserHint = MutedText("Если страница отдаст открытый HLS/DASH-поток, ссылка появится в поле загрузки.");
+        _browserHost = new Grid { Height = 440 };
+        var closeBrowser = SecondaryButton("Закрыть");
+        closeBrowser.Click += CloseBrowser_Click;
+        var browserHeader = new Grid();
+        browserHeader.Children.Add(new TextBlock { Text = "Встроенный браузер и поиск потока", FontWeight = FontWeights.SemiBold });
+        closeBrowser.HorizontalAlignment = HorizontalAlignment.Right;
+        browserHeader.Children.Add(closeBrowser);
+        var browserContent = Vertical(10);
+        browserContent.Children.Add(browserHeader);
+        browserContent.Children.Add(_browserHint);
+        browserContent.Children.Add(_browserHost);
+        _browserCard = Card(browserContent);
+        _browserCard.Visibility = Visibility.Collapsed;
+        body.Children.Add(_browserCard);
+
+        return new ScrollViewer { Content = body };
+    }
+
+    private ScrollViewer BuildEditorPage()
+    {
+        var body = PageStack();
+        body.Children.Add(PageHeading(
+            "Редактор FFmpeg",
+            "Быстрая обрезка и склейка без повторного кодирования. Исходные файлы не изменяются."));
+
+        _trimInputBox = new TextBox { Header = "Исходный файл", IsReadOnly = true };
+        var chooseInput = SecondaryButton("Выбрать…");
+        chooseInput.Click += BrowseTrimInput_Click;
+        _trimStartBox = new TextBox { Header = "Начало (чч:мм:сс)", Text = "00:00:00" };
+        _trimDurationBox = new TextBox { Header = "Длительность (чч:мм:сс)", Text = "00:00:30" };
+        _trimOutputBox = new TextBox { Header = "Новый файл", IsReadOnly = true };
+        var chooseTrimOutput = SecondaryButton("Сохранить как…");
+        chooseTrimOutput.Click += BrowseTrimOutput_Click;
+        var trim = Vertical(12);
+        trim.Children.Add(SectionHeading("Обрезать видео"));
+        trim.Children.Add(TwoColumn(_trimInputBox, chooseInput, secondAuto: true));
+        trim.Children.Add(TwoColumn(_trimStartBox, _trimDurationBox));
+        trim.Children.Add(TwoColumn(_trimOutputBox, chooseTrimOutput, secondAuto: true));
+        var trimButton = PrimaryButton("Обрезать");
+        trimButton.Click += Trim_Click;
+        trim.Children.Add(trimButton);
+        body.Children.Add(Card(trim));
+
+        _joinFilesList = new ListView { Height = 130, SelectionMode = ListViewSelectionMode.None };
+        var addFiles = SecondaryButton("Добавить файлы…");
+        addFiles.Click += AddJoinFiles_Click;
+        _joinOutputBox = new TextBox { Header = "Новый файл", IsReadOnly = true };
+        var chooseJoinOutput = SecondaryButton("Сохранить как…");
+        chooseJoinOutput.Click += BrowseJoinOutput_Click;
+        var join = Vertical(12);
+        join.Children.Add(SectionHeading("Склеить видео"));
+        join.Children.Add(_joinFilesList);
+        join.Children.Add(addFiles);
+        join.Children.Add(TwoColumn(_joinOutputBox, chooseJoinOutput, secondAuto: true));
+        var joinButton = PrimaryButton("Склеить");
+        joinButton.Click += Join_Click;
+        join.Children.Add(joinButton);
+        body.Children.Add(Card(join));
+
+        _editorInfoText = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        _editorInfo = Card(_editorInfoText);
+        _editorInfo.Visibility = Visibility.Collapsed;
+        body.Children.Add(_editorInfo);
+        return new ScrollViewer { Content = body };
+    }
+
+    private ScrollViewer BuildSettingsPage()
+    {
+        var body = PageStack();
+        body.Children.Add(PageHeading(
+            "Компоненты",
+            "Инструменты хранятся рядом с приложением и обновляются по вашему нажатию."));
+        _ytDlpStatus = new TextBlock();
+        _ffmpegStatus = new TextBlock();
+        _ffprobeStatus = new TextBlock();
+        _denoStatus = new TextBlock();
+        var content = Vertical(12);
+        content.Children.Add(SectionHeading("Локальные инструменты"));
+        content.Children.Add(_ytDlpStatus);
+        content.Children.Add(_ffmpegStatus);
+        content.Children.Add(_ffprobeStatus);
+        content.Children.Add(_denoStatus);
+        content.Children.Add(MutedText("Логины, cookies и токены не сохраняются. Установщик использует GitHub Releases и проверяет SHA-256, когда digest опубликован."));
+        var install = PrimaryButton("Установить или обновить");
+        install.Click += InstallComponents_Click;
+        var refresh = SecondaryButton("Обновить статус");
+        refresh.Click += (_, _) => RefreshComponentStatus();
+        content.Children.Add(Horizontal(install, refresh));
+        body.Children.Add(Card(content));
+        return new ScrollViewer { Content = body };
+    }
+
+    private void ShowPage(string? tag)
+    {
+        _downloadPage.Visibility = tag is null or "download" ? Visibility.Visible : Visibility.Collapsed;
+        _editorPage.Visibility = tag == "editor" ? Visibility.Visible : Visibility.Collapsed;
+        _settingsPage.Visibility = tag == "settings" ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void BrowseOutputFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FolderPicker();
+        picker.FileTypeFilter.Add("*");
+        InitializePicker(picker);
+        var folder = await picker.PickSingleFolderAsync();
+        if (folder is not null) _outputFolderBox.Text = folder.Path;
+    }
+
+    private async void Download_Click(object sender, RoutedEventArgs e)
+    {
+        if (!UrlPolicy.TryValidate(_urlBox.Text, out var uri, out var error) || uri is null)
+        {
+            SetDownloadState(error, null, true);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_outputFolderBox.Text))
+        {
+            SetDownloadState("Выберите папку сохранения.", null, true);
+            return;
+        }
+
+        var quality = (_qualityBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "best";
+        var cookies = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        cookies = string.IsNullOrWhiteSpace(cookies) ? null : cookies;
+        _operation = new CancellationTokenSource();
+        _downloadButton.IsEnabled = false;
+        _cancelButton.IsEnabled = true;
+        SetProgress(null);
+        SetDownloadState("Анализирую страницу…", uri.Host);
+
+        var progress = new Progress<DownloadProgress>(value =>
+        {
+            if (value.Percent is not null)
+            {
+                SetProgress(value.Percent.Value);
+            }
+            var details = string.Join("  •  ", new[] { value.Speed, value.Eta }.Where(item => !string.IsNullOrWhiteSpace(item)));
+            SetDownloadState(value.Status, details);
+        });
+
+        try
+        {
+            var result = await _downloader.DownloadAsync(
+                new DownloadRequest(uri, _outputFolderBox.Text, quality, cookies, _audioOnlyBox.IsChecked == true),
+                progress,
+                _operation.Token);
+            SetDownloadState(result.Message, result.OutputPath, !result.Success);
+            SetProgress(result.Success ? 100 : 0);
+        }
+        catch (OperationCanceledException)
+        {
+            SetDownloadState("Загрузка отменена.", "Повторный запуск сможет использовать временные файлы.");
+        }
+        catch (Exception exception)
+        {
+            SetDownloadState("Не удалось скачать видео.", exception.Message, true);
+        }
+        finally
+        {
+            _downloadButton.IsEnabled = true;
+            _cancelButton.IsEnabled = false;
+            _operation.Dispose();
+            _operation = null;
+        }
+    }
+
+    private async void OpenBrowser_Click(object sender, RoutedEventArgs e)
+    {
+        if (!UrlPolicy.TryValidate(_urlBox.Text, out var uri, out var error) || uri is null)
+        {
+            SetDownloadState(error, null, true);
+            return;
+        }
+        _browserCard.Visibility = Visibility.Visible;
+        try
+        {
+            if (_mediaBrowser is null)
+            {
+                _mediaBrowser = new WebView2();
+                _browserHost.Children.Add(_mediaBrowser);
+                await _mediaBrowser.EnsureCoreWebView2Async();
+                _mediaBrowser.CoreWebView2.WebResourceResponseReceived += Browser_WebResourceResponseReceived;
+            }
+            _mediaBrowser.Source = uri;
+        }
+        catch (Exception exception)
+        {
+            _browserHint.Text = $"Встроенный браузер недоступен: {exception.Message}";
+        }
+    }
+
+    private void Browser_WebResourceResponseReceived(CoreWebView2 sender, CoreWebView2WebResourceResponseReceivedEventArgs args)
+    {
+        var candidate = args.Request.Uri;
+        if (!candidate.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) &&
+            !candidate.Contains(".mpd", StringComparison.OrdinalIgnoreCase)) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _urlBox.Text = candidate;
+            _browserHint.Text = "Открытый поток найден и подставлен. Можно нажать «Скачать».";
+        });
+    }
+
+    private void CloseBrowser_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mediaBrowser is not null) _mediaBrowser.Source = new Uri("about:blank");
+        _browserCard.Visibility = Visibility.Collapsed;
+    }
+
+    private async void BrowseTrimInput_Click(object sender, RoutedEventArgs e)
+    {
+        var files = await PickVideoFilesAsync(false);
+        if (files.Count != 1) return;
+        _trimInputBox.Text = files[0];
+        _trimOutputBox.Text = Path.Combine(
+            Path.GetDirectoryName(files[0]) ?? Environment.CurrentDirectory,
+            $"{Path.GetFileNameWithoutExtension(files[0])}-fragment.mp4");
+    }
+
+    private async void BrowseTrimOutput_Click(object sender, RoutedEventArgs e)
+    {
+        var path = await PickSavePathAsync("fragment.mp4");
+        if (path is not null) _trimOutputBox.Text = path;
+    }
+
+    private async void Trim_Click(object sender, RoutedEventArgs e)
+    {
+        if (!File.Exists(_trimInputBox.Text) ||
+            string.IsNullOrWhiteSpace(_trimOutputBox.Text) ||
+            !TimeSpan.TryParse(_trimStartBox.Text, out var start) ||
+            !TimeSpan.TryParse(_trimDurationBox.Text, out var duration))
+        {
+            ShowEditorMessage("Проверьте исходный файл, путь и время.", InfoBarSeverity.Error);
+            return;
+        }
+        await RunEditAsync(new VideoEditRequest(
+            VideoEditMode.FastTrim, new[] { _trimInputBox.Text }, _trimOutputBox.Text, start, duration));
+    }
+
+    private async void AddJoinFiles_Click(object sender, RoutedEventArgs e)
+    {
+        var files = await PickVideoFilesAsync(true);
+        if (files.Count == 0) return;
+        _joinFiles.AddRange(files);
+        _joinFilesList.ItemsSource = _joinFiles.Select(Path.GetFileName).ToList();
+        _joinOutputBox.Text = Path.Combine(
+            Path.GetDirectoryName(_joinFiles[0]) ?? Environment.CurrentDirectory,
+            "joined-video.mp4");
+    }
+
+    private async void BrowseJoinOutput_Click(object sender, RoutedEventArgs e)
+    {
+        var path = await PickSavePathAsync("joined-video.mp4");
+        if (path is not null) _joinOutputBox.Text = path;
+    }
+
+    private async void Join_Click(object sender, RoutedEventArgs e)
+    {
+        if (_joinFiles.Count < 2 || string.IsNullOrWhiteSpace(_joinOutputBox.Text))
+        {
+            ShowEditorMessage("Выберите минимум два видео и путь сохранения.", InfoBarSeverity.Error);
+            return;
+        }
+        await RunEditAsync(new VideoEditRequest(VideoEditMode.Join, _joinFiles, _joinOutputBox.Text));
+    }
+
+    private async Task RunEditAsync(VideoEditRequest request)
+    {
+        _operation = new CancellationTokenSource();
+        ShowEditorMessage("FFmpeg обрабатывает видео…", InfoBarSeverity.Informational);
+        try
+        {
+            await _editor.EditAsync(request, _operation.Token);
+            ShowEditorMessage($"Готово: {request.OutputPath}", InfoBarSeverity.Success);
+        }
+        catch (Exception exception)
+        {
+            ShowEditorMessage(exception.Message, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            _operation.Dispose();
+            _operation = null;
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> PickVideoFilesAsync(bool multiple)
+    {
+        var picker = new FileOpenPicker();
+        foreach (var extension in new[] { ".mp4", ".mkv", ".webm", ".mov", ".avi", ".ts", ".m4v" })
+            picker.FileTypeFilter.Add(extension);
+        InitializePicker(picker);
+        if (multiple)
+            return (await picker.PickMultipleFilesAsync()).Select(file => file.Path).ToList();
+        var file = await picker.PickSingleFileAsync();
+        return file is null ? [] : new[] { file.Path };
+    }
+
+    private async Task<string?> PickSavePathAsync(string suggestedName)
+    {
+        var picker = new FileSavePicker { SuggestedFileName = Path.GetFileNameWithoutExtension(suggestedName) };
+        picker.FileTypeChoices.Add("Видео MP4", new List<string> { ".mp4" });
+        InitializePicker(picker);
+        return (await picker.PickSaveFileAsync())?.Path;
+    }
+
+    private void InstallComponents_Click(object sender, RoutedEventArgs e)
+    {
+        var script = FindInstallationScript();
+        if (script is null)
+        {
+            _ytDlpStatus.Text = "Установщик компонентов не найден рядом с приложением.";
+            return;
+        }
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                "System32",
+                "WindowsPowerShell",
+                "v1.0",
+                "powershell.exe"),
+            Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Destination \"{Path.Combine(AppContext.BaseDirectory, "tools")}\"",
+            UseShellExecute = true
+        });
+    }
+
+    private void RefreshComponentStatus()
+    {
+        _ytDlpStatus.Text = ToolStatus("yt-dlp", _tools.YtDlp);
+        _ffmpegStatus.Text = ToolStatus("FFmpeg", _tools.Ffmpeg);
+        _ffprobeStatus.Text = ToolStatus("FFprobe", _tools.Ffprobe);
+        _denoStatus.Text = ToolStatus("Deno", _tools.Deno);
+    }
+
+    private static string ToolStatus(string name, string path) =>
+        File.Exists(path) ? $"✓ {name}: {path}" : $"○ {name}: не найден";
+
+    private static string? FindInstallationScript()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            var candidate = Path.Combine(current.FullName, "scripts", "Install-Components.ps1");
+            if (File.Exists(candidate)) return candidate;
+            current = current.Parent;
+        }
+        return null;
+    }
+
+    private void InitializePicker(object picker)
+    {
+        var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, windowHandle);
+    }
+
+    private void SetDownloadState(string status, string? details, bool isError = false)
+    {
+        _downloadStatus.Text = status;
+        _downloadDetails.Text = string.IsNullOrWhiteSpace(details) ? " " : details;
+        _downloadStatus.Foreground = new SolidColorBrush(isError ? Colors.IndianRed : Colors.White);
+    }
+
+    private void ShowEditorMessage(string message, InfoBarSeverity severity)
+    {
+        _editorInfoText.Text = message;
+        _editorInfo.BorderBrush = new SolidColorBrush(severity switch
+        {
+            InfoBarSeverity.Error => Colors.IndianRed,
+            InfoBarSeverity.Success => Colors.MediumSeaGreen,
+            _ => Colors.DodgerBlue
+        });
+        _editorInfo.Visibility = Visibility.Visible;
+    }
+
+    private void SetProgress(double? percent)
+    {
+        if (percent is null)
+        {
+            _downloadPercent = 0;
+            _downloadProgressLabel.Text = "Выполняется…";
+        }
+        else
+        {
+            _downloadPercent = Math.Clamp(percent.Value, 0, 100);
+            _downloadProgressLabel.Text = $"{_downloadPercent:0}%";
+        }
+        UpdateProgressWidth();
+    }
+
+    private void UpdateProgressWidth()
+    {
+        if (_downloadProgressTrack is null || _downloadProgressFill is null)
+        {
+            return;
+        }
+        _downloadProgressFill.Width = _downloadProgressTrack.ActualWidth * _downloadPercent / 100d;
+    }
+
+    private static ComboBoxItem ComboItem(string text, string tag) => new() { Content = text, Tag = tag };
+
+    private static StackPanel PageStack() => new()
+    {
+        MaxWidth = 900,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        Spacing = 18
+    };
+
+    private static StackPanel Vertical(double spacing) => new() { Spacing = spacing };
+
+    private static StackPanel Horizontal(params UIElement[] children)
+    {
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        foreach (var child in children) panel.Children.Add(child);
+        return panel;
+    }
+
+    private static Grid TwoColumn(FrameworkElement first, FrameworkElement second, bool secondAuto = false)
+    {
+        var grid = new Grid { ColumnSpacing = 12 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = secondAuto ? GridLength.Auto : new GridLength(1, GridUnitType.Star)
+        });
+        second.VerticalAlignment = VerticalAlignment.Bottom;
+        Grid.SetColumn(second, 1);
+        grid.Children.Add(first);
+        grid.Children.Add(second);
+        return grid;
+    }
+
+    private static Border Card(UIElement child) => new()
+    {
+        Background = CardBrush,
+        BorderBrush = CardBorderBrush,
+        BorderThickness = new Thickness(1),
+        CornerRadius = new CornerRadius(16),
+        Padding = new Thickness(22),
+        Child = child
+    };
+
+    private static StackPanel PageHeading(string title, string subtitle)
+    {
+        var panel = Vertical(6);
+        panel.Children.Add(new TextBlock { Text = title, FontSize = 25, FontWeight = FontWeights.SemiBold });
+        panel.Children.Add(MutedText(subtitle));
+        return panel;
+    }
+
+    private static TextBlock SectionHeading(string text) => new()
+    {
+        Text = text,
+        FontSize = 18,
+        FontWeight = FontWeights.SemiBold
+    };
+
+    private static TextBlock MutedText(string text) => new()
+    {
+        Text = text,
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = MutedBrush
+    };
+
+    private static Button PrimaryButton(string text) => new()
+    {
+        Content = text,
+        Background = AccentBrush,
+        Foreground = new SolidColorBrush(Colors.White),
+        HorizontalAlignment = HorizontalAlignment.Left,
+        Padding = new Thickness(18, 9, 18, 9),
+        CornerRadius = new CornerRadius(8)
+    };
+
+    private static Button SecondaryButton(string text) => new()
+    {
+        Content = text,
+        Padding = new Thickness(16, 8, 16, 8),
+        CornerRadius = new CornerRadius(8)
+    };
+
+    private static Button NavigationButton(string text) => new()
+    {
+        Content = text,
+        HorizontalContentAlignment = HorizontalAlignment.Left,
+        HorizontalAlignment = HorizontalAlignment.Stretch,
+        Padding = new Thickness(14, 11, 14, 11),
+        CornerRadius = new CornerRadius(8),
+        Background = new SolidColorBrush(Colors.Transparent)
+    };
+}

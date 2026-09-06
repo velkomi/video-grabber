@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+    branches: [main, feature/**]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore .\VideoGrabber.slnx
+      - name: Build
+        run: dotnet build .\VideoGrabber.slnx -c Release --no-restore
+      - name: Test
+        run: dotnet test .\VideoGrabber.slnx -c Release --no-build
+      - name: Publish portable EXE
+        run: dotnet publish .\src\VideoGrabber.App\VideoGrabber.App.csproj -c Release -r win-x64 --self-contained true -o .\artifacts\VideoGrabber-win-x64 --no-restore
+      - name: Package
+        shell: pwsh
+        run: |
+          Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md -Destination .\artifacts\VideoGrabber-win-x64
+          Compress-Archive -Path .\artifacts\VideoGrabber-win-x64\* -DestinationPath .\artifacts\VideoGrabber-win-x64.zip
+          Get-FileHash .\artifacts\VideoGrabber-win-x64.zip -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VideoGrabber-win-x64
+          path: .\artifacts\VideoGrabber-win-x64.zip
+          if-no-files-found: error
