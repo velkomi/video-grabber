@@ -7,6 +7,7 @@ using Microsoft.UI.Text;
 using Microsoft.Web.WebView2.Core;
 using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Editing;
+using VideoGrabber.Core.Processes;
 using VideoGrabber.Core.Security;
 using VideoGrabber.Infrastructure.Components;
 using VideoGrabber.Infrastructure.Downloads;
@@ -66,6 +67,7 @@ public sealed class MainWindow : Window
     private WebView2? _mediaBrowser;
     private CancellationTokenSource? _operation;
     private bool _isInstallingComponents;
+    private int _lastLoggedProgressBucket = -1;
 
     public MainWindow()
     {
@@ -187,6 +189,7 @@ public sealed class MainWindow : Window
             "Вставьте ссылку на страницу или прямой поток. Защищённые DRM-потоки не обходятся."));
 
         _urlBox = new TextBox { Header = "Ссылка на видео", PlaceholderText = "https://…" };
+        AttachPasteContextMenu(_urlBox);
         _outputFolderBox = new TextBox { Header = "Папка сохранения", IsReadOnly = true };
         var chooseFolder = SecondaryButton("Выбрать…");
         chooseFolder.Click += BrowseOutputFolder_Click;
@@ -211,13 +214,15 @@ public sealed class MainWindow : Window
         _cancelButton.Click += (_, _) => _operation?.Cancel();
         var browserButton = SecondaryButton("Открыть во встроенном браузере");
         browserButton.Click += OpenBrowser_Click;
+        var openFolderButton = SecondaryButton("Открыть папку загрузок");
+        openFolderButton.Click += OpenOutputFolder_Click;
 
         var downloadForm = Vertical(14);
         downloadForm.Children.Add(_urlBox);
         downloadForm.Children.Add(TwoColumn(_outputFolderBox, chooseFolder, secondAuto: true));
         downloadForm.Children.Add(TwoColumn(_qualityBox, _cookiesBox));
         downloadForm.Children.Add(_audioOnlyBox);
-        downloadForm.Children.Add(Horizontal(_downloadButton, _cancelButton, browserButton));
+        downloadForm.Children.Add(Horizontal(_downloadButton, _cancelButton, openFolderButton, browserButton));
         body.Children.Add(Card(downloadForm));
 
         _downloadStatus = new TextBlock { Text = "Готово к работе", FontWeight = FontWeights.SemiBold };
@@ -315,7 +320,7 @@ public sealed class MainWindow : Window
         var body = PageStack();
         body.Children.Add(PageHeading(
             "Компоненты",
-            "Инструменты хранятся рядом с приложением и обновляются по вашему нажатию."));
+            "Инструменты хранятся в профиле текущего пользователя и обновляются по вашему нажатию."));
         _ytDlpStatus = new TextBlock();
         _ffmpegStatus = new TextBlock();
         _ffprobeStatus = new TextBlock();
@@ -389,17 +394,12 @@ public sealed class MainWindow : Window
         _cancelButton.IsEnabled = true;
         SetProgress(null);
         SetDownloadState("Анализирую страницу…", uri.Host);
+        _lastLoggedProgressBucket = -1;
         AppDiagnostics.Write($"Download started host={uri.Host}");
 
-        var progress = new Progress<DownloadProgress>(value =>
-        {
-            if (value.Percent is not null)
-            {
-                SetProgress(value.Percent.Value);
-            }
-            var details = string.Join("  •  ", new[] { value.Speed, value.Eta }.Where(item => !string.IsNullOrWhiteSpace(item)));
-            SetDownloadState(value.Status, details);
-        });
+        var progress = new DispatchedProgress<DownloadProgress>(
+            action => DispatcherQueue.TryEnqueue(() => action()),
+            ApplyDownloadProgress);
 
         try
         {
@@ -452,6 +452,36 @@ public sealed class MainWindow : Window
         catch (Exception exception)
         {
             _browserHint.Text = $"Встроенный браузер недоступен: {exception.Message}";
+        }
+    }
+
+    private void OpenOutputFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = _outputFolderBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            SetDownloadState("Папка загрузок не выбрана.", null, true);
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(folder);
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                    "explorer.exe"),
+                UseShellExecute = true
+            };
+            startInfo.ArgumentList.Add(folder);
+            Process.Start(startInfo);
+            AppDiagnostics.Write("Output folder opened");
+        }
+        catch (Exception exception)
+        {
+            SetDownloadState("Не удалось открыть папку загрузок.", exception.Message, true);
+            AppDiagnostics.Write($"Output folder open failed error={exception.Message}");
         }
     }
 
@@ -708,6 +738,34 @@ public sealed class MainWindow : Window
         _downloadStatus.Text = status;
         _downloadDetails.Text = string.IsNullOrWhiteSpace(details) ? " " : details;
         _downloadStatus.Foreground = new SolidColorBrush(isError ? Colors.Firebrick : ColorHelper.FromArgb(255, 31, 41, 55));
+    }
+
+    private void ApplyDownloadProgress(DownloadProgress value)
+    {
+        if (value.Percent is not null)
+        {
+            SetProgress(value.Percent.Value);
+            var bucket = (int)Math.Floor(Math.Clamp(value.Percent.Value, 0, 100) / 10d);
+            if (bucket != _lastLoggedProgressBucket)
+            {
+                _lastLoggedProgressBucket = bucket;
+                AppDiagnostics.Write($"Download progress percent={bucket * 10}");
+            }
+        }
+
+        var details = string.Join(
+            "  •  ",
+            new[] { value.Speed, value.Eta }.Where(item => !string.IsNullOrWhiteSpace(item)));
+        SetDownloadState(value.Status, details);
+    }
+
+    private static void AttachPasteContextMenu(TextBox textBox)
+    {
+        var paste = new MenuFlyoutItem { Text = "Вставить" };
+        paste.Click += (_, _) => textBox.PasteFromClipboard();
+        var menu = new MenuFlyout();
+        menu.Items.Add(paste);
+        textBox.ContextFlyout = menu;
     }
 
     private void ShowEditorMessage(string message, InfoBarSeverity severity)
