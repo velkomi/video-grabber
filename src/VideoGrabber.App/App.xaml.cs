@@ -24,8 +24,15 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         AppDiagnostics.Write("OnLaunched started");
-        _window = new MainWindow();
-        AppDiagnostics.Write("MainWindow constructed");
+        if (_window is null)
+        {
+            _window = new MainWindow();
+            AppDiagnostics.Write("MainWindow constructed");
+        }
+        else
+        {
+            AppDiagnostics.Write("Existing MainWindow reused");
+        }
         _window.Activate();
         AppDiagnostics.Write("MainWindow activated");
     }

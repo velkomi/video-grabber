@@ -1,12 +1,10 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
 using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Components;
 
 namespace VideoGrabber.Infrastructure.Downloads;
 
-public sealed partial class YtDlpDownloader(IProcessRunner runner, ToolLocator tools) : IVideoDownloader
+public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools) : IVideoDownloader
 {
     public async Task<DownloadResult> DownloadAsync(
         DownloadRequest request,
@@ -55,8 +53,7 @@ public sealed partial class YtDlpDownloader(IProcessRunner runner, ToolLocator t
                     outputPath = line["filepath:".Length..].Trim();
                 }
 
-                var match = ProgressLine().Match(line);
-                if (!match.Success)
+                if (!YtDlpProgressParser.TryParse(line, out var parsedProgress))
                 {
                     if (line.StartsWith("[", StringComparison.Ordinal))
                     {
@@ -64,9 +61,7 @@ public sealed partial class YtDlpDownloader(IProcessRunner runner, ToolLocator t
                     }
                     return;
                 }
-
-                _ = double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var percent);
-                progress?.Report(new DownloadProgress(percent, "Загрузка", match.Groups[2].Value.Trim(), match.Groups[3].Value.Trim()));
+                progress?.Report(parsedProgress);
             },
             cancellationToken).ConfigureAwait(false);
 
@@ -93,7 +88,4 @@ public sealed partial class YtDlpDownloader(IProcessRunner runner, ToolLocator t
 
     private static string? LastMeaningfulLine(string value) =>
         value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
-
-    [GeneratedRegex(@"download:\s*([0-9.]+)%?\|([^|]*)\|([^|]*)")]
-    private static partial Regex ProgressLine();
 }
