@@ -1,5 +1,6 @@
 <Project>
   <PropertyGroup>
+    <Version>0.1.8</Version>
     <LangVersion>14.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -8,4 +9,3 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 </Project>
-

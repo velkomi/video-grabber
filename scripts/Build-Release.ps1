@@ -3,11 +3,18 @@ param(
     [string]$Configuration = 'Release',
     [string]$Runtime = 'win-x64',
     [string]$DotNet = 'dotnet',
-    [string]$Version = '0.1.0'
+    [string]$Version
 )
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repositoryRoot 'Directory.Build.props')
+    $Version = [string]$buildProperties.Project.PropertyGroup.Version
+}
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    throw 'Версия не указана и не найдена в Directory.Build.props.'
+}
 $releaseRoot = Join-Path $repositoryRoot "artifacts\release-$Version"
 $output = Join-Path $releaseRoot "VideoGrabber-$Runtime"
 if (Test-Path -LiteralPath $output) {

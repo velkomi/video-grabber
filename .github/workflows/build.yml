@@ -2,10 +2,14 @@ name: Build
 
 on:
   push:
-    branches: [main, feature/**]
-    tags: ['v*']
+    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -13,6 +17,7 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -37,3 +42,4 @@ jobs:
           name: VideoGrabber-win-x64
           path: .\artifacts\VideoGrabber-win-x64.zip
           if-no-files-found: error
+          retention-days: 7
