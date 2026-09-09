@@ -148,17 +148,23 @@ public sealed class MainWindow : Window
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(contentArea, 1);
-        var sidebar = Vertical(8);
-        sidebar.Padding = new Thickness(14, 18, 14, 18);
+        var sidebar = new Grid { Padding = new Thickness(14, 18, 14, 18) };
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var navigation = Vertical(8);
         var downloadItem = NavigationButton("↓  Загрузчик");
         var editorItem = NavigationButton("✂  Редактор");
         var settingsItem = NavigationButton("⚙  Компоненты");
         downloadItem.Click += (_, _) => ShowPage("download");
         editorItem.Click += (_, _) => ShowPage("editor");
         settingsItem.Click += (_, _) => ShowPage("settings");
-        sidebar.Children.Add(downloadItem);
-        sidebar.Children.Add(editorItem);
-        sidebar.Children.Add(settingsItem);
+        navigation.Children.Add(downloadItem);
+        navigation.Children.Add(editorItem);
+        navigation.Children.Add(settingsItem);
+        sidebar.Children.Add(navigation);
+        var authorCard = BuildAuthorCard();
+        Grid.SetRow(authorCard, 1);
+        sidebar.Children.Add(authorCard);
         contentArea.Children.Add(new Border
         {
             Background = new SolidColorBrush(ColorHelper.FromArgb(255, 255, 255, 255)),
@@ -896,4 +902,39 @@ public sealed class MainWindow : Window
         CornerRadius = new CornerRadius(8),
         Background = new SolidColorBrush(Colors.Transparent)
     };
+
+    private static Border BuildAuthorCard()
+    {
+        var content = Vertical(3);
+        content.Children.Add(new TextBlock
+        {
+            Text = "Создано Валерием",
+            FontSize = 14,
+            FontWeight = FontWeights.Bold,
+            Foreground = TextBrush
+        });
+        var telegramLink = new HyperlinkButton
+        {
+            Content = "Telegram: @Velkoshkin",
+            NavigateUri = new Uri("https://t.me/Velkoshkin"),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Padding = new Thickness(0, 4, 0, 4),
+            MinHeight = 32,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = AccentBrush
+        };
+        ToolTipService.SetToolTip(telegramLink, "Открыть контакт @Velkoshkin в Telegram");
+        content.Children.Add(telegramLink);
+
+        return new Border
+        {
+            Margin = new Thickness(0, 18, 0, 0),
+            Padding = new Thickness(12, 10, 12, 8),
+            CornerRadius = new CornerRadius(10),
+            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 238, 244, 255)),
+            BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 205, 220, 248)),
+            BorderThickness = new Thickness(1),
+            Child = content
+        };
+    }
 }

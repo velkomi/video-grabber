@@ -118,6 +118,10 @@ $dotnet = 'D:\CODEX\Portable\dotnet-sdk-10\dotnet.exe'
 
 VideoGrabber работает локально. Проект не содержит аналитики и собственного сервера. Cookies не копируются в проект и не сохраняются приложением: при явном выборе браузера yt-dlp читает их на время операции. Диагностические строки очищаются от распространённых токенов и заголовков cookies.
 
+## Автор и связь
+
+**Создано Валерием.** Telegram: [@Velkoshkin](https://t.me/Velkoshkin).
+
 ## Лицензии
 
 Исходный код VideoGrabber распространяется по MIT License. yt-dlp и сборки FFmpeg имеют собственные лицензии; подробности приведены в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
