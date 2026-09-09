@@ -9,11 +9,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    [xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repositoryRoot 'Directory.Build.props')
-    $Version = [string]$buildProperties.Project.PropertyGroup.Version
+    $Version = (Get-Content -LiteralPath (Join-Path $repositoryRoot 'VERSION') -Raw).Trim()
 }
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    throw 'Версия не указана и не найдена в Directory.Build.props.'
+    throw 'Версия не указана и не найдена в VERSION.'
 }
 $releaseRoot = Join-Path $repositoryRoot "artifacts\release-$Version"
 $output = Join-Path $releaseRoot "VideoGrabber-$Runtime"

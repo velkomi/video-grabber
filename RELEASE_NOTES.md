@@ -1,5 +1,20 @@
 # Журнал подготовки релизов
 
+## [0.1.9] - 2026-09-09 15:31 +03:00
+
+- Status: complete
+- Previous version: 0.1.9-dev.1
+- Human owner: Oleg
+- Implemented by: Codex
+- Human reviewed by: approved for publication
+- Changed: подготовлен публичный выпуск с авторским блоком «Создано Валерием» и кликабельным Telegram-контактом `@Velkoshkin`
+- Works: авторский блок виден на всех страницах; Telegram-ссылка активна; загрузчик и редактор сохранены без изменений
+- Does not work: коммерческий сертификат подписи кода Windows не включён; DRM и закрытые потоки не обходятся
+- Files: WinUI shell, version source, README, changelog, release records
+- Verification: Release build with 0 warnings and 0 errors; 21/21 tests passed; packaged EXE UI Automation; screenshot; ZIP SHA-256
+- Commit/PR: feature commit `b8c2fa1`; release tag `v0.1.9`
+- Rollback note: предыдущий стабильный выпуск `v0.1.8` остаётся доступен
+
 ## [0.1.9-dev.1] - 2026-09-09 14:54 +03:00
 
 - Status: complete

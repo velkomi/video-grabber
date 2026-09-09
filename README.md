@@ -39,7 +39,7 @@ Fathom Video проверен вручную на открытой ссылке.
 ## Установка на другой компьютер
 
 1. Откройте [последний релиз](https://github.com/velkomi/video-grabber/releases/latest).
-2. Скачайте архив `VideoGrabber-win-x64-v0.1.8.zip`.
+2. Скачайте архив `VideoGrabber-win-x64-v0.1.9.zip`.
 3. Распакуйте **весь архив** в обычную папку, например `D:\VideoGrabber`.
 4. Запустите `VideoGrabber.exe`. Установка .NET отдельно не требуется.
 5. Вставьте ссылку, выберите папку и нажмите **Скачать**. При первой загрузке приложение само предложит установить медиакомпоненты.
@@ -49,14 +49,10 @@ Windows может показать предупреждение SmartScreen, п
 Проверить целостность архива можно файлом `.sha256.txt` из релиза или командой:
 
 ~~~powershell
-Get-FileHash .\VideoGrabber-win-x64-v0.1.8.zip -Algorithm SHA256
+Get-FileHash .\VideoGrabber-win-x64-v0.1.9.zip -Algorithm SHA256
 ~~~
 
-Для версии `v0.1.8` ожидается SHA-256:
-
-~~~text
-FB7A356B30C10329BCCB4201CBC7C64366EE9A9BB4BBC0B7887CF974C565700B
-~~~
+Сравните результат с приложенным к релизу файлом `VideoGrabber-win-x64-v0.1.9.sha256.txt`.
 
 Компоненты сохраняются в `%LocalAppData%\VideoGrabber\tools`. Их также можно вручную установить или обновить в разделе Компоненты. Установщик показывает SHA-256 и сверяет его с digest GitHub, когда он доступен.
 
@@ -95,7 +91,7 @@ $dotnet = 'D:\CODEX\Portable\dotnet-sdk-10\dotnet.exe'
 & .\scripts\Build-Release.ps1 -DotNet $dotnet
 ~~~
 
-Готовый архив появится в `artifacts\release-0.1.8`. В GitHub Actions используются стандартные публичные Windows-runner'ы; сборка запускается для `main`, pull request и вручную, но не повторяется отдельно для тега того же коммита.
+Готовый архив появится в `artifacts\release-0.1.9`. В GitHub Actions используются стандартные публичные Windows-runner'ы; сборка запускается для `main`, pull request и вручную, но не повторяется отдельно для тега того же коммита.
 
 ## Структура проекта
 

@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-09-09
+
 ### Изменено
 
 - документация установки, использования, диагностики и переноса на другой компьютер;
@@ -48,7 +50,8 @@
 
 - первый публичный выпуск VideoGrabber для Windows x64.
 
-[Unreleased]: https://github.com/velkomi/video-grabber/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/velkomi/video-grabber/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/velkomi/video-grabber/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.8
 [0.1.4]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.4
 [0.1.3]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.3
