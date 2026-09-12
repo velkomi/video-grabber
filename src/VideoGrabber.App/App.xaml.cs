@@ -40,24 +40,9 @@ public partial class App : Application
 
 internal static class AppDiagnostics
 {
-    private static readonly string LogPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "VideoGrabber",
-        "logs",
-        "startup.log");
-
     public static void Write(string message)
     {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-            var safeMessage = SensitiveDataRedactor.Redact(message)
-                .Replace('\r', ' ')
-                .Replace('\n', ' ');
-            File.AppendAllText(LogPath, $"{DateTimeOffset.Now:O} {safeMessage}{Environment.NewLine}");
-        }
-        catch
-        {
-        }
+        var failure = message.Contains("failed", StringComparison.OrdinalIgnoreCase) || message.Contains("exception", StringComparison.OrdinalIgnoreCase);
+        VideoGrabber.Infrastructure.Diagnostics.DiagnosticHub.Log.Write("application", failure ? "failed" : "event", message);
     }
 }

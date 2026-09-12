@@ -3,7 +3,7 @@ namespace VideoGrabber.Core.Processes;
 public sealed record ProcessSpec(
     string FileName,
     IReadOnlyList<string> Arguments,
-    string? WorkingDirectory = null);
+    string? WorkingDirectory = null, TimeSpan? Timeout = null, bool SuppressOutputLogging = false);
 
 public sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError)
 {
@@ -17,4 +17,3 @@ public interface IProcessRunner
         Action<string>? onOutput,
         CancellationToken cancellationToken);
 }
-

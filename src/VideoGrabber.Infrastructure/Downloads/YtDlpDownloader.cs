@@ -1,21 +1,34 @@
 using VideoGrabber.Core.Downloads;
+using VideoGrabber.Core.Media;
+using VideoGrabber.Infrastructure.Diagnostics;
+using VideoGrabber.Core.Security;
+using VideoGrabber.Infrastructure.Media;
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Components;
 
 namespace VideoGrabber.Infrastructure.Downloads;
 
-public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools) : IVideoDownloader
+public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IMediaProbe? probe = null) : IVideoDownloader
 {
     public async Task<DownloadResult> DownloadAsync(
         DownloadRequest request,
         IProgress<DownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var job = DiagnosticHub.Begin("download", request.Source.Host);
+        using var cancelLog = cancellationToken.Register(job.Cancel);
+        if (request.Source.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(request.Source.UserInfo))
+            return new(false, "Поддерживаются HTTP/HTTPS-ссылки без встроенного пароля.");
+        if (request.CookiesFile is not null && request.CookiesFromBrowser is not null)
+            return new(false, "Выберите только один способ входа.");
         Directory.CreateDirectory(request.OutputDirectory);
         var outputTemplate = Path.Combine(request.OutputDirectory, "%(title).180B [%(id)s].%(ext)s");
 
         var arguments = new List<string>
         {
+            "--ignore-config", "--no-overwrites",
+            "--retries", "3", "--fragment-retries", "3", "--socket-timeout", "25",
             "--newline",
             "--no-playlist",
             "--windows-filenames",
@@ -43,6 +56,20 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools) : 
             arguments.Add(request.CookiesFromBrowser);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.CookiesFile))
+        {
+            if (!File.Exists(request.CookiesFile)) return new(false, "Временная сессия не найдена. Повторите вход.");
+            arguments.AddRange(["--cookies", request.CookiesFile]);
+        }
+        if (request.Referer is not null)
+        {
+            if (request.Referer.Scheme is not ("http" or "https")) return new(false, "Некорректная исходная страница.");
+            arguments.AddRange(["--referer", request.Referer.AbsoluteUri]);
+        }
+        if (!string.IsNullOrWhiteSpace(request.UserAgent) && request.UserAgent.Length <= 1024 && request.UserAgent.IndexOfAny(['\r', '\n']) < 0)
+            arguments.AddRange(["--user-agent", request.UserAgent]);
+        if (request.AudioOnly)
+            arguments.AddRange(["--extract-audio", "--audio-format", "mp3", "--audio-quality", "2"]);
         arguments.Add(request.Source.AbsoluteUri);
 
         string? outputPath = null;
@@ -59,7 +86,7 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools) : 
                 {
                     if (line.StartsWith("[", StringComparison.Ordinal))
                     {
-                        progress?.Report(new DownloadProgress(null, line));
+                        progress?.Report(new DownloadProgress(null, SensitiveDataRedactor.Redact(line)));
                     }
                     return;
                 }
@@ -67,9 +94,16 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools) : 
             },
             cancellationToken).ConfigureAwait(false);
 
-        return result.IsSuccess
-            ? new DownloadResult(true, "Видео загружено и обработано.", outputPath)
-            : new DownloadResult(false, LastMeaningfulLine(result.StandardError) ?? "Загрузка завершилась с ошибкой.");
+        if (!result.IsSuccess)
+            return new(false, SensitiveDataRedactor.Redact(LastMeaningfulLine(result.StandardError) ?? "Загрузка завершилась с ошибкой."));
+        if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+            return new(false, "Загрузчик завершился, но готовый непустой файл не найден.");
+        progress?.Report(new DownloadProgress(null, "Проверяю медиафайл…"));
+        var media = await (probe ?? new FfprobeMediaProbe(runner, tools)).ProbeAsync(outputPath, cancellationToken).ConfigureAwait(false);
+        if (!media.IsValid || (request.AudioOnly && (!media.HasAudio || media.HasVideo || media.AudioCodec != "mp3")))
+            return new(false, "Файл получен, но проверка медиапотоков не пройдена.");
+        job.Complete();
+        return new(true, request.AudioOnly ? "MP3 загружен и проверен." : "Видео загружено и проверено.", outputPath);
     }
 
     private static string SelectFormat(DownloadRequest request)

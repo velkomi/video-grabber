@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Configuration = 'Release',
     [string]$Runtime = 'win-x64',
@@ -24,12 +24,13 @@ if (Test-Path -LiteralPath $output) {
 if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed' }
 & $DotNet test (Join-Path $repositoryRoot 'VideoGrabber.slnx') -c $Configuration --no-restore
 if ($LASTEXITCODE -ne 0) { throw 'dotnet test failed' }
-& $DotNet publish (Join-Path $repositoryRoot 'src\VideoGrabber.App\VideoGrabber.App.csproj') -c $Configuration -r $Runtime --self-contained true -o $output --no-restore
+& $DotNet publish (Join-Path $repositoryRoot 'src\VideoGrabber.App\VideoGrabber.App.csproj') -c $Configuration -r $Runtime --self-contained true -o $output --no-restore -p:Version=$Version
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination $output
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination $output
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'THIRD_PARTY_NOTICES.md') -Destination $output
+Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs\MEDIA_WORKFLOWS.md') -Destination $output
 
 $archive = Join-Path $releaseRoot "VideoGrabber-$Runtime.zip"
 Compress-Archive -Path (Join-Path $output '*') -DestinationPath $archive -Force

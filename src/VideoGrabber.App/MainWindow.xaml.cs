@@ -18,7 +18,7 @@ using Windows.Storage.Pickers;
 
 namespace VideoGrabber.App;
 
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     private static readonly SolidColorBrush CardBrush = new(ColorHelper.FromArgb(255, 255, 255, 255));
     private static readonly SolidColorBrush CardBorderBrush = new(ColorHelper.FromArgb(255, 216, 224, 234));
@@ -102,6 +102,7 @@ public sealed class MainWindow : Window
         {
             RefreshComponentStatus();
         }
+        Closed += (_, _) => { _operation?.Cancel(); _logTimer?.Stop(); DestroyBrowser(); };
         AppDiagnostics.Write("MainWindow constructor completed");
     }
 
@@ -211,8 +212,9 @@ public sealed class MainWindow : Window
         _cookiesBox.Items.Add(ComboItem("Chrome — только для этой загрузки", "chrome"));
         _cookiesBox.Items.Add(ComboItem("Edge — только для этой загрузки", "edge"));
         _cookiesBox.Items.Add(ComboItem("Firefox — только для этой загрузки", "firefox"));
+        _cookiesBox.Items.Add(ComboItem("Встроенный браузер — только эта загрузка", "embedded"));
 
-        _audioOnlyBox = new CheckBox { Content = "Скачать только аудиодорожку" };
+        _audioOnlyBox = new CheckBox { Content = "Скачать MP3 (только звук)" };
         _downloadButton = PrimaryButton("Скачать");
         _downloadButton.Click += Download_Click;
         _cancelButton = SecondaryButton("Отменить");
@@ -228,7 +230,8 @@ public sealed class MainWindow : Window
         downloadForm.Children.Add(TwoColumn(_outputFolderBox, chooseFolder, secondAuto: true));
         downloadForm.Children.Add(TwoColumn(_qualityBox, _cookiesBox));
         downloadForm.Children.Add(_audioOnlyBox);
-        downloadForm.Children.Add(Horizontal(_downloadButton, _cancelButton, openFolderButton, browserButton));
+        downloadForm.Children.Add(Horizontal(_downloadButton, _cancelButton, openFolderButton));
+        downloadForm.Children.Add(browserButton);
         body.Children.Add(Card(downloadForm));
 
         _downloadStatus = new TextBlock { Text = "Готово к работе", FontWeight = FontWeights.SemiBold };
@@ -254,9 +257,9 @@ public sealed class MainWindow : Window
         status.Children.Add(_downloadDetails);
         body.Children.Add(Card(status));
 
-        _browserHint = MutedText("Если страница отдаст открытый HLS/DASH-поток, ссылка появится в поле загрузки.");
+        _browserHint = MutedText("Войдите на сайте и включите видео. Найденные потоки появятся в отдельном списке.");
         _browserHost = new Grid { Height = 440 };
-        var closeBrowser = SecondaryButton("Закрыть");
+        var closeBrowser = SecondaryButton("Закрыть и выйти");
         closeBrowser.Click += CloseBrowser_Click;
         var browserHeader = new Grid();
         browserHeader.Children.Add(new TextBlock { Text = "Встроенный браузер и поиск потока", FontWeight = FontWeights.SemiBold });
@@ -265,10 +268,12 @@ public sealed class MainWindow : Window
         var browserContent = Vertical(10);
         browserContent.Children.Add(browserHeader);
         browserContent.Children.Add(_browserHint);
+        AddBrowserControls(browserContent);
         browserContent.Children.Add(_browserHost);
         _browserCard = Card(browserContent);
         _browserCard.Visibility = Visibility.Collapsed;
         body.Children.Add(_browserCard);
+        body.Children.Add(BuildMediaActionsCard());
 
         return new ScrollViewer { Content = body };
     }
@@ -318,6 +323,9 @@ public sealed class MainWindow : Window
         _editorInfo = Card(_editorInfoText);
         _editorInfo.Visibility = Visibility.Collapsed;
         body.Children.Add(_editorInfo);
+        var cancelEdit = SecondaryButton("Отменить обработку");
+        cancelEdit.Click += (_, _) => _operation?.Cancel();
+        body.Children.Add(cancelEdit);
         return new ScrollViewer { Content = body };
     }
 
@@ -337,13 +345,15 @@ public sealed class MainWindow : Window
         content.Children.Add(_ffmpegStatus);
         content.Children.Add(_ffprobeStatus);
         content.Children.Add(_denoStatus);
-        content.Children.Add(MutedText("Логины, cookies и токены не сохраняются. Установщик использует GitHub Releases и проверяет SHA-256, когда digest опубликован."));
+        content.Children.Add(MutedText("Встроенный браузер работает в InPrivate. Cookies передаются только при вашем выборе, через временный файл. Секреты скрываются в журналах."));
         var install = PrimaryButton("Установить или обновить");
         install.Click += InstallComponents_Click;
         var refresh = SecondaryButton("Обновить статус");
         refresh.Click += (_, _) => RefreshComponentStatus();
         content.Children.Add(Horizontal(install, refresh));
         body.Children.Add(Card(content));
+        body.Children.Add(BuildDiagnosticsCard());
+        body.Children.Add(BuildTranscriptionSettingsCard());
         return new ScrollViewer { Content = body };
     }
 
@@ -361,104 +371,6 @@ public sealed class MainWindow : Window
         InitializePicker(picker);
         var folder = await picker.PickSingleFolderAsync();
         if (folder is not null) _outputFolderBox.Text = folder.Path;
-    }
-
-    private async void Download_Click(object sender, RoutedEventArgs e)
-    {
-        if (!UrlPolicy.TryValidate(_urlBox.Text, out var uri, out var error) || uri is null)
-        {
-            SetDownloadState(error, null, true);
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_outputFolderBox.Text))
-        {
-            SetDownloadState("Выберите папку сохранения.", null, true);
-            return;
-        }
-
-        if (!RequiredComponentsAvailable())
-        {
-            _downloadButton.IsEnabled = false;
-            SetDownloadState("Подготавливаю компоненты…", "Первый запуск может занять несколько минут.");
-            if (!await InstallComponentsAsync(forceUpdate: false))
-            {
-                _downloadButton.IsEnabled = true;
-                SetDownloadState(
-                    "Не удалось установить компоненты.",
-                    "Проверьте интернет и повторите в разделе «Компоненты».",
-                    true);
-                ShowPage("settings");
-                return;
-            }
-        }
-
-        var quality = (_qualityBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "best";
-        var cookies = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
-        cookies = string.IsNullOrWhiteSpace(cookies) ? null : cookies;
-        _operation = new CancellationTokenSource();
-        _downloadButton.IsEnabled = false;
-        _cancelButton.IsEnabled = true;
-        SetProgress(null);
-        SetDownloadState("Анализирую страницу…", uri.Host);
-        _lastLoggedProgressBucket = -1;
-        AppDiagnostics.Write($"Download started host={uri.Host}");
-
-        var progress = new DispatchedProgress<DownloadProgress>(
-            action => DispatcherQueue.TryEnqueue(() => action()),
-            ApplyDownloadProgress);
-
-        try
-        {
-            var result = await _downloader.DownloadAsync(
-                new DownloadRequest(uri, _outputFolderBox.Text, quality, cookies, _audioOnlyBox.IsChecked == true),
-                progress,
-                _operation.Token);
-            SetDownloadState(result.Message, result.OutputPath, !result.Success);
-            SetProgress(result.Success ? 100 : 0);
-            AppDiagnostics.Write($"Download completed success={result.Success} host={uri.Host}");
-        }
-        catch (OperationCanceledException)
-        {
-            SetDownloadState("Загрузка отменена.", "Повторный запуск сможет использовать временные файлы.");
-            AppDiagnostics.Write($"Download cancelled host={uri.Host}");
-        }
-        catch (Exception exception)
-        {
-            SetDownloadState("Не удалось скачать видео.", exception.Message, true);
-            AppDiagnostics.Write($"Download failed host={uri.Host} error={exception.Message}");
-        }
-        finally
-        {
-            _downloadButton.IsEnabled = true;
-            _cancelButton.IsEnabled = false;
-            _operation.Dispose();
-            _operation = null;
-        }
-    }
-
-    private async void OpenBrowser_Click(object sender, RoutedEventArgs e)
-    {
-        if (!UrlPolicy.TryValidate(_urlBox.Text, out var uri, out var error) || uri is null)
-        {
-            SetDownloadState(error, null, true);
-            return;
-        }
-        _browserCard.Visibility = Visibility.Visible;
-        try
-        {
-            if (_mediaBrowser is null)
-            {
-                _mediaBrowser = new WebView2();
-                _browserHost.Children.Add(_mediaBrowser);
-                await _mediaBrowser.EnsureCoreWebView2Async();
-                _mediaBrowser.CoreWebView2.WebResourceResponseReceived += Browser_WebResourceResponseReceived;
-            }
-            _mediaBrowser.Source = uri;
-        }
-        catch (Exception exception)
-        {
-            _browserHint.Text = $"Встроенный браузер недоступен: {exception.Message}";
-        }
     }
 
     private void OpenOutputFolder_Click(object sender, RoutedEventArgs e)
@@ -489,24 +401,6 @@ public sealed class MainWindow : Window
             SetDownloadState("Не удалось открыть папку загрузок.", exception.Message, true);
             AppDiagnostics.Write($"Output folder open failed error={exception.Message}");
         }
-    }
-
-    private void Browser_WebResourceResponseReceived(CoreWebView2 sender, CoreWebView2WebResourceResponseReceivedEventArgs args)
-    {
-        var candidate = args.Request.Uri;
-        if (!candidate.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) &&
-            !candidate.Contains(".mpd", StringComparison.OrdinalIgnoreCase)) return;
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            _urlBox.Text = candidate;
-            _browserHint.Text = "Открытый поток найден и подставлен. Можно нажать «Скачать».";
-        });
-    }
-
-    private void CloseBrowser_Click(object sender, RoutedEventArgs e)
-    {
-        if (_mediaBrowser is not null) _mediaBrowser.Source = new Uri("about:blank");
-        _browserCard.Visibility = Visibility.Collapsed;
     }
 
     private async void BrowseTrimInput_Click(object sender, RoutedEventArgs e)
@@ -568,22 +462,27 @@ public sealed class MainWindow : Window
 
     private async Task RunEditAsync(VideoEditRequest request)
     {
-        _operation = new CancellationTokenSource();
+        if (_operation is not null || _isInstallingComponents)
+        {
+            ShowEditorMessage("Другая операция уже выполняется. Сначала завершите или отмените её.", InfoBarSeverity.Error);
+            return;
+        }
+        using var operation = new CancellationTokenSource();
+        _operation = operation;
+        _cancelButton.IsEnabled = true;
         ShowEditorMessage("FFmpeg обрабатывает видео…", InfoBarSeverity.Informational);
         try
         {
-            await _editor.EditAsync(request, _operation.Token);
-            ShowEditorMessage($"Готово: {request.OutputPath}", InfoBarSeverity.Success);
+            await _editor.EditAsync(request, operation.Token);
+            ShowEditorMessage($"Проверено: {request.OutputPath}", InfoBarSeverity.Success);
         }
+        catch (OperationCanceledException) { ShowEditorMessage("Обработка отменена.", InfoBarSeverity.Informational); }
         catch (Exception exception)
         {
-            ShowEditorMessage(exception.Message, InfoBarSeverity.Error);
+            ShowEditorMessage(SensitiveDataRedactor.Redact(exception.Message), InfoBarSeverity.Error);
+            AppDiagnostics.Write("Editor failed: " + exception.Message);
         }
-        finally
-        {
-            _operation.Dispose();
-            _operation = null;
-        }
+        finally { _operation = null; _cancelButton.IsEnabled = false; }
     }
 
     private async Task<IReadOnlyList<string>> PickVideoFilesAsync(bool multiple)
@@ -608,6 +507,7 @@ public sealed class MainWindow : Window
 
     private async void InstallComponents_Click(object sender, RoutedEventArgs e)
     {
+        if (_operation is not null) { _ytDlpStatus.Text = "Сначала завершите текущую операцию."; return; }
         await InstallComponentsAsync(forceUpdate: true);
     }
 

@@ -5,5 +5,7 @@ public sealed record DownloadRequest(
     string OutputDirectory,
     string Quality,
     string? CookiesFromBrowser = null,
-    bool AudioOnly = false);
-
+    bool AudioOnly = false,
+    string? CookiesFile = null,
+    Uri? Referer = null,
+    string? UserAgent = null);

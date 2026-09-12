@@ -30,6 +30,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="../../scripts/Install-Components.ps1" Link="scripts/Install-Components.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/Analyze-Logs.ps1" Link="scripts/Analyze-Logs.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/Install-DiagnosticsTasks.ps1" Link="scripts/Install-DiagnosticsTasks.ps1" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\VideoGrabber.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\VideoGrabber.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

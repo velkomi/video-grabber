@@ -1,0 +1,55 @@
+using VideoGrabber.Infrastructure.Browser;
+
+namespace VideoGrabber.Infrastructure.Tests;
+
+public sealed class BrowserSessionTests
+{
+    [Theory]
+    [InlineData("https://cdn.example.test/video.mp4?sig=private", "", "MP4")]
+    [InlineData("https://cdn.example.test/stream?id=1", "application/vnd.apple.mpegurl", "HLS")]
+    [InlineData("https://cdn.example.test/master.mpd", "", "DASH")]
+    [InlineData("https://player02.getcourse.ru/sign-player/?json=example", "text/html", "GetCourse")]
+    public void Finds_media_by_url_or_mime(string url, string mime, string kind)
+    {
+        Assert.True(MediaCandidate.TryCreate(url, mime, new Uri("https://school.example.test/lesson"), out var candidate));
+        Assert.Equal(kind, candidate!.Kind);
+        Assert.DoesNotContain("private", candidate.DisplayName);
+    }
+
+    [Theory]
+    [InlineData("blob:https://example.test/id")]
+    [InlineData("file:///C:/secret.mp4")]
+    [InlineData("https://127.0.0.1/file.mp4")]
+    [InlineData("https://example.test/image.jpg")]
+    public void Rejects_non_media_or_unsafe_candidates(string url)
+    {
+        Assert.False(MediaCandidate.TryCreate(url, "image/jpeg", new Uri("https://school.example.test"), out _));
+    }
+
+    [Fact]
+    public void Scoped_cookies_match_host_path_secure_and_are_deleted()
+    {
+        var uri = new Uri("https://school.example.test/lesson/view");
+        BrowserCookie[] cookies = [
+            new("school.example.test", "/lesson", "allowed", "yes", true, true),
+            new(".example.test", "/", "parent", "yes", true, false),
+            new("other.example.test", "/", "unrelated", "no", false, false),
+            new("school.example.test", "/lessons", "wrongPath", "no", false, false),
+            new("school.example.test", "/", "inject", "bad\nline", false, false)];
+        string path;
+        using (var file = ScopedCookieFile.Create([uri], cookies))
+        {
+            path = file.Path;
+            var text = File.ReadAllText(path);
+            Assert.Contains("allowed", text);
+            Assert.Contains("parent", text);
+            Assert.DoesNotContain("unrelated", text);
+            Assert.DoesNotContain("wrongPath", text);
+            Assert.DoesNotContain("bad", text);
+            Assert.Contains("#HttpOnly_", text);
+        }
+        Assert.False(File.Exists(path));
+        Assert.False(ScopedCookieFile.Matches(cookies[0], new Uri("http://school.example.test/lesson/view")));
+        Assert.False(ScopedCookieFile.Matches(cookies[0], new Uri("https://evil.school.example.test/lesson/view")));
+    }
+}

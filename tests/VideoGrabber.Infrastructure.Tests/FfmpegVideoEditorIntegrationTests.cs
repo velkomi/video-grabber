@@ -8,7 +8,7 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class FfmpegVideoEditorIntegrationTests
 {
-    [Fact]
+    [MediaToolsFact]
     public async Task Editor_trims_and_joins_a_real_synthetic_video()
     {
         var toolsRoot = Environment.GetEnvironmentVariable("VIDEOGRABBER_INTEGRATION_TOOLS");
