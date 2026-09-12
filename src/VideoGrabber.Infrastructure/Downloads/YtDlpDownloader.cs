@@ -95,7 +95,12 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             cancellationToken).ConfigureAwait(false);
 
         if (!result.IsSuccess)
-            return new(false, SensitiveDataRedactor.Redact(LastMeaningfulLine(result.StandardError) ?? "Загрузка завершилась с ошибкой."));
+        {
+            var failure = DownloadFailureFormatter.Create(request.Source, result.StandardError);
+            DiagnosticHub.Log.Write("download.failure", "failed", failure.Message + "\n" + failure.Details,
+                jobId: job.Id, exitCode: result.ExitCode);
+            return failure;
+        }
         if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
             return new(false, "Загрузчик завершился, но готовый непустой файл не найден.");
         progress?.Report(new DownloadProgress(null, "Проверяю медиафайл…"));
@@ -122,6 +127,4 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         };
     }
 
-    private static string? LastMeaningfulLine(string value) =>
-        value.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
 }

@@ -234,7 +234,7 @@ public sealed partial class MainWindow : Window
         downloadForm.Children.Add(browserButton);
         body.Children.Add(Card(downloadForm));
 
-        _downloadStatus = new TextBlock { Text = "Готово к работе", FontWeight = FontWeights.SemiBold };
+        _downloadStatus = new TextBlock { Text = "Готово к работе", TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontWeight = FontWeights.SemiBold };
         _downloadProgressTrack = new Grid
         {
             Height = 8,
@@ -255,6 +255,7 @@ public sealed partial class MainWindow : Window
         status.Children.Add(_downloadProgressTrack);
         status.Children.Add(_downloadProgressLabel);
         status.Children.Add(_downloadDetails);
+        _downloadDetails.IsTextSelectionEnabled = true;
         body.Children.Add(Card(status));
 
         _browserHint = MutedText("Войдите на сайте и включите видео. Найденные потоки появятся в отдельном списке.");

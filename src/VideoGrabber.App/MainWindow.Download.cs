@@ -72,7 +72,7 @@ public sealed partial class MainWindow
             var result = await _downloader.DownloadAsync(
                 new DownloadRequest(uri, outputDirectory, quality, browserName, audio, cookieFile?.Path, referer, agent),
                 progress, operation.Token);
-            SetDownloadState(result.Message, result.OutputPath, !result.Success);
+            SetDownloadState(result.Message, result.Success ? result.OutputPath : result.Details ?? result.OutputPath, !result.Success);
             SetProgress(result.Success ? 100 : 0);
             if (result.Success && result.OutputPath is not null)
             {
