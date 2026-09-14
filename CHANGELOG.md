@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+- preview.11: real GetCourse player-to-HLS binding and page-order numbering, per-video quality, editable/resumable queue, queue-wide cancel, isolated job folders, verified final-file promotion, and duration in filenames.
+- GetCourse master candidates can be downloaded without manual playback after automatic clear-HLS preflight; 360p and 480p quality caps are available.
+- Added friendly ordered filenames, successful-output recovery, batch download, in-app help/information, and persisted system/light/dark themes.
+
+### Добавлено
+
+- универсальный HLS-sniffer во встроенном WebView2 для GetCourse/Kinescope, включая extensionless manifests и раздельные video/audio дорожки;
+- точечная маршрутизация GetCourse/CDN через выбранный сетевой адаптер без изменения системного VPN.
+
+### Исправлено
+
+- скачивание найденных HLS теперь использует direct/generic extractor, временные cookies/Referer и fail-closed проверку шифрования;
+- исправлены lifecycle CDP iframe, порт GetCourse 3001, split-HLS merge, MP3 cleanup и обработка callback/timeout дочерних процессов.
+
 ## [0.1.9] - 2026-09-09
 
 ### Изменено

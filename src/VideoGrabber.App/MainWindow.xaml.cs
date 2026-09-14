@@ -74,8 +74,8 @@ public sealed partial class MainWindow : Window
         AppDiagnostics.Write("MainWindow constructor started");
         _rootHost = new Grid
         {
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 245, 247, 251)),
-            RequestedTheme = ElementTheme.Light
+            Background = RootBackgroundBrush,
+            RequestedTheme = ElementTheme.Default
         };
         Content = _rootHost;
         AppDiagnostics.Write("Code-only host initialized");
@@ -84,6 +84,7 @@ public sealed partial class MainWindow : Window
         _downloader = new YtDlpDownloader(runner, _tools);
         _editor = new FfmpegVideoEditor(runner, _tools);
         _rootHost.Children.Add(BuildShell());
+        InitializeTheme();
 
         Title = "VideoGrabber";
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "VideoGrabber.ico");
@@ -102,7 +103,14 @@ public sealed partial class MainWindow : Window
         {
             RefreshComponentStatus();
         }
-        Closed += (_, _) => { _operation?.Cancel(); _logTimer?.Stop(); DestroyBrowser(); };
+        Closed += (_, _) =>
+        {
+            _operation?.Cancel();
+            _logTimer?.Stop();
+            DestroyBrowser(forWindowClose: true);
+            _routeProxy?.Dispose();
+            _routeProxy = null;
+        };
         AppDiagnostics.Write("MainWindow constructor completed");
     }
 
@@ -139,7 +147,7 @@ public sealed partial class MainWindow : Window
         {
             Padding = new Thickness(9, 4, 9, 4),
             CornerRadius = new CornerRadius(9),
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 232, 240, 255)),
+            Background = BadgeBrush,
             Child = new TextBlock { Text = "локально на вашем ПК", FontSize = 11, Foreground = TextBrush }
         });
         _titleBar.Children.Add(brand);
@@ -156,19 +164,22 @@ public sealed partial class MainWindow : Window
         var downloadItem = NavigationButton("↓  Загрузчик");
         var editorItem = NavigationButton("✂  Редактор");
         var settingsItem = NavigationButton("⚙  Компоненты");
+        var infoItem = NavigationButton("ⓘ  Информация");
         downloadItem.Click += (_, _) => ShowPage("download");
         editorItem.Click += (_, _) => ShowPage("editor");
         settingsItem.Click += (_, _) => ShowPage("settings");
+        infoItem.Click += (_, _) => ShowPage("info");
         navigation.Children.Add(downloadItem);
         navigation.Children.Add(editorItem);
         navigation.Children.Add(settingsItem);
+        navigation.Children.Add(infoItem);
         sidebar.Children.Add(navigation);
         var authorCard = BuildAuthorCard();
         Grid.SetRow(authorCard, 1);
         sidebar.Children.Add(authorCard);
         contentArea.Children.Add(new Border
         {
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 255, 255, 255)),
+            Background = CardBrush,
             BorderBrush = CardBorderBrush,
             BorderThickness = new Thickness(0, 0, 1, 0),
             Child = sidebar
@@ -178,11 +189,14 @@ public sealed partial class MainWindow : Window
         _downloadPage = BuildDownloadPage();
         _editorPage = BuildEditorPage();
         _settingsPage = BuildSettingsPage();
+        _infoPage = BuildInformationPage();
         _editorPage.Visibility = Visibility.Collapsed;
         _settingsPage.Visibility = Visibility.Collapsed;
+        _infoPage.Visibility = Visibility.Collapsed;
         pageHost.Children.Add(_downloadPage);
         pageHost.Children.Add(_editorPage);
         pageHost.Children.Add(_settingsPage);
+        pageHost.Children.Add(_infoPage);
         contentArea.Children.Add(pageHost);
         shell.Children.Add(contentArea);
         return shell;
@@ -203,9 +217,11 @@ public sealed partial class MainWindow : Window
 
         _qualityBox = new ComboBox { Header = "Качество", SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
         _qualityBox.Items.Add(ComboItem("Лучшее доступное", "best"));
+        _qualityBox.Items.Add(ComboItem("До 4K", "4K"));
         _qualityBox.Items.Add(ComboItem("До 1080p", "1080p"));
         _qualityBox.Items.Add(ComboItem("До 720p", "720p"));
-        _qualityBox.Items.Add(ComboItem("До 4K", "4K"));
+        _qualityBox.Items.Add(ComboItem("До 480p", "480p"));
+        _qualityBox.Items.Add(ComboItem("До 360p", "360p"));
 
         _cookiesBox = new ComboBox { Header = "Вход на сайте", SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
         _cookiesBox.Items.Add(ComboItem("Не использовать cookies", ""));
@@ -238,7 +254,7 @@ public sealed partial class MainWindow : Window
         _downloadProgressTrack = new Grid
         {
             Height = 8,
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 226, 232, 240))
+            Background = ProgressTrackBrush
         };
         _downloadProgressFill = new Border
         {
@@ -353,6 +369,7 @@ public sealed partial class MainWindow : Window
         refresh.Click += (_, _) => RefreshComponentStatus();
         content.Children.Add(Horizontal(install, refresh));
         body.Children.Add(Card(content));
+        body.Children.Add(BuildNetworkCard());
         body.Children.Add(BuildDiagnosticsCard());
         body.Children.Add(BuildTranscriptionSettingsCard());
         return new ScrollViewer { Content = body };
@@ -363,6 +380,7 @@ public sealed partial class MainWindow : Window
         _downloadPage.Visibility = tag is null or "download" ? Visibility.Visible : Visibility.Collapsed;
         _editorPage.Visibility = tag == "editor" ? Visibility.Visible : Visibility.Collapsed;
         _settingsPage.Visibility = tag == "settings" ? Visibility.Visible : Visibility.Collapsed;
+        _infoPage.Visibility = tag == "info" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void BrowseOutputFolder_Click(object sender, RoutedEventArgs e)
@@ -644,7 +662,7 @@ public sealed partial class MainWindow : Window
     {
         _downloadStatus.Text = status;
         _downloadDetails.Text = string.IsNullOrWhiteSpace(details) ? " " : details;
-        _downloadStatus.Foreground = new SolidColorBrush(isError ? Colors.Firebrick : ColorHelper.FromArgb(255, 31, 41, 55));
+        _downloadStatus.Foreground = isError ? new SolidColorBrush(Colors.IndianRed) : TextBrush;
     }
 
     private void ApplyDownloadProgress(DownloadProgress value)
@@ -832,8 +850,8 @@ public sealed partial class MainWindow : Window
             Margin = new Thickness(0, 18, 0, 0),
             Padding = new Thickness(12, 10, 12, 8),
             CornerRadius = new CornerRadius(10),
-            Background = new SolidColorBrush(ColorHelper.FromArgb(255, 238, 244, 255)),
-            BorderBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 205, 220, 248)),
+            Background = AuthorBackgroundBrush,
+            BorderBrush = AuthorBorderBrush,
             BorderThickness = new Thickness(1),
             Child = content
         };

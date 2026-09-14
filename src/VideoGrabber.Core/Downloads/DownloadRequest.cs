@@ -8,4 +8,10 @@ public sealed record DownloadRequest(
     bool AudioOnly = false,
     string? CookiesFile = null,
     Uri? Referer = null,
-    string? UserAgent = null);
+    string? UserAgent = null,
+    string? LocalProxy = null,
+    Uri? HlsVideoSource = null,
+    Uri? HlsAudioSource = null,
+    bool DirectManifest = false,
+    string? SuggestedBaseName = null,
+    string? JobDirectory = null);

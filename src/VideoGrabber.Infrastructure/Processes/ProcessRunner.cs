@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using VideoGrabber.Core.Processes;
@@ -77,23 +77,14 @@ public sealed class ProcessRunner
         {
             const int maxTail = 262144, maxLine = 32768;
             var tail = new StringBuilder();
-            var line = new StringBuilder();
-            var buffer = new char[4096];
-            int count;
-            while ((count = await reader.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
+            while (await reader.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
             {
-                for (var i = 0; i < count; i++)
-                {
-                    var c = buffer[i];
-                    if (c == '\n') { Emit(); line.Clear(); }
-                    else if (line.Length < maxLine) line.Append(c);
-                }
+                var raw = rawLine.Length <= maxLine ? rawLine : rawLine[..maxLine];
+                Emit(raw);
             }
-            if (line.Length > 0) Emit();
             return tail.ToString();
-            void Emit()
+            void Emit(string raw)
             {
-                var raw = line.ToString().TrimEnd('\r');
                 tail.AppendLine(raw);
                 if (tail.Length > maxTail) tail.Remove(0, tail.Length - maxTail);
                 if (!spec.SuppressOutputLogging)

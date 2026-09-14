@@ -1,0 +1,184 @@
+using Microsoft.UI.Xaml.Controls;
+using VideoGrabber.Infrastructure.Browser;
+
+namespace VideoGrabber.App;
+
+public sealed partial class MainWindow
+{
+    private bool _updatingMediaQuality;
+
+    private async Task<DownloadAttemptOutcome> DownloadCandidateAsync(
+        MediaCandidate candidate,
+        int ordinal,
+        bool resetCookieSelectionAfterUse = true,
+        string? qualityOverride = null)
+    {
+        var quality = qualityOverride ?? SelectedBrowserQuality(candidate);
+        var audioOnly = _audioOnlyBox.IsChecked == true;
+        var plan = MediaDownloadPlanResolver.Resolve(candidate, quality, audioOnly);
+        using var preflight = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        if (!await EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token))
+            return DownloadAttemptOutcome.Failed;
+        var suggested = MediaCandidatePresentation.SuggestedBaseName(candidate, ordinal, quality, _browserMetadata);
+        return await DownloadSourceAsync(plan.Source, candidate.Referer, plan.HlsVideoSource, plan.HlsAudioSource,
+            plan.DirectManifest, suggested, resetCookieSelectionAfterUse);
+    }
+
+    private string SelectedBrowserQuality(MediaCandidate candidate)
+    {
+        if (_mediaQualitySelections.TryGetValue(candidate.Source.AbsoluteUri, out var saved)) return saved;
+        return (_mediaQualityBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "best";
+    }
+
+    private void SyncMediaQualityChoices()
+    {
+        if (_mediaQualityBox is null) return;
+        _updatingMediaQuality = true;
+        try
+        {
+            _mediaQualityBox.Items.Clear();
+            _mediaQualityBox.Items.Add(ComboItem("Лучшее доступное", "best"));
+            if ((_mediaCandidatesBox.SelectedItem as ComboBoxItem)?.Tag is MediaCandidate candidate
+                && candidate.HlsManifest is { IsMaster: true } manifest)
+            {
+                foreach (var height in manifest.Variants.Where(v => v.Height is > 0)
+                    .Select(v => v.Height!.Value).Distinct().OrderDescending())
+                    _mediaQualityBox.Items.Add(ComboItem(height + "p", height + "p"));
+                var saved = _mediaQualitySelections.GetValueOrDefault(candidate.Source.AbsoluteUri, "best");
+                _mediaQualityBox.SelectedIndex = _mediaQualityBox.Items.OfType<ComboBoxItem>()
+                    .Select((item, index) => (item, index))
+                    .FirstOrDefault(x => string.Equals(x.item.Tag?.ToString(), saved, StringComparison.Ordinal)).index;
+            }
+            if (_mediaQualityBox.SelectedIndex < 0) _mediaQualityBox.SelectedIndex = 0;
+        }
+        finally { _updatingMediaQuality = false; }
+    }
+
+    private void StoreSelectedMediaQuality()
+    {
+        if (_updatingMediaQuality) return;
+        if ((_mediaCandidatesBox.SelectedItem as ComboBoxItem)?.Tag is not MediaCandidate candidate) return;
+        var quality = (_mediaQualityBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "best";
+        _mediaQualitySelections[candidate.Source.AbsoluteUri] = quality;
+    }
+
+    private void QueueSelectedCandidate()
+    {
+        if (_operation is not null) return;
+        if ((_mediaCandidatesBox.SelectedItem as ComboBoxItem)?.Tag is not MediaCandidate candidate)
+        {
+            _browserHint.Text = "Выберите видео для очереди.";
+            return;
+        }
+        var ordinal = candidate.PageOrdinal ?? Math.Max(1, _mediaCandidatesBox.SelectedIndex + 1);
+        _browserDownloadQueue.AddOrUpdate(candidate, ordinal, SelectedBrowserQuality(candidate));
+        RefreshDownloadQueueList();
+    }
+
+    private void QueueAllVisibleCandidates()
+    {
+        if (_operation is not null) return;
+        foreach (var (item, index) in _mediaCandidatesBox.Items.OfType<ComboBoxItem>().Select((item, index) => (item, index)))
+        {
+            if (item.Tag is not MediaCandidate candidate) continue;
+            var ordinal = candidate.PageOrdinal ?? index + 1;
+            _browserDownloadQueue.AddOrUpdate(candidate, ordinal, SelectedBrowserQuality(candidate));
+        }
+        RefreshDownloadQueueList();
+    }
+
+    private void MoveQueuedCandidate(int delta)
+    {
+        if (_operation is not null) return;
+        var index = _downloadQueueList.SelectedIndex;
+        if (!_browserDownloadQueue.Move(index, delta)) return;
+        RefreshDownloadQueueList(Math.Clamp(index + delta, 0, _browserDownloadQueue.Items.Count - 1));
+    }
+
+    private void RemoveQueuedCandidate()
+    {
+        if (_operation is not null) return;
+        var index = _downloadQueueList.SelectedIndex;
+        if (!_browserDownloadQueue.RemoveAt(index)) return;
+        RefreshDownloadQueueList(Math.Min(index, _browserDownloadQueue.Items.Count - 1));
+    }
+
+    private void RefreshDownloadQueueList(int selectedIndex = -1)
+    {
+        if (_downloadQueueList is null) return;
+        _downloadQueueList.Items.Clear();
+        foreach (var entry in _browserDownloadQueue.Items)
+        {
+            var label = MediaCandidatePresentation.DisplayName(entry.Candidate, entry.Ordinal, _browserMetadata);
+            _downloadQueueList.Items.Add(new ListViewItem
+            {
+                Content = $"{label}  •  {entry.Quality}",
+                Tag = entry
+            });
+        }
+        if (_downloadQueueList.Items.Count > 0)
+            _downloadQueueList.SelectedIndex = selectedIndex >= 0
+                ? Math.Min(selectedIndex, _downloadQueueList.Items.Count - 1)
+                : 0;
+    }
+
+    private void SyncQueuedCandidate(MediaCandidate candidate)
+    {
+        var queued = _browserDownloadQueue.Items.FirstOrDefault(item =>
+            string.Equals(item.Candidate.Source.AbsoluteUri, candidate.Source.AbsoluteUri, StringComparison.Ordinal));
+        if (queued is null) return;
+        _browserDownloadQueue.AddOrUpdate(candidate, candidate.PageOrdinal ?? queued.Ordinal, queued.Quality);
+        RefreshDownloadQueueList();
+    }
+
+    private async Task DownloadQueuedCandidatesAsync()
+    {
+        if (_operation is not null) return;
+        if (_browserDownloadQueue.Items.Count == 0)
+        {
+            _browserHint.Text = "Очередь пуста.";
+            return;
+        }
+        var selectedCookies = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        try
+        {
+            var snapshot = _browserDownloadQueue.Items.ToArray();
+            for (var i = 0; i < snapshot.Length; i++)
+            {
+                var entry = snapshot[i];
+                _browserHint.Text = $"Очередь: {i + 1} из {snapshot.Length}. Осталось: {_browserDownloadQueue.Items.Count}.";
+                var outcome = await DownloadCandidateAsync(entry.Candidate, entry.Ordinal,
+                    resetCookieSelectionAfterUse: false, qualityOverride: entry.Quality);
+                if (outcome == DownloadAttemptOutcome.Succeeded)
+                {
+                    _browserDownloadQueue.RemoveBySource(entry.Candidate.Source);
+                    RefreshDownloadQueueList();
+                }
+                else if (outcome == DownloadAttemptOutcome.Cancelled)
+                {
+                    _browserHint.Text = "Очередь остановлена. Невыполненные пункты сохранены — нажмите «Скачать очередь / продолжить».";
+                    return;
+                }
+            }
+            _browserHint.Text = _browserDownloadQueue.Items.Count == 0
+                ? "Очередь завершена. Все пункты скачаны."
+                : $"Проход очереди завершён. Для повтора осталось: {_browserDownloadQueue.Items.Count}.";
+        }
+        finally
+        {
+            if (BrowserDownloadSessionPolicy.ShouldResetAfterUse(selectedCookies)) _cookiesBox.SelectedIndex = 0;
+        }
+    }
+
+    private async Task DownloadAllVisibleCandidatesAsync()
+    {
+        if (_operation is not null) return;
+        QueueAllVisibleCandidates();
+        if (_browserDownloadQueue.Items.Count == 0)
+        {
+            _browserHint.Text = "Сначала дождитесь обнаружения видео.";
+            return;
+        }
+        await DownloadQueuedCandidatesAsync();
+    }
+}

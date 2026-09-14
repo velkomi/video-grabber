@@ -10,9 +10,9 @@ public sealed class ProcessLifecycleTests
     public async Task Callback_failure_drains_output_without_hanging_the_child()
     {
         if (!OperatingSystem.IsWindows()) return;
-        var script = "1..10000 | ForEach-Object { [Console]::WriteLine('test-output-' + $_) }";
+        var command = "for /L %i in (1,1,10000) do @echo test-output-%i";
         await Assert.ThrowsAsync<InvalidOperationException>(() => new ProcessRunner().RunAsync(new ProcessSpec(
-            "powershell.exe", ["-NoProfile", "-Command", script], Timeout: TimeSpan.FromSeconds(4)),
+            "cmd.exe", ["/d", "/c", command], Timeout: TimeSpan.FromSeconds(4)),
             _ => throw new InvalidOperationException("callback failed"), CancellationToken.None));
     }
 

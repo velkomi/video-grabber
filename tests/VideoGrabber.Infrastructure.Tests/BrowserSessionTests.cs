@@ -52,4 +52,40 @@ public sealed class BrowserSessionTests
         Assert.False(ScopedCookieFile.Matches(cookies[0], new Uri("http://school.example.test/lesson/view")));
         Assert.False(ScopedCookieFile.Matches(cookies[0], new Uri("https://evil.school.example.test/lesson/view")));
     }
+    [Fact]
+    public void Scoped_cookie_file_can_include_lesson_player_and_cdn_domains()
+    {
+        var sources = new[]
+        {
+            new Uri("https://iglyrazuma.ru/pl/teach/control/lesson/view?id=1"),
+            new Uri("https://api2.gcvh.ru/sign-player/?json=x"),
+            new Uri("https://gc77.vhcdn.com/master.m3u8?token=x")
+        };
+        BrowserCookie[] cookies =
+        [
+            new("iglyrazuma.ru", "/", "PHPSESSID5", "lesson", true, true),
+            new("api2.gcvh.ru", "/", "player", "yes", true, false),
+            new("gc77.vhcdn.com", "/", "cdn", "yes", true, false),
+            new("unrelated.example", "/", "nope", "no", true, false)
+        ];
+        using var file = ScopedCookieFile.Create(sources, cookies);
+        var text = File.ReadAllText(file.Path);
+        Assert.Contains("PHPSESSID5", text);
+        Assert.Contains("player", text);
+        Assert.Contains("cdn", text);
+        Assert.DoesNotContain("nope", text);
+    }
+
+    [Fact]
+    public void Candidate_display_can_include_safe_hls_details_without_url_query()
+    {
+        var candidate = new MediaCandidate(
+            new Uri("https://cdn.example/master.m3u8?token=secret"),
+            new Uri("https://school.example/lesson"),
+            "HLS",
+            "master [360p, 720p; audio: ru]");
+        Assert.Equal("HLS master [360p, 720p; audio: ru] — cdn.example", candidate.DisplayName);
+        Assert.DoesNotContain("secret", candidate.DisplayName);
+    }
+
 }

@@ -1,5 +1,41 @@
 # Журнал подготовки релизов
 
+## [0.1.10-preview.11] - 2026-09-14
+
+- Status: candidate
+- Previous version: 0.1.10-preview.10
+- Changed: real GetCourse player-to-HLS binding by CDP frameId/frame tree; page-order numbering; per-video quality; editable queue with move/delete/continue; queue-wide cancel; isolated download jobs; verified final promotion; duration in friendly filenames.
+- Works: focused preview.11 regression tests 10/10; explicit component-enabled suite 253/253, 0 skipped; official self-contained release packaging succeeded; packaged EXE/WebView2 smoke passed with all preview.11 queue/quality controls present; the final GitHub release ZIP checksum is published alongside the downloadable asset.
+- Does not work: DRM/encrypted HLS remains blocked by design; final packaged closed-GetCourse acceptance is still required.
+- Rollback note: preview.10 and stable v0.1.9 remain untouched.
+
+## [0.1.10-preview.10] - 2026-09-14
+
+- Status: candidate
+- Previous version: 0.1.10-preview.9
+- Changed: GetCourse master download without manual playback, explicit 360p/480p/720p quality selection, friendly filenames, output recovery, batch download, information/help page, persisted system/light/dark themes.
+- Works: automatic tests 244/244, 0 skipped; Release build succeeded; packaged UI smoke confirmed Information, help, and dark theme; ZIP SHA-256 E81A748E8191324F436D078955E3787E8C7109442DC43453CFCD7CC18DED7DD5.
+- Does not work: DRM/encrypted HLS remains blocked by design; final closed-GetCourse packaged acceptance is still required.
+- Rollback note: preview.9 and stable v0.1.9 remain untouched.
+
+## [0.1.10-preview.9] - 2026-09-14
+
+- Status: candidate
+- Previous version: 0.1.10-preview.8
+- Changed: verified WebResourceResponse HLS fallback for GetCourse/Kinescope when CDP media events are absent; safe window/proxy shutdown after active playback
+- Works: automatic tests 228/228, 0 skipped; Release build pending; all five observed GetCourse videos play through scoped routing
+- Does not work: live candidate-list/download acceptance for closed GetCourse still requires the preview.9 packaged test; DRM/encrypted HLS remains blocked
+- Rollback note: preview.8 and stable v0.1.9 remain untouched
+
+## [0.1.10-preview.8] - 2026-09-14
+
+- Status: candidate
+- Previous version: 0.1.10-preview.7
+- Changed: WebView2/CDP HLS discovery для GetCourse/Kinescope, direct manifests, split video/audio, scoped Ethernet routing, privacy/lifecycle hardening
+- Works: автоматические тесты 223/223, 0 skipped; Release build 0 warnings/errors; обычный и split HLS integration tests с FFmpeg/FFprobe; real Whisper integration
+- Does not work: DRM/encrypted HLS не скачивается; живой закрытый GetCourse после упаковки ещё требует ручного входа и acceptance-проверки
+- Rollback note: прежние preview и стабильная v0.1.9 не перезаписываются
+
 ## [0.1.9] - 2026-09-09 15:31 +03:00
 
 - Status: complete
