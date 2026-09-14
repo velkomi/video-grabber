@@ -138,8 +138,7 @@ public sealed partial class MainWindow
                         _browserHint.Text = "Страница не загрузилась: " + args.WebErrorStatus;
                         return;
                     }
-                    await RefreshBrowserFrameTreeAsync(core);
-                    await CaptureBrowserMetadataAsync(core);
+                    await RefreshBrowserBindingsAsync(core);
                 };
                 core.WebResourceResponseReceived += Browser_WebResourceResponseReceived;
                 await EnableDevToolsMediaDiscoveryAsync(core);

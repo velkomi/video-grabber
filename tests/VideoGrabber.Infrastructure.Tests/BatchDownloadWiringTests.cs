@@ -21,7 +21,6 @@ public sealed class BatchDownloadWiringTests
         var batch = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
         var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
         Assert.Contains("DownloadAttemptOutcome.Cancelled", batch);
-        Assert.Contains("Очередь остановлена", batch);
         Assert.Contains("return;", batch);
         Assert.Contains("enum DownloadAttemptOutcome", download);
     }

@@ -39,11 +39,12 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         var suggestedBase = string.IsNullOrWhiteSpace(request.SuggestedBaseName)
             ? null
             : DownloadFileName.SanitizeBaseName(request.SuggestedBaseName);
-        var jobRoot = string.IsNullOrWhiteSpace(request.JobDirectory)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "VideoGrabber", "jobs", "download-" + Guid.NewGuid().ToString("N"))
-            : Path.GetFullPath(request.JobDirectory);
+        var explicitJobDirectory = !string.IsNullOrWhiteSpace(request.JobDirectory);
+        var jobRoot = explicitJobDirectory
+            ? Path.GetFullPath(request.JobDirectory!)
+            : Path.GetFullPath(request.OutputDirectory);
         var jobExisted = Directory.Exists(jobRoot);
+        var ownsJobDirectory = explicitJobDirectory && !jobExisted;
         Directory.CreateDirectory(jobRoot);
         var beforeOutputFiles = SnapshotOutputFiles(request.OutputDirectory);
         var cleanupJob = true;
@@ -51,7 +52,7 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         {
         var outputTemplate = suggestedBase is null
             ? Path.Combine(jobRoot, "%(title).180B [%(id)s].%(ext)s")
-            : Path.Combine(jobRoot, suggestedBase + ".%(ext)s");
+            : Path.Combine(jobRoot, suggestedBase + " - downloading.%(ext)s");
         var beforeFiles = SnapshotOutputFiles(jobRoot);
 
         var arguments = new List<string>
@@ -165,14 +166,15 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         var outputParent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
         var targetParent = Path.GetFullPath(request.OutputDirectory).TrimEnd(Path.DirectorySeparatorChar);
         string finalOutput;
-        if (string.Equals(outputParent?.TrimEnd(Path.DirectorySeparatorChar), targetParent, StringComparison.OrdinalIgnoreCase))
+        if (suggestedBase is null
+            && string.Equals(outputParent?.TrimEnd(Path.DirectorySeparatorChar), targetParent, StringComparison.OrdinalIgnoreCase))
         {
             finalOutput = outputPath;
         }
         else
         {
             var finalBase = suggestedBase ?? DownloadFileName.SanitizeBaseName(Path.GetFileNameWithoutExtension(outputPath));
-            if (media.DurationSeconds > 0) finalBase += " - " + DurationTag(media.DurationSeconds);
+            if (media.DurationSeconds > 0) finalBase += " - " + DownloadFileName.DurationTag(media.DurationSeconds);
             finalOutput = AvailableOutputPath(request.OutputDirectory, finalBase, Path.GetExtension(outputPath));
             finalOutput = await PromoteVerifiedOutputAsync(outputPath, finalOutput, cancellationToken).ConfigureAwait(false);
         }
@@ -187,7 +189,7 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         }
         finally
         {
-            if (cleanupJob && !jobExisted) TryDeleteDirectory(jobRoot);
+            if (cleanupJob && ownsJobDirectory) TryDeleteDirectory(jobRoot);
         }
     }
 
@@ -342,12 +344,6 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         return Path.Combine(directory, safeBase + "-" + Guid.NewGuid().ToString("N")[..8] + extension);
     }
 
-
-    private static string DurationTag(double durationSeconds)
-    {
-        var span = TimeSpan.FromSeconds(Math.Max(0, Math.Round(durationSeconds)));
-        return $"{(int)span.TotalHours:00}h{span.Minutes:00}m{span.Seconds:00}s";
-    }
 
     private static async Task<string> PromoteVerifiedOutputAsync(string source, string destination, CancellationToken cancellationToken)
     {

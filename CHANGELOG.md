@@ -3,6 +3,8 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии следуют [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+- Preview.12 fixes exact GetCourse player ordering by iframe URL, allows queue edits during active downloads, keeps work files in the chosen output folder, and improves course filenames.
+
 
 - preview.11: real GetCourse player-to-HLS binding and page-order numbering, per-video quality, editable/resumable queue, queue-wide cancel, isolated job folders, verified final-file promotion, and duration in filenames.
 - GetCourse master candidates can be downloaded without manual playback after automatic clear-HLS preflight; 360p and 480p quality caps are available.

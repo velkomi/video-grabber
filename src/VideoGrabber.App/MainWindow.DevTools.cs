@@ -240,6 +240,7 @@ public sealed partial class MainWindow
         {
             try { await core.CallDevToolsProtocolMethodForSessionAsync(sessionId, "Runtime.runIfWaitingForDebugger", "{}"); } catch { }
         }
+        ScheduleBrowserBindingRefresh(core);
     }
 
     private void OnDevToolsTargetDetached(string json)

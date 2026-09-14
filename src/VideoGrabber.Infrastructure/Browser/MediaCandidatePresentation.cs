@@ -33,7 +33,27 @@ public static class MediaCandidatePresentation
     public static string SuggestedBaseName(MediaCandidate candidate, int ordinal, string quality, BrowserPageMetadata metadata)
     {
         var effectiveOrdinal = candidate.PageOrdinal ?? ordinal;
+        var page = Clean(metadata.PageTitle);
+        var section = Clean(candidate.PageSectionTitle);
+        if (!string.IsNullOrWhiteSpace(page) && !string.IsNullOrWhiteSpace(section)
+            && page.Contains("\u043C\u043E\u0434\u0443\u043B", StringComparison.OrdinalIgnoreCase)
+            && section.Contains("\u0447\u0430\u0441\u0442", StringComparison.OrdinalIgnoreCase))
+            return BuildCourseSuggested(page, section, quality);
         return DownloadFileName.BuildSuggested(HumanTitle(candidate, metadata, effectiveOrdinal), effectiveOrdinal, quality);
+    }
+
+    private static string BuildCourseSuggested(string page, string section, string quality)
+    {
+        var pageParts = System.Text.RegularExpressions.Regex.Split(page, @"\s+[-\u2013\u2014]\s+")
+            .Select(Clean).Where(value => !string.IsNullOrWhiteSpace(value)).Cast<string>().ToList();
+        var module = pageParts.FirstOrDefault(value => value.Contains("\u043C\u043E\u0434\u0443\u043B", StringComparison.OrdinalIgnoreCase));
+        if (module is not null) pageParts.Remove(module);
+        var pieces = new List<string>();
+        if (!string.IsNullOrWhiteSpace(module)) pieces.Add(module);
+        pieces.Add(section);
+        pieces.AddRange(pageParts.Where(value => !string.Equals(value, section, StringComparison.OrdinalIgnoreCase)));
+        pieces.Add(DownloadFileName.SanitizeBaseName(string.IsNullOrWhiteSpace(quality) ? "best" : quality, 24));
+        return DownloadFileName.SanitizeBaseName(string.Join(" - ", pieces));
     }
 
     public static int GetInsertIndex(MediaCandidate candidate, IReadOnlyList<MediaCandidate> existing)

@@ -8,7 +8,7 @@ namespace VideoGrabber.App;
 
 public sealed partial class MainWindow
 {
-    private sealed record BrowserPlayerPayload(int ordinal, string? title);
+    private sealed record BrowserPlayerPayload(int ordinal, string? title, string? source);
     private sealed record BrowserMetadataPayload(string? pageTitle, string[]? sections, BrowserPlayerPayload[]? playerSlots);
     private BrowserPageMetadata _browserMetadata = BrowserPageMetadata.Empty;
 
@@ -47,7 +47,7 @@ public sealed partial class MainWindow
                 return '';
               };
               const playerSlots = [...document.querySelectorAll('iframe[src]')].filter(isPlayer)
-                .map((frame, index) => ({ ordinal: index + 1, title: nearestTitle(frame) }));
+                .map((frame, index) => ({ ordinal: index + 1, title: nearestTitle(frame), source: frame.src }));
               return { pageTitle: clean(document.title), sections, playerSlots };
             })()
             """;
@@ -59,7 +59,7 @@ public sealed partial class MainWindow
             var sections = (payload.sections ?? []).Where(value => !string.IsNullOrWhiteSpace(value)).Take(40).ToArray();
             var slots = (payload.playerSlots ?? [])
                 .Where(slot => slot.ordinal > 0 && slot.ordinal <= 200)
-                .Select(slot => new BrowserPlayerSlot(slot.ordinal, slot.title))
+                .Select(slot => new BrowserPlayerSlot(slot.ordinal, slot.title, SafePlayerUri(slot.source)))
                 .ToArray();
             _browserMetadata = new BrowserPageMetadata(payload.pageTitle, sections, slots);
             RebindAndReorderMediaCandidates();
@@ -70,6 +70,40 @@ public sealed partial class MainWindow
         }
     }
 
+    private static Uri? SafePlayerUri(string? value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo)) return null;
+        return uri;
+    }
+    private int _bindingRefreshVersion;
+
+    private void ScheduleBrowserBindingRefresh(CoreWebView2 core)
+    {
+        var version = Interlocked.Increment(ref _bindingRefreshVersion);
+        _ = RefreshBrowserBindingsAfterDelayAsync(core, version);
+    }
+
+    private async Task RefreshBrowserBindingsAfterDelayAsync(CoreWebView2 core, int version)
+    {
+        await Task.Delay(350);
+        if (version != Volatile.Read(ref _bindingRefreshVersion) || _mediaBrowser?.CoreWebView2 != core) return;
+        await RefreshBrowserBindingsAsync(core);
+    }
+
+    private async Task RefreshBrowserBindingsAsync(CoreWebView2 core)
+    {
+        await RefreshBrowserFrameTreeAsync(core);
+        await CaptureBrowserMetadataAsync(core);
+    }
+
+    private async Task<MediaCandidate> RefreshCandidateBindingAsync(MediaCandidate candidate)
+    {
+        if (_mediaBrowser?.CoreWebView2 is { } core) await RefreshBrowserBindingsAsync(core);
+        var current = _mediaCandidateItems.TryGetValue(candidate.Source.AbsoluteUri, out var item)
+            && item.Tag is MediaCandidate latest ? latest : candidate;
+        return BrowserFrameBindingResolver.Bind(current, _browserFrames, _browserMetadata);
+    }
     private void RefreshMediaCandidateLabels()
     {
         DispatcherQueue.TryEnqueue(() =>

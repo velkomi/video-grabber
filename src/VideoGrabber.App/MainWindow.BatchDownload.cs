@@ -13,6 +13,8 @@ public sealed partial class MainWindow
         bool resetCookieSelectionAfterUse = true,
         string? qualityOverride = null)
     {
+        candidate = await RefreshCandidateBindingAsync(candidate);
+        ordinal = candidate.PageOrdinal ?? ordinal;
         var quality = qualityOverride ?? SelectedBrowserQuality(candidate);
         var audioOnly = _audioOnlyBox.IsChecked == true;
         var plan = MediaDownloadPlanResolver.Resolve(candidate, quality, audioOnly);
@@ -64,7 +66,6 @@ public sealed partial class MainWindow
 
     private void QueueSelectedCandidate()
     {
-        if (_operation is not null) return;
         if ((_mediaCandidatesBox.SelectedItem as ComboBoxItem)?.Tag is not MediaCandidate candidate)
         {
             _browserHint.Text = "Выберите видео для очереди.";
@@ -77,7 +78,6 @@ public sealed partial class MainWindow
 
     private void QueueAllVisibleCandidates()
     {
-        if (_operation is not null) return;
         foreach (var (item, index) in _mediaCandidatesBox.Items.OfType<ComboBoxItem>().Select((item, index) => (item, index)))
         {
             if (item.Tag is not MediaCandidate candidate) continue;
@@ -89,7 +89,6 @@ public sealed partial class MainWindow
 
     private void MoveQueuedCandidate(int delta)
     {
-        if (_operation is not null) return;
         var index = _downloadQueueList.SelectedIndex;
         if (!_browserDownloadQueue.Move(index, delta)) return;
         RefreshDownloadQueueList(Math.Clamp(index + delta, 0, _browserDownloadQueue.Items.Count - 1));
@@ -97,7 +96,6 @@ public sealed partial class MainWindow
 
     private void RemoveQueuedCandidate()
     {
-        if (_operation is not null) return;
         var index = _downloadQueueList.SelectedIndex;
         if (!_browserDownloadQueue.RemoveAt(index)) return;
         RefreshDownloadQueueList(Math.Min(index, _browserDownloadQueue.Items.Count - 1));
@@ -142,23 +140,27 @@ public sealed partial class MainWindow
         var selectedCookies = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
         try
         {
-            var snapshot = _browserDownloadQueue.Items.ToArray();
-            for (var i = 0; i < snapshot.Length; i++)
+            var completed = 0;
+            while (_browserDownloadQueue.Items.Count > 0)
             {
-                var entry = snapshot[i];
-                _browserHint.Text = $"Очередь: {i + 1} из {snapshot.Length}. Осталось: {_browserDownloadQueue.Items.Count}.";
+                var entry = _browserDownloadQueue.Items[0];
+                _browserHint.Text = $"\u041E\u0447\u0435\u0440\u0435\u0434\u044C: \u0441\u043A\u0430\u0447\u0430\u043D\u043E {completed}. \u041E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {_browserDownloadQueue.Items.Count}.";
                 var outcome = await DownloadCandidateAsync(entry.Candidate, entry.Ordinal,
                     resetCookieSelectionAfterUse: false, qualityOverride: entry.Quality);
                 if (outcome == DownloadAttemptOutcome.Succeeded)
                 {
+                    completed++;
                     _browserDownloadQueue.RemoveBySource(entry.Candidate.Source);
                     RefreshDownloadQueueList();
+                    continue;
                 }
-                else if (outcome == DownloadAttemptOutcome.Cancelled)
+                if (outcome == DownloadAttemptOutcome.Cancelled)
                 {
-                    _browserHint.Text = "Очередь остановлена. Невыполненные пункты сохранены — нажмите «Скачать очередь / продолжить».";
+                    _browserHint.Text = "\u041E\u0447\u0435\u0440\u0435\u0434\u044C \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430. \u041D\u0435\u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u044B\u0435 \u043F\u0443\u043D\u043A\u0442\u044B \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0421\u043A\u0430\u0447\u0430\u0442\u044C \u043E\u0447\u0435\u0440\u0435\u0434\u044C / \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\u00BB.";
                     return;
                 }
+                _browserHint.Text = "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430 \u043F\u0443\u043D\u043A\u0442\u0430 \u043D\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430. \u041E\u043D \u043E\u0441\u0442\u0430\u0432\u043B\u0435\u043D \u0432 \u043E\u0447\u0435\u0440\u0435\u0434\u0438 \u0434\u043B\u044F \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E\u0439 \u043F\u043E\u043F\u044B\u0442\u043A\u0438.";
+                return;
             }
             _browserHint.Text = _browserDownloadQueue.Items.Count == 0
                 ? "Очередь завершена. Все пункты скачаны."

@@ -4,7 +4,7 @@ namespace VideoGrabber.Infrastructure.Browser;
 
 public sealed record DevToolsFrameInfo(string FrameId, Uri? Source, int TreeOrder);
 
-public sealed record BrowserPlayerSlot(int Ordinal, string? Title);
+public sealed record BrowserPlayerSlot(int Ordinal, string? Title, Uri? Source = null);
 
 public static class DevToolsFrameTreeParser
 {
@@ -54,6 +54,10 @@ public static class BrowserFrameBindingResolver
 {
     public static MediaCandidate Bind(MediaCandidate candidate, IReadOnlyList<DevToolsFrameInfo> frames, BrowserPageMetadata metadata)
     {
+        var domSlot = metadata.PlayerSlots.FirstOrDefault(slot => MatchesReferer(slot.Source, candidate.Referer));
+        if (domSlot is not null)
+            return candidate with { PageOrdinal = domSlot.Ordinal, PageSectionTitle = domSlot.Title };
+
         var playerFrames = frames.Where(IsPlayerFrame).OrderBy(frame => frame.TreeOrder).ToArray();
         if (playerFrames.Length == 0) return candidate;
         var frame = !string.IsNullOrWhiteSpace(candidate.FrameId)
@@ -73,6 +77,8 @@ public static class BrowserFrameBindingResolver
 
     private static bool MatchesReferer(Uri? frame, Uri referer)
         => frame is not null
+            && string.Equals(frame.Scheme, referer.Scheme, StringComparison.OrdinalIgnoreCase)
             && string.Equals(frame.IdnHost, referer.IdnHost, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(frame.AbsolutePath, referer.AbsolutePath, StringComparison.OrdinalIgnoreCase);
+            && frame.Port == referer.Port
+            && string.Equals(frame.PathAndQuery, referer.PathAndQuery, StringComparison.Ordinal);
 }

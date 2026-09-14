@@ -15,13 +15,13 @@ public sealed class DownloadOutputPathTests
         Directory.CreateDirectory(root);
         try
         {
-            var runner = new CreatesFileWithoutPathRunner(root, "01 - Часть 1 - 720p.mp4");
+            var runner = new CreatesFileWithoutPathRunner();
             var probe = new StubProbe(new MediaProbeResult(true, true, true, "aac"));
             var result = await new YtDlpDownloader(runner, new ToolLocator(root, root), probe).DownloadAsync(
                 new DownloadRequest(new Uri("https://cdn.example/master"), root, "720p", DirectManifest: true,
                     SuggestedBaseName: "01 - Часть 1 - 720p"), null, CancellationToken.None);
             Assert.True(result.Success, result.Message);
-            Assert.Equal(runner.CreatedPath, result.OutputPath);
+            Assert.Equal(Path.Combine(root, "01 - \u0427\u0430\u0441\u0442\u044C 1 - 720p.mp4"), result.OutputPath);
         }
         finally { Directory.Delete(root, true); }
     }
@@ -38,12 +38,14 @@ public sealed class DownloadOutputPathTests
         Assert.DoesNotContain('*', value);
     }
 
-    private sealed class CreatesFileWithoutPathRunner(string root, string fileName) : IProcessRunner
+    private sealed class CreatesFileWithoutPathRunner : IProcessRunner
     {
-        public string CreatedPath { get; } = Path.Combine(root, fileName);
         public Task<ProcessResult> RunAsync(ProcessSpec spec, Action<string>? onOutput, CancellationToken cancellationToken)
         {
-            File.WriteAllBytes(CreatedPath, [1, 2, 3, 4]);
+            var index = spec.Arguments.ToList().IndexOf("-o");
+            var output = spec.Arguments[index + 1].Replace("%(ext)s", "mp4", StringComparison.Ordinal);
+            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+            File.WriteAllBytes(output, [1, 2, 3, 4]);
             return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
         }
     }

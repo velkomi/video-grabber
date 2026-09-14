@@ -40,6 +40,14 @@ public static class DownloadFileName
         return cleaned.Length == 0 ? "Видео" : cleaned;
     }
 
+
+    public static string DurationTag(double durationSeconds)
+    {
+        var span = TimeSpan.FromSeconds(Math.Max(0, Math.Round(durationSeconds)));
+        if (span.TotalHours >= 1)
+            return $"{(int)span.TotalHours:00}h{span.Minutes:00}m{span.Seconds:00}s";
+        return $"{span.Minutes:00}m{span.Seconds:00}s";
+    }
     public static string BuildSuggested(string? title, int ordinal, string quality)
     {
         var safeTitle = SanitizeBaseName(title);

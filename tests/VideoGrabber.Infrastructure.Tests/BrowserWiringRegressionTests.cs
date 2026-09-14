@@ -185,9 +185,10 @@ public sealed partial class BrowserWiringRegressionTests
         var browser = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
         var devtools = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
         var metadata = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Metadata.cs"));
-        Assert.Contains("RefreshBrowserFrameTreeAsync", browser);
+        Assert.Contains("RefreshBrowserBindingsAsync", browser);
         Assert.Contains("BrowserFrameBindingResolver.Bind", devtools);
         Assert.Contains("RebindAndReorderMediaCandidates", devtools);
         Assert.Contains("playerSlots", metadata);
+        Assert.Contains("source: frame.src", metadata);
     }
 }

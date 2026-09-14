@@ -1,5 +1,13 @@
 # Журнал подготовки релизов
 
+## [0.1.10-preview.12] - 2026-09-14
+
+- Status: candidate
+- Previous version: 0.1.10-preview.11
+- Changed: exact iframe Referer-to-DOM binding for late GetCourse players; binding refresh on late iframe attachment and immediately before download; queue editing while downloads run; live queue consumption; work/partial files in the selected output folder; course filenames ordered module -> part -> remaining title -> quality -> duration.
+- Verification: preview.12 regression tests 5/5; full component-enabled suite 258/258, 0 skipped.
+- Live acceptance still required: closed iglyrazuma.ru lesson after a fresh InPrivate sign-in.
+- Rollback note: published preview.11 and stable v0.1.9 remain untouched.
 ## [0.1.10-preview.11] - 2026-09-14
 
 - Status: candidate
