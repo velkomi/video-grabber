@@ -25,7 +25,8 @@ public static class MediaCandidatePresentation
                 .Select(height => height + "p")
                 .ToArray();
             var qualityText = qualities.Length == 0 ? "HLS" : string.Join(" / ", qualities);
-            return $"Видео {Math.Max(1, effectiveOrdinal):00} — {title} — {qualityText}";
+            var durationText = manifest.DurationSeconds is > 0 ? " ? " + FormatDuration(manifest.DurationSeconds.Value) : string.Empty;
+            return $"\u0412\u0438\u0434\u0435\u043e {Math.Max(1, effectiveOrdinal):00} \u2014 {title}{durationText} \u2014 {qualityText}";
         }
         return $"Видео {Math.Max(1, effectiveOrdinal):00} — {title} — {candidate.Kind}";
     }
@@ -90,6 +91,14 @@ public static class MediaCandidatePresentation
         if (!string.IsNullOrWhiteSpace(section)) return section;
         if (!string.IsNullOrWhiteSpace(page)) return page;
         return $"Видео {Math.Max(1, ordinal):00}";
+    }
+
+    private static string FormatDuration(double seconds)
+    {
+        var span = TimeSpan.FromSeconds(Math.Max(0, Math.Round(seconds)));
+        return span.TotalHours >= 1
+            ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
+            : $"{span.Minutes}:{span.Seconds:00}";
     }
 
     private static string? Clean(string? value)

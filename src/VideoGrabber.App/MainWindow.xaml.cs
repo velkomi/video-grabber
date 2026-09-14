@@ -67,6 +67,8 @@ public sealed partial class MainWindow : Window
     private WebView2? _mediaBrowser;
     private CancellationTokenSource? _operation;
     private bool _isInstallingComponents;
+    private bool _closeRequested;
+    private bool _allowWindowClose;
     private int _lastLoggedProgressBucket = -1;
 
     public MainWindow()
@@ -103,9 +105,22 @@ public sealed partial class MainWindow : Window
         {
             RefreshComponentStatus();
         }
+        AppWindow.Closing += (_, args) =>
+        {
+            if (_allowWindowClose) return;
+            if (_operation is not null)
+            {
+                args.Cancel = true;
+                _closeRequested = true;
+                _queueRunRequested = false;
+                SetDownloadState("\u0417\u0430\u0432\u0435\u0440\u0448\u0430\u044e \u0442\u0435\u043a\u0443\u0449\u0443\u044e \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0443\u2026", "\u041f\u043e\u0441\u043b\u0435 \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u043f\u0440\u043e\u0446\u0435\u0441\u0441\u0430 \u043e\u043a\u043d\u043e \u0437\u0430\u043a\u0440\u043e\u0435\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438.");
+                _operation.Cancel();
+                return;
+            }
+            _allowWindowClose = true;
+        };
         Closed += (_, _) =>
         {
-            _operation?.Cancel();
             _logTimer?.Stop();
             DestroyBrowser(forWindowClose: true);
             _routeProxy?.Dispose();

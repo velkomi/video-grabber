@@ -48,6 +48,8 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         Directory.CreateDirectory(jobRoot);
         var beforeOutputFiles = SnapshotOutputFiles(request.OutputDirectory);
         var cleanupJob = true;
+        var downloadReached100 = false;
+        string? outputPath = null;
         try
         {
         var outputTemplate = suggestedBase is null
@@ -112,7 +114,6 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             arguments.AddRange(["--extract-audio", "--audio-format", "mp3", "--audio-quality", "2"]);
         arguments.Add(request.Source.AbsoluteUri);
 
-        string? outputPath = null;
         var result = await runner.RunAsync(
             new ProcessSpec(tools.YtDlp, arguments, jobRoot),
             line =>
@@ -130,6 +131,7 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
                     }
                     return;
                 }
+                if (parsedProgress.Percent is >= 99.9) downloadReached100 = true;
                 progress?.Report(parsedProgress);
             },
             cancellationToken).ConfigureAwait(false);
@@ -184,6 +186,17 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         }
         catch (OperationCanceledException)
         {
+            if (downloadReached100)
+            {
+                var recovered = await TryFinalizeCompletedAfterCancellationAsync(request, suggestedBase, jobRoot).ConfigureAwait(false);
+                if (recovered is not null)
+                {
+                    CleanupTransientTempFiles(jobRoot, suggestedBase);
+                    job.Complete();
+                    return new(true, request.AudioOnly ? "MP3 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d." : "\u0412\u0438\u0434\u0435\u043e \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d\u043e \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u043e.", recovered);
+                }
+            }
+            CleanupTransientTempFiles(jobRoot, suggestedBase);
             cleanupJob = false;
             throw;
         }
@@ -329,6 +342,53 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
     {
         var ext = Path.GetExtension(path).ToLowerInvariant();
         return ext is ".mp4" or ".mkv" or ".webm" or ".mov" or ".m4a" or ".mp3" or ".aac" or ".opus" or ".ts";
+    }
+
+    private async Task<string?> TryFinalizeCompletedAfterCancellationAsync(
+        DownloadRequest request,
+        string? suggestedBase,
+        string jobRoot)
+    {
+        if (string.IsNullOrWhiteSpace(suggestedBase) || !Directory.Exists(jobRoot)) return null;
+        var prefix = suggestedBase + " - downloading";
+        var candidates = Directory.EnumerateFiles(jobRoot, prefix + "*", SearchOption.TopDirectoryOnly)
+            .Where(path => !Path.GetFileName(path).Contains(".temp.", StringComparison.OrdinalIgnoreCase))
+            .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".mp4" or ".mkv" or ".webm" or ".mp3" or ".m4a")
+            .OrderByDescending(path => new FileInfo(path).Length)
+            .ToArray();
+        foreach (var candidate in candidates)
+        {
+            if (!File.Exists(candidate) || new FileInfo(candidate).Length == 0) continue;
+            try
+            {
+                using var verify = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var media = await (probe ?? new FfprobeMediaProbe(runner, tools)).ProbeAsync(candidate, verify.Token).ConfigureAwait(false);
+                var valid = media.IsValid && (request.AudioOnly
+                    ? media.HasAudio && !media.HasVideo && string.Equals(media.AudioCodec, "mp3", StringComparison.OrdinalIgnoreCase)
+                    : media.HasVideo && media.HasAudio);
+                if (!valid) continue;
+                var finalBase = suggestedBase;
+                if (media.DurationSeconds > 0) finalBase += " - " + DownloadFileName.DurationTag(media.DurationSeconds);
+                var destination = AvailableOutputPath(request.OutputDirectory, finalBase, Path.GetExtension(candidate));
+                return await PromoteVerifiedOutputAsync(candidate, destination, verify.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+            {
+            }
+        }
+        return null;
+    }
+
+    private static void CleanupTransientTempFiles(string directory, string? suggestedBase)
+    {
+        if (string.IsNullOrWhiteSpace(suggestedBase) || !Directory.Exists(directory)) return;
+        var prefix = suggestedBase + " - downloading";
+        foreach (var path in Directory.EnumerateFiles(directory, prefix + "*", SearchOption.TopDirectoryOnly))
+        {
+            var name = Path.GetFileName(path);
+            if (name.Contains(".temp.", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".temp", StringComparison.OrdinalIgnoreCase))
+                TryDelete(path);
+        }
     }
 
     private static string AvailableOutputPath(string directory, string baseName, string extension)

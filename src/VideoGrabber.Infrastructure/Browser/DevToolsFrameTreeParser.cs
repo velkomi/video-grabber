@@ -52,6 +52,50 @@ public static class DevToolsFrameTreeParser
 
 public static class BrowserFrameBindingResolver
 {
+    public static IReadOnlyList<MediaCandidate> BindAll(
+        IReadOnlyList<MediaCandidate> candidates,
+        IReadOnlyList<DevToolsFrameInfo> frames,
+        BrowserPageMetadata metadata)
+    {
+        if (candidates.Count == 0) return [];
+        var result = candidates.ToArray();
+        var assigned = new bool[result.Length];
+        var occupied = new HashSet<int>();
+        var slots = metadata.PlayerSlots.OrderBy(slot => slot.Ordinal).ToArray();
+
+        for (var i = 0; i < result.Length; i++)
+        {
+            var slot = slots.FirstOrDefault(item => MatchesReferer(item.Source, result[i].Referer));
+            if (slot is null || !occupied.Add(slot.Ordinal)) continue;
+            result[i] = result[i] with { PageOrdinal = slot.Ordinal, PageSectionTitle = slot.Title };
+            assigned[i] = true;
+        }
+
+        var playerFrames = frames.Where(IsPlayerFrame).OrderBy(frame => frame.TreeOrder).ToArray();
+        for (var i = 0; i < result.Length; i++)
+        {
+            if (assigned[i]) continue;
+            var ordinal = FrameOrdinal(result[i], playerFrames);
+            if (ordinal <= 0 || occupied.Contains(ordinal)) continue;
+            var slot = slots.FirstOrDefault(item => item.Ordinal == ordinal);
+            if (slot is null) continue;
+            occupied.Add(ordinal);
+            result[i] = result[i] with { PageOrdinal = ordinal, PageSectionTitle = slot.Title };
+            assigned[i] = true;
+        }
+
+        var freeSlots = new Queue<BrowserPlayerSlot>(slots.Where(slot => !occupied.Contains(slot.Ordinal)));
+        for (var i = 0; i < result.Length; i++)
+        {
+            if (assigned[i] || freeSlots.Count == 0) continue;
+            var slot = freeSlots.Dequeue();
+            occupied.Add(slot.Ordinal);
+            result[i] = result[i] with { PageOrdinal = slot.Ordinal, PageSectionTitle = slot.Title };
+            assigned[i] = true;
+        }
+        return result;
+    }
+
     public static MediaCandidate Bind(MediaCandidate candidate, IReadOnlyList<DevToolsFrameInfo> frames, BrowserPageMetadata metadata)
     {
         var domSlot = metadata.PlayerSlots.FirstOrDefault(slot => MatchesReferer(slot.Source, candidate.Referer));
@@ -68,6 +112,18 @@ public static class BrowserFrameBindingResolver
         var ordinal = Array.IndexOf(playerFrames, frame) + 1;
         var title = metadata.PlayerSlots.FirstOrDefault(slot => slot.Ordinal == ordinal)?.Title;
         return candidate with { PageOrdinal = ordinal, PageSectionTitle = title };
+    }
+
+    private static int FrameOrdinal(MediaCandidate candidate, IReadOnlyList<DevToolsFrameInfo> playerFrames)
+    {
+        var frame = !string.IsNullOrWhiteSpace(candidate.FrameId)
+            ? playerFrames.FirstOrDefault(item => string.Equals(item.FrameId, candidate.FrameId, StringComparison.Ordinal))
+            : null;
+        frame ??= playerFrames.FirstOrDefault(item => MatchesReferer(item.Source, candidate.Referer));
+        if (frame is null) return 0;
+        for (var i = 0; i < playerFrames.Count; i++)
+            if (ReferenceEquals(playerFrames[i], frame) || playerFrames[i] == frame) return i + 1;
+        return 0;
     }
 
     private static bool IsPlayerFrame(DevToolsFrameInfo frame)

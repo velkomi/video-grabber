@@ -17,6 +17,7 @@ public sealed partial class MainWindow
     private readonly HashSet<string> _seenMedia = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _mediaQualitySelections = new(StringComparer.Ordinal);
     private readonly BrowserDownloadQueue _browserDownloadQueue = new();
+    private readonly BrowserPlayerMasterBindings _playerMasterBindings = new();
     private Uri? _browserPageUri;
     private bool _browserInitializing;
 
@@ -185,6 +186,9 @@ public sealed partial class MainWindow
                     DiagnosticHub.Log.Write("browser.player", "observed", "GetCourse player " + candidate.Source.IdnHost + " without master playlist");
                     return;
                 }
+                _playerMasterBindings.Remember(playlist, candidate.Source);
+                DiagnosticHub.Log.Write("browser.binding.master", "observed",
+                    $"master={BrowserBindingFingerprint.Describe(playlist)} player={BrowserBindingFingerprint.Describe(candidate.Source)}");
                 DiagnosticHub.Log.Write("browser.player", "succeeded", "master HLS announced on " + playlist.IdnHost + "; waiting for manifest response");
                 return;
             }
@@ -199,7 +203,12 @@ public sealed partial class MainWindow
                     using var contentStream = content.AsStreamForRead();
                     var body = await ReadLimitedTextAsync(contentStream, 4_000_000);
                     if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
-                    if (HlsResponseCandidateResolver.TryResolve(body, responseUri, referer, out var verified, out var blocked))
+                    var bindingReferer = _playerMasterBindings.TryResolve(responseUri, out var playerUri) && playerUri is not null
+                        ? playerUri : referer;
+                    if (playerUri is not null)
+                        DiagnosticHub.Log.Write("browser.binding.master", "resolved",
+                            $"master={BrowserBindingFingerprint.Describe(responseUri)} player={BrowserBindingFingerprint.Describe(playerUri)}");
+                    if (HlsResponseCandidateResolver.TryResolve(body, responseUri, bindingReferer, out var verified, out var blocked))
                     {
                         if (blocked)
                         {

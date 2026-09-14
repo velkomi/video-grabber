@@ -48,6 +48,49 @@ public sealed partial class MainWindow
         return HlsDownloadPolicy.AreSelectedTracksVerified(candidate, plan, verified);
     }
 
+    private async Task EnrichMediaDurationAsync(MediaCandidate candidate, long generation)
+    {
+        if (candidate.HlsManifest is not { IsMaster: true } manifest
+            || manifest.DurationSeconds is > 0 || manifest.Variants.Count == 0) return;
+        var key = candidate.Source.AbsoluteUri;
+        if (!_durationProbeInFlight.TryAdd(key, 0)) return;
+        try
+        {
+            var variant = manifest.Variants
+                .OrderBy(item => item.Bandwidth ?? long.MaxValue)
+                .ThenBy(item => item.Height ?? int.MaxValue)
+                .First();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            var routeProxy = EnsureRoutingProxy(variant.Uri, candidate.Referer);
+            var cookieHeader = await BuildBrowserCookieHeaderAsync(variant.Uri);
+            var userAgent = _mediaBrowser?.CoreWebView2?.Settings.UserAgent;
+            var result = await new HlsPreflightClient().FetchAsync(variant.Uri,
+                new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl, cookieHeader), timeout.Token);
+            if (!result.Success || result.Info?.DurationSeconds is not > 0) return;
+            _verifiedClearHls[variant.Uri.AbsoluteUri] = 0;
+            var duration = result.Info.DurationSeconds.Value;
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
+                if (!_mediaCandidateItems.TryGetValue(key, out var item) || item.Tag is not MediaCandidate current
+                    || current.HlsManifest is not { IsMaster: true } currentManifest) return;
+                var updated = current with { HlsManifest = currentManifest with { DurationSeconds = duration } };
+                item.Tag = updated;
+                var ordinal = updated.PageOrdinal ?? Math.Max(1, _mediaCandidatesBox.Items.IndexOf(item) + 1);
+                item.Content = MediaCandidatePresentation.DisplayName(updated, ordinal, _browserMetadata);
+                SyncQueuedCandidate(updated);
+            });
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or HttpRequestException or IOException)
+        {
+            DiagnosticHub.Log.Write("browser.hls.duration", "failed", ex.GetType().Name);
+        }
+        finally
+        {
+            _durationProbeInFlight.TryRemove(key, out _);
+        }
+    }
+
     private async Task<string?> BuildBrowserCookieHeaderAsync(Uri source)
     {
         if (_mediaBrowser?.CoreWebView2 is null) return null;

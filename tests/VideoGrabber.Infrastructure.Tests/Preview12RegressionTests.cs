@@ -85,7 +85,7 @@ public sealed class Preview12RegressionTests
         Assert.Contains("while (_browserDownloadQueue.Items.Count > 0)", batch);
         Assert.Contains("ScheduleBrowserBindingRefresh", devtools);
         var metadata = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Metadata.cs"));
-        Assert.Contains("BrowserFrameBindingResolver.Bind(current, _browserFrames, _browserMetadata)", metadata);
+        Assert.Contains("BrowserFrameBindingResolver.BindAll", metadata);
     }
 
     private static MediaCandidate Master(Uri referer) => new(

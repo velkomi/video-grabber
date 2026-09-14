@@ -35,6 +35,18 @@ public sealed partial class MainWindow
                 } catch { return false; }
               };
               const headingSelector = 'h1,h2,h3,h4,.lesson-title,.part-title,.lesson-header,[class*=\"lesson-title\"],[class*=\"part-title\"]';
+              const partPattern = /^(?:\u0427\u0430\u0441\u0442\u044c|part)\s*\u2116?\s*\d+(?:\b|[.: -])/i;
+              const nearestPartTitle = frame => {
+                const all = [...document.querySelectorAll('body *')];
+                const frameIndex = all.indexOf(frame);
+                for (let i = frameIndex - 1, scanned = 0; i >= 0 && scanned < 250; i--, scanned++) {
+                  const node = all[i];
+                  if (node.contains(frame) || node.children.length > 4) continue;
+                  const text = clean(node.innerText || node.textContent);
+                  if (text && text.length <= 80 && partPattern.test(text)) return text;
+                }
+                return '';
+              };
               const nearestTitle = frame => {
                 let node = frame;
                 for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
@@ -47,7 +59,7 @@ public sealed partial class MainWindow
                 return '';
               };
               const playerSlots = [...document.querySelectorAll('iframe[src]')].filter(isPlayer)
-                .map((frame, index) => ({ ordinal: index + 1, title: nearestTitle(frame), source: frame.src }));
+                .map((frame, index) => ({ ordinal: index + 1, title: nearestPartTitle(frame) || nearestTitle(frame), source: frame.src }));
               return { pageTitle: clean(document.title), sections, playerSlots };
             })()
             """;
@@ -62,6 +74,9 @@ public sealed partial class MainWindow
                 .Select(slot => new BrowserPlayerSlot(slot.ordinal, slot.title, SafePlayerUri(slot.source)))
                 .ToArray();
             _browserMetadata = new BrowserPageMetadata(payload.pageTitle, sections, slots);
+            foreach (var slot in slots)
+                DiagnosticHub.Log.Write("browser.binding.slot", "observed",
+                    $"ordinal={slot.Ordinal} source={BrowserBindingFingerprint.Describe(slot.Source)}");
             RebindAndReorderMediaCandidates();
         }
         catch (Exception ex)
@@ -102,7 +117,15 @@ public sealed partial class MainWindow
         if (_mediaBrowser?.CoreWebView2 is { } core) await RefreshBrowserBindingsAsync(core);
         var current = _mediaCandidateItems.TryGetValue(candidate.Source.AbsoluteUri, out var item)
             && item.Tag is MediaCandidate latest ? latest : candidate;
-        return BrowserFrameBindingResolver.Bind(current, _browserFrames, _browserMetadata);
+        var all = _mediaCandidatesBox.Items.OfType<ComboBoxItem>()
+            .Select(entry => entry.Tag as MediaCandidate)
+            .Where(entry => entry is not null)
+            .Cast<MediaCandidate>()
+            .ToList();
+        if (!all.Any(entry => string.Equals(entry.Source.AbsoluteUri, current.Source.AbsoluteUri, StringComparison.Ordinal)))
+            all.Add(current);
+        var bound = BrowserFrameBindingResolver.BindAll(all, _browserFrames, _browserMetadata);
+        return bound.FirstOrDefault(entry => string.Equals(entry.Source.AbsoluteUri, current.Source.AbsoluteUri, StringComparison.Ordinal)) ?? current;
     }
     private void RefreshMediaCandidateLabels()
     {

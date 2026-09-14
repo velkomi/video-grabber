@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using VideoGrabber.Core.Security;
 
@@ -13,7 +13,8 @@ public sealed record HlsManifestInfo(
     IReadOnlyList<HlsAudioRendition> AudioRenditions,
     bool IsEncrypted,
     string? EncryptionMethod,
-    bool UsesDrmLikeEncryption)
+    bool UsesDrmLikeEncryption,
+    double? DurationSeconds = null)
 {
     public string SafeSummary
     {
@@ -47,11 +48,18 @@ public static partial class HlsManifestParser
         var audio = new List<HlsAudioRendition>();
         var encryptionMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var hasMediaSegments = false;
+        var mediaDurationSeconds = 0d;
 
         for (var i = 0; i < lines.Length; i++)
         {
             var line = lines[i].Trim();
-            if (line.StartsWith("#EXTINF:", StringComparison.OrdinalIgnoreCase)) hasMediaSegments = true;
+            if (line.StartsWith("#EXTINF:", StringComparison.OrdinalIgnoreCase))
+            {
+                hasMediaSegments = true;
+                var rawDuration = line["#EXTINF:".Length..].Split(',', 2)[0].Trim();
+                if (double.TryParse(rawDuration, NumberStyles.Float, CultureInfo.InvariantCulture, out var segmentDuration) && segmentDuration > 0)
+                    mediaDurationSeconds += segmentDuration;
+            }
             if (line.StartsWith("#EXT-X-KEY:", StringComparison.OrdinalIgnoreCase)
                 || line.StartsWith("#EXT-X-SESSION-KEY:", StringComparison.OrdinalIgnoreCase))
             {
@@ -93,7 +101,8 @@ public static partial class HlsManifestParser
         if (!isMaster && !hasMediaSegments && !lines.Any(l => l.TrimStart().StartsWith("#EXT-X-TARGETDURATION:", StringComparison.OrdinalIgnoreCase))) return false;
         var method = encryptionMethods.Count == 0 ? null : string.Join("+", encryptionMethods.Order(StringComparer.OrdinalIgnoreCase));
         var drmLike = encryptionMethods.Any(m => m.Contains("SAMPLE-AES", StringComparison.OrdinalIgnoreCase));
-        info = new HlsManifestInfo(isMaster, variants, audio, encryptionMethods.Count > 0, method, drmLike);
+        info = new HlsManifestInfo(isMaster, variants, audio, encryptionMethods.Count > 0, method, drmLike,
+            !isMaster && mediaDurationSeconds > 0 ? mediaDurationSeconds : null);
         return true;
     }
 

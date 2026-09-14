@@ -28,6 +28,7 @@ public sealed partial class MainWindow
     private readonly ConcurrentDictionary<string, PendingHlsManifest> _pendingHlsManifests = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.ComboBoxItem> _mediaCandidateItems = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _verifiedClearHls = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _durationProbeInFlight = new(StringComparer.Ordinal);
     private IReadOnlyList<DevToolsFrameInfo> _browserFrames = [];
     private long _browserDiscoveryGeneration;
     private const string AutoAttachJson = "{\"autoAttach\":true,\"waitForDebuggerOnStart\":true,\"flatten\":true}";
@@ -272,6 +273,9 @@ public sealed partial class MainWindow
                 || _mediaBrowser?.CoreWebView2 is null || _browserPageUri is null || _seenMedia.Count >= 200) return;
 
             candidate = BrowserFrameBindingResolver.Bind(candidate, _browserFrames, _browserMetadata);
+            if (candidate.HlsManifest is { IsMaster: true })
+                DiagnosticHub.Log.Write("browser.binding.candidate", "observed",
+                    $"source={candidate.Source.IdnHost} referer={BrowserBindingFingerprint.Describe(candidate.Referer)} ordinal={candidate.PageOrdinal?.ToString() ?? "none"}");
             var known = _mediaCandidateItems.Values
                 .Select(item => item.Tag as MediaCandidate)
                 .Where(item => item is not null)
@@ -301,6 +305,7 @@ public sealed partial class MainWindow
                 existing.Tag = candidate;
                 SyncQueuedCandidate(candidate);
                 RebindAndReorderMediaCandidates();
+                _ = EnrichMediaDurationAsync(candidate, generation);
                 return;
             }
             if (!_seenMedia.Add(key)) return;
@@ -315,6 +320,7 @@ public sealed partial class MainWindow
             if (_mediaCandidatesBox.SelectedIndex < 0) _mediaCandidatesBox.SelectedIndex = 0;
             _browserHint.Text = "Найдено видео: " + _mediaCandidatesBox.Items.Count + ". Выберите видео и качество; запускать его вручную не требуется.";
             DiagnosticHub.Log.Write("browser.discovery", "succeeded", displayName);
+            _ = EnrichMediaDurationAsync(candidate, generation);
         });
     }
 
@@ -358,10 +364,14 @@ public sealed partial class MainWindow
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            var entries = _mediaCandidatesBox.Items.OfType<Microsoft.UI.Xaml.Controls.ComboBoxItem>()
+            var rawEntries = _mediaCandidatesBox.Items.OfType<Microsoft.UI.Xaml.Controls.ComboBoxItem>()
                 .Select((item, index) => (Item: item, Index: index, Candidate: item.Tag as MediaCandidate))
                 .Where(entry => entry.Candidate is not null)
-                .Select(entry => (entry.Item, entry.Index, Candidate: BrowserFrameBindingResolver.Bind(entry.Candidate!, _browserFrames, _browserMetadata)))
+                .ToArray();
+            var boundCandidates = BrowserFrameBindingResolver.BindAll(
+                rawEntries.Select(entry => entry.Candidate!).ToArray(), _browserFrames, _browserMetadata);
+            var entries = rawEntries
+                .Select((entry, index) => (entry.Item, entry.Index, Candidate: boundCandidates[index]))
                 .OrderBy(entry => entry.Candidate.PageOrdinal ?? int.MaxValue)
                 .ThenBy(entry => entry.Index)
                 .ToArray();
@@ -393,6 +403,7 @@ public sealed partial class MainWindow
         _mediaCandidateItems.Clear();
         _mediaQualitySelections.Clear();
         _browserDownloadQueue.Clear();
+        _playerMasterBindings.Clear();
         _browserMetadata = BrowserPageMetadata.Empty;
         if (clearUi) _mediaCandidatesBox.Items.Clear();
         RefreshDownloadQueueList();

@@ -6,6 +6,8 @@ namespace VideoGrabber.App;
 public sealed partial class MainWindow
 {
     private bool _updatingMediaQuality;
+    private bool _queueRunRequested;
+    private bool _queueRunnerActive;
 
     private async Task<DownloadAttemptOutcome> DownloadCandidateAsync(
         MediaCandidate candidate,
@@ -131,13 +133,21 @@ public sealed partial class MainWindow
 
     private async Task DownloadQueuedCandidatesAsync()
     {
-        if (_operation is not null) return;
+        if (_operation is not null)
+        {
+            _queueRunRequested = true;
+            _browserHint.Text = "\u041e\u0447\u0435\u0440\u0435\u0434\u044c \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438.";
+            return;
+        }
+        if (_queueRunnerActive) return;
         if (_browserDownloadQueue.Items.Count == 0)
         {
             _browserHint.Text = "Очередь пуста.";
             return;
         }
         var selectedCookies = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        _queueRunnerActive = true;
+        _queueRunRequested = false;
         try
         {
             var completed = 0;
@@ -168,6 +178,7 @@ public sealed partial class MainWindow
         }
         finally
         {
+            _queueRunnerActive = false;
             if (BrowserDownloadSessionPolicy.ShouldResetAfterUse(selectedCookies)) _cookiesBox.SelectedIndex = 0;
         }
     }

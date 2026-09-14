@@ -116,7 +116,24 @@ public sealed partial class MainWindow
                 _routeProxy?.Dispose();
                 _routeProxy = null;
             }
+            TryStartPendingQueue();
+            TryCloseAfterOperation();
         }
+    }
+
+    private void TryStartPendingQueue()
+    {
+        if (!_queueRunRequested || _queueRunnerActive || _operation is not null || _closeRequested) return;
+        _queueRunRequested = false;
+        DispatcherQueue.TryEnqueue(async () => await DownloadQueuedCandidatesAsync());
+    }
+
+    private void TryCloseAfterOperation()
+    {
+        if (!_closeRequested || _operation is not null) return;
+        _closeRequested = false;
+        _allowWindowClose = true;
+        DispatcherQueue.TryEnqueue(Close);
     }
 
     private async Task<ScopedCookieFile> ExportBrowserSessionAsync(Uri uri, Uri? referer, Uri? hlsVideoSource = null, Uri? hlsAudioSource = null)
