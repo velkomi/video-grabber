@@ -18,22 +18,35 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         cancellationToken.ThrowIfCancellationRequested();
         using var job = DiagnosticHub.Begin("download", request.Source.Host);
         using var cancelLog = cancellationToken.Register(job.Cancel);
+        DownloadResult Fail(DownloadResult failure, DownloadWorkspace? workspace = null, int? exitCode = null)
+        {
+            job.Complete(false, failure.Message + "\n" + failure.Details, exitCode);
+            return workspace is null ? failure : PreservedFailure(failure, workspace);
+        }
         if (request.Source.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(request.Source.UserInfo))
-            return new(false, "Поддерживаются HTTP/HTTPS-ссылки без встроенного пароля.");
+            return Fail(new(false, "Поддерживаются HTTP/HTTPS-ссылки без встроенного пароля."));
         if (request.CookiesFile is not null && request.CookiesFromBrowser is not null)
-            return new(false, "Выберите только один способ входа.");
+            return Fail(new(false, "Выберите только один способ входа."));
         if (request.AudioOnly && request.HlsAudioSource is not null)
         {
-            if (!IsSafeHttp(request.HlsAudioSource)) return new(false, "Некорректная HLS-аудиоссылка.");
+            if (!IsSafeHttp(request.HlsAudioSource)) return Fail(new(false, "Некорректная HLS-аудиоссылка."));
             request = request with { Source = request.HlsAudioSource, HlsVideoSource = null, HlsAudioSource = null };
         }
         if (request.HlsVideoSource is not null || request.HlsAudioSource is not null)
         {
             if (request.HlsVideoSource is null || request.HlsAudioSource is null)
-                return new(false, "Для раздельного HLS нужны и видео-, и аудиодорожка.");
-            var splitResult = await DownloadSplitHlsAsync(request, progress, cancellationToken).ConfigureAwait(false);
-            if (splitResult.Success) job.Complete();
-            return splitResult;
+                return Fail(new(false, "Для раздельного HLS нужны и видео-, и аудиодорожка."));
+            try
+            {
+                var splitResult = await DownloadSplitHlsAsync(request, progress, cancellationToken).ConfigureAwait(false);
+                job.Complete(splitResult.Success, splitResult.Message + "\n" + splitResult.Details);
+                return splitResult;
+            }
+            catch (OperationCanceledException)
+            {
+                job.Cancel("Загрузка отменена. Рабочие файлы сохранены.");
+                throw;
+            }
         }
         var suggestedBase = string.IsNullOrWhiteSpace(request.SuggestedBaseName)
             ? null
@@ -49,7 +62,7 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
 
         var arguments = new List<string>
         {
-            "--ignore-config", "--no-overwrites",
+            "--ignore-config", "--no-overwrites", "--abort-on-unavailable-fragment",
             "--retries", "3", "--fragment-retries", "3", "--socket-timeout", "25",
             "--newline",
             "--no-playlist",
@@ -73,7 +86,7 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             if (!Uri.TryCreate(request.LocalProxy, UriKind.Absolute, out var proxy) || proxy.Scheme != "socks5"
                 || proxy.Host != "127.0.0.1" || proxy.Port is < 1024 or > 65535 || !string.IsNullOrEmpty(proxy.UserInfo)
                 || proxy.AbsolutePath != "/" || !string.IsNullOrEmpty(proxy.Query) || !string.IsNullOrEmpty(proxy.Fragment))
-                return new(false, "Invalid local routing endpoint.");
+                return Fail(new(false, "Invalid local routing endpoint."), workspace);
             arguments.AddRange(["--proxy", "socks5h://127.0.0.1:" + proxy.Port]);
         }
         if (File.Exists(tools.Deno))
@@ -90,12 +103,12 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
 
         if (!string.IsNullOrWhiteSpace(request.CookiesFile))
         {
-            if (!File.Exists(request.CookiesFile)) return new(false, "Временная сессия не найдена. Повторите вход.");
+            if (!File.Exists(request.CookiesFile)) return Fail(new(false, "Временная сессия не найдена. Повторите вход."), workspace);
             arguments.AddRange(["--cookies", request.CookiesFile]);
         }
         if (request.Referer is not null)
         {
-            if (request.Referer.Scheme is not ("http" or "https")) return new(false, "Некорректная исходная страница.");
+            if (request.Referer.Scheme is not ("http" or "https")) return Fail(new(false, "Некорректная исходная страница."), workspace);
             arguments.AddRange(["--referer", request.Referer.AbsoluteUri]);
         }
         if (!string.IsNullOrWhiteSpace(request.UserAgent) && request.UserAgent.Length <= 1024 && request.UserAgent.IndexOfAny(['\r', '\n']) < 0)
@@ -127,36 +140,22 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
 
         workspace.DiscoverCreatedFiles();
         cancellationToken.ThrowIfCancellationRequested();
+        if (!result.IsSuccess)
+            return Fail(DownloadFailureFormatter.Create(request.Source, result.StandardError), workspace, result.ExitCode);
         if (!string.IsNullOrWhiteSpace(outputPath) && !workspace.Owns(outputPath))
-            return PreservedFailure(new(false, "Загрузчик вернул файл вне рабочей папки задания."), workspace);
+            return Fail(new(false, "Загрузчик вернул файл вне рабочей папки задания."), workspace);
         if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
             outputPath = workspace.OwnedFiles.Where(IsMediaOutput)
                 .Where(path => workspace.Owns(path) && new FileInfo(path).Length > 0)
                 .OrderByDescending(path => File.GetLastWriteTimeUtc(path)).FirstOrDefault();
         if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
         {
-            var failure = result.IsSuccess
-                ? new DownloadResult(false, "Загрузчик завершился, но готовый непустой файл не найден.")
-                : DownloadFailureFormatter.Create(request.Source, result.StandardError);
-            DiagnosticHub.Log.Write("download.failure", "failed", failure.Message + "\n" + failure.Details,
-                jobId: job.Id, exitCode: result.ExitCode);
-            return PreservedFailure(failure, workspace);
+            return Fail(new(false, "Загрузчик завершился, но готовый непустой файл не найден."), workspace);
         }
         progress?.Report(new DownloadProgress(null, "Проверяю медиафайл…"));
         var media = await (probe ?? new FfprobeMediaProbe(runner, tools)).ProbeAsync(outputPath, cancellationToken).ConfigureAwait(false);
-        if (!media.IsValid || (request.AudioOnly && (!media.HasAudio || media.HasVideo || media.AudioCodec != "mp3")))
-        {
-            if (!result.IsSuccess)
-            {
-                var failure = DownloadFailureFormatter.Create(request.Source, result.StandardError);
-                DiagnosticHub.Log.Write("download.failure", "failed", failure.Message + "\n" + failure.Details,
-                    jobId: job.Id, exitCode: result.ExitCode);
-                return PreservedFailure(failure, workspace);
-            }
-            return PreservedFailure(new(false, "Файл получен, но проверка медиапотоков не пройдена."), workspace);
-        }
-        if (!result.IsSuccess)
-            DiagnosticHub.Log.Write("download.recovered", "succeeded", "Valid media recovered after downloader finalization error", jobId: job.Id);
+        if (!DownloadOutputContract.IsSatisfied(request, media))
+            return Fail(new(false, "Файл не соответствует ожидаемой длительности или дорожкам."), workspace);
         var finalBase = suggestedBase ?? DownloadFileName.SanitizeBaseName(Path.GetFileNameWithoutExtension(outputPath));
         if (media.DurationSeconds > 0) finalBase += " - " + DownloadFileName.DurationTag(media.DurationSeconds);
         var finalOutput = await PromoteVerifiedOutputAsync(workspace, outputPath, finalBase, cancellationToken).ConfigureAwait(false);
@@ -167,12 +166,13 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         }
         catch (OperationCanceledException ex)
         {
+            job.Cancel("Загрузка отменена. Рабочие файлы сохранены.");
             ReportPreservedCancellation(workspace, progress, ex);
             throw;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            return PreservedFailure(new(false, "Не удалось сохранить файл задания.", Details: SensitiveDataRedactor.Redact(ex.Message)), workspace);
+            return Fail(new(false, "Не удалось сохранить файл задания.", Details: SensitiveDataRedactor.Redact(ex.Message)), workspace);
         }
     }
 
@@ -217,8 +217,8 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
 
             progress?.Report(new DownloadProgress(null, "Проверяю итоговый медиафайл…"));
             var media = await (probe ?? new FfprobeMediaProbe(runner, tools)).ProbeAsync(mergedTemp, cancellationToken).ConfigureAwait(false);
-            if (!media.IsValid || !media.HasVideo || !media.HasAudio)
-                return PreservedFailure(new(false, "Итоговый HLS-файл не прошёл проверку наличия видео и звука.", Details: media.Error), workspace);
+            if (!media.HasAudio || !DownloadOutputContract.IsSatisfied(request, media))
+                return PreservedFailure(new(false, "Файл не соответствует ожидаемой длительности или дорожкам.", Details: media.Error), workspace);
             var finalOutput = await PromoteVerifiedOutputAsync(workspace, mergedTemp, safeBase, cancellationToken).ConfigureAwait(false);
             workspace.CleanupVerifiedIntermediates();
             progress?.Report(new DownloadProgress(100, "HLS-видео со звуком проверено."));
@@ -266,7 +266,7 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
     {
         var args = new List<string>
         {
-            "--ignore-config", "--no-overwrites", "--retries", "3", "--fragment-retries", "3", "--socket-timeout", "25",
+            "--ignore-config", "--no-overwrites", "--abort-on-unavailable-fragment", "--retries", "3", "--fragment-retries", "3", "--socket-timeout", "25",
             "--newline", "--no-playlist", "--progress", "--progress-delta", "0.25",
             "--progress-template", "download:videograbber:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.fragment_index)s|%(progress.fragment_count)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "--print", "after_move:filepath:%(filepath)s", "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg,

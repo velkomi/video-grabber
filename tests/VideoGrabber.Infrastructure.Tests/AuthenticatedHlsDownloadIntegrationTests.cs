@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Browser;
@@ -26,7 +27,7 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         var generated = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
             ["-hide_banner", "-nostdin", "-y", "-f", "lavfi", "-i", "testsrc=size=160x120:rate=10",
              "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "3",
-             "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac",
+             "-c:v", "libx264", "-preset", "ultrafast", "-g", "10", "-c:a", "aac",
              "-f", "hls", "-hls_time", "1", "-hls_list_size", "0",
              "-hls_segment_filename", Path.Combine(mediaRoot, "seg%03d.ts"), playlist]), null, deadline.Token);
         Assert.True(generated.IsSuccess, generated.StandardError);
@@ -45,7 +46,8 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
             cookiePath = cookies.Path;
             result = await new YtDlpDownloader(runner, tools).DownloadAsync(
                 new DownloadRequest(server.Playlist, Path.Combine(root, "output"), "best",
-                    CookiesFile: cookiePath, Referer: server.Lesson, UserAgent: "VideoGrabber-HLS-Test"),
+                    CookiesFile: cookiePath, Referer: server.Lesson, UserAgent: "VideoGrabber-HLS-Test",
+                    ExpectedDurationSeconds: 3, ExpectedAudio: true),
                 null, deadline.Token);
         }
         Assert.False(File.Exists(cookiePath));
@@ -53,14 +55,86 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         Assert.True(server.AuthorizedPlaylistRequests > 0);
         Assert.True(server.AuthorizedSegmentRequests > 0);
         Assert.True(File.Exists(result.OutputPath));
+        await AssertCompleteVideoAsync(runner, tools, result.OutputPath!, 3, deadline.Token);
         var decode = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
-            ["-v", "error", "-i", result.OutputPath!, "-f", "null", "-"]), null, deadline.Token);
+            ["-v", "error", "-nostdin", "-i", result.OutputPath!, "-f", "null", "-"]), null, deadline.Token);
         Assert.True(decode.IsSuccess, decode.StandardError);
+    }
+
+    [MediaToolsFact]
+    public async Task Unavailable_final_HLS_segment_fails_and_preserves_owned_partial()
+    {
+        var evidence = Environment.GetEnvironmentVariable("VIDEOGRABBER_EVIDENCE") ?? Path.GetTempPath();
+        var root = Path.Combine(evidence, "hls-missing-tail-" + Guid.NewGuid().ToString("N"));
+        var mediaRoot = Path.Combine(root, "media"); Directory.CreateDirectory(mediaRoot);
+        var tools = new ToolLocator(Environment.GetEnvironmentVariable("VIDEOGRABBER_INTEGRATION_TOOLS"));
+        var runner = new ProcessRunner();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var playlist = Path.Combine(mediaRoot, "master.m3u8");
+        var generated = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
+            ["-hide_banner", "-nostdin", "-y", "-f", "lavfi", "-i", "testsrc=size=160x120:rate=10",
+             "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "6",
+             "-c:v", "libx264", "-preset", "ultrafast", "-g", "10", "-c:a", "aac",
+             "-f", "hls", "-hls_time", "1", "-hls_list_size", "0",
+             "-hls_segment_filename", Path.Combine(mediaRoot, "seg%03d.ts"), playlist]), null, deadline.Token);
+        Assert.True(generated.IsSuccess, generated.StandardError);
+        var segments = File.ReadAllLines(playlist).Where(line => line.EndsWith(".ts", StringComparison.Ordinal)).ToArray();
+        Assert.True(segments.Length >= 3);
+        await using var server = new HlsFixture(mediaRoot, unavailableFile: segments[^1]);
+        using var cookies = ScopedCookieFile.Create([server.Playlist, server.Lesson],
+            [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]);
+        var recording = new RecordingRunner(runner, tools.YtDlp);
+        var output = Path.Combine(root, "output");
+        var result = await new YtDlpDownloader(recording, tools).DownloadAsync(
+            new DownloadRequest(server.Playlist, output, "best", CookiesFile: cookies.Path, Referer: server.Lesson,
+                DirectManifest: true, SuggestedBaseName: "Missing tail", ExpectedDurationSeconds: 6, ExpectedAudio: true),
+            null, deadline.Token);
+        Assert.False(result.Success);
+        Assert.Null(result.OutputPath);
+        Assert.NotNull(recording.DownloadResult);
+        Assert.False(recording.DownloadResult.IsSuccess, "Real yt-dlp must fail on an unavailable segment.");
+        Assert.True(server.UnavailableRequests > 0);
+        Assert.True(server.AuthorizedSegmentRequests > 0);
+        Assert.Empty(Directory.GetFiles(output));
+        var partials = Directory.GetFiles(output, "*.part", SearchOption.AllDirectories);
+        Assert.Contains(partials, path => new FileInfo(path).Length > 0);
+        Assert.Contains(Path.GetDirectoryName(partials[0])!, result.Details);
+        await File.WriteAllTextAsync(Path.Combine(root, "native-result.json"), JsonSerializer.Serialize(new
+        {
+            recording.DownloadResult.ExitCode, result.Success, server.UnavailableRequests,
+            retainedPartials = partials.Select(path => new { path, bytes = new FileInfo(path).Length })
+        }), deadline.Token);
+    }
+
+    private sealed class RecordingRunner(IProcessRunner inner, string downloader) : IProcessRunner
+    {
+        public ProcessResult? DownloadResult { get; private set; }
+        public async Task<ProcessResult> RunAsync(ProcessSpec spec, Action<string>? onOutput, CancellationToken cancellationToken)
+        {
+            var result = await inner.RunAsync(spec, onOutput, cancellationToken);
+            if (string.Equals(spec.FileName, downloader, StringComparison.OrdinalIgnoreCase)) DownloadResult = result;
+            return result;
+        }
+    }
+
+    private static async Task AssertCompleteVideoAsync(IProcessRunner runner, ToolLocator tools, string output, double duration, CancellationToken token)
+    {
+        var media = await new VideoGrabber.Infrastructure.Media.FfprobeMediaProbe(runner, tools).ProbeAsync(output, token);
+        Assert.True(media.IsValid, media.Error);
+        Assert.True(media.HasVideo);
+        Assert.True(media.HasAudio);
+        Assert.InRange(media.DurationSeconds, duration - 0.2, duration + 0.3);
+        var dimensions = await runner.RunAsync(new ProcessSpec(tools.Ffprobe,
+            ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "json", output]), null, token);
+        Assert.True(dimensions.IsSuccess, dimensions.StandardError);
+        using var json = JsonDocument.Parse(dimensions.StandardOutput);
+        Assert.Equal(120, json.RootElement.GetProperty("streams")[0].GetProperty("height").GetInt32());
     }
 
     private sealed class HlsFixture : IAsyncDisposable
     {
         private readonly string _root;
+        private readonly string? _unavailableFile;
         private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         private readonly CancellationTokenSource _stop = new();
         private readonly Task _task;
@@ -68,10 +142,12 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         public Uri Lesson { get; }
         public int AuthorizedPlaylistRequests;
         public int AuthorizedSegmentRequests;
+        public int UnavailableRequests;
 
-        public HlsFixture(string root, string playlistFile = "master.m3u8")
+        public HlsFixture(string root, string playlistFile = "master.m3u8", string? unavailableFile = null)
         {
             _root = root;
+            _unavailableFile = unavailableFile;
             _listener.Start();
             var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
             Playlist = new Uri($"http://127.0.0.1:{port}/{playlistFile}");
@@ -111,6 +187,12 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
             if (!allowed) { await WriteAsync(stream, "403 Forbidden", "text/plain", "Forbidden"u8.ToArray(), request, token); return; }
 
             var local = Path.Combine(_root, Path.GetFileName(path));
+            if (Path.GetFileName(path) == _unavailableFile)
+            {
+                Interlocked.Increment(ref UnavailableRequests);
+                await WriteAsync(stream, "404 Not Found", "text/plain", "Missing tail"u8.ToArray(), request, token);
+                return;
+            }
             if (!File.Exists(local)) { await WriteAsync(stream, "404 Not Found", "text/plain", "Missing"u8.ToArray(), request, token); return; }
             var body = await File.ReadAllBytesAsync(local, token);
             var type = path.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase) ? "application/vnd.apple.mpegurl" : "video/mp2t";
@@ -182,7 +264,7 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
             result = await new YtDlpDownloader(runner, tools).DownloadAsync(
                 new DownloadRequest(server.Playlist, Path.Combine(root, "output"), "best",
                     CookiesFile: cookies.Path, Referer: server.Lesson, UserAgent: "VideoGrabber-Split-HLS-Test",
-                    HlsVideoSource: videoUri, HlsAudioSource: audioUri),
+                    HlsVideoSource: videoUri, HlsAudioSource: audioUri, ExpectedDurationSeconds: 3, ExpectedAudio: true),
                 null, deadline.Token);
         }
         Assert.True(result.Success, result.Message + "\n" + result.Details);
@@ -192,10 +274,11 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         Assert.True(probe.IsValid, probe.Error);
         Assert.True(probe.HasVideo, "Merged split-track output must contain video.");
         Assert.True(probe.HasAudio, "Merged split-track output must contain audio.");
+        await AssertCompleteVideoAsync(runner, tools, result.OutputPath!, 3, deadline.Token);
         Assert.True(server.AuthorizedPlaylistRequests >= 3, "Master, video and audio playlists must all be authorized.");
         Assert.True(server.AuthorizedSegmentRequests > 0);
         var decode = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
-            ["-v", "error", "-i", result.OutputPath!, "-f", "null", "-"]), null, deadline.Token);
+            ["-v", "error", "-nostdin", "-i", result.OutputPath!, "-f", "null", "-"]), null, deadline.Token);
         Assert.True(decode.IsSuccess, decode.StandardError);
     }
 }

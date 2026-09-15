@@ -24,8 +24,11 @@ public sealed partial class MainWindow
         if (!await EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token))
             return DownloadAttemptOutcome.Failed;
         var suggested = MediaCandidatePresentation.SuggestedBaseName(candidate, ordinal, quality, _browserMetadata);
+        var duration = candidate.HlsManifest?.DurationSeconds;
+        var expectedDuration = duration is > 0 && double.IsFinite(duration.Value) ? duration : null;
+        bool? expectedAudio = audioOnly || plan.HlsAudioSource is not null ? true : null;
         return await DownloadSourceAsync(plan.Source, candidate.Referer, plan.HlsVideoSource, plan.HlsAudioSource,
-            plan.DirectManifest, suggested, resetCookieSelectionAfterUse);
+            plan.DirectManifest, suggested, resetCookieSelectionAfterUse, expectedDuration, expectedAudio);
     }
 
     private string SelectedBrowserQuality(MediaCandidate candidate)

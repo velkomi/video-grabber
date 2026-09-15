@@ -28,7 +28,10 @@ public sealed class DownloadFailurePrivacyTests
             var records = Directory.GetFiles(DiagnosticHub.Log.DirectoryPath, "vg-*.jsonl")
                 .SelectMany(ReadRecords);
             var record = Assert.Single(records, e => e.GetProperty("jobId").GetString() == job.Id
-                && e.GetProperty("stage").GetString() == "download.failure");
+                && e.GetProperty("stage").GetString() == "download"
+                && e.GetProperty("status").GetString() != "started");
+            Assert.Equal("failed", record.GetProperty("status").GetString());
+            Assert.Equal(1, record.GetProperty("exitCode").GetInt32());
             var saved = record.GetProperty("message").GetString();
             Assert.Contains("NETWORK_TIMEOUT", saved);
             Assert.Contains("timed out", saved);

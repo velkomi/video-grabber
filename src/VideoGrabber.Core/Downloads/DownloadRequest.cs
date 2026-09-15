@@ -14,4 +14,7 @@ public sealed record DownloadRequest(
     Uri? HlsAudioSource = null,
     bool DirectManifest = false,
     string? SuggestedBaseName = null,
-    string? JobDirectory = null);
+    string? JobDirectory = null,
+    double? ExpectedDurationSeconds = null,
+    bool? ExpectedAudio = null,
+    bool ResolvedHlsLeaf = false);

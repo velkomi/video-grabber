@@ -120,6 +120,64 @@ public sealed class AuditMediaRegressionTests
         Assert.False(result.Success, "Video result must contain a video stream.");
     }
 
+    [Fact]
+    public void Short_readable_video_does_not_satisfy_expected_duration()
+    {
+        var request = new DownloadRequest(new Uri("https://cdn.example/video"), "output", "best", ExpectedDurationSeconds: 60, ExpectedAudio: true);
+        Assert.False(DownloadOutputContract.IsSatisfied(request, new(true, true, true, "aac", DurationSeconds: 2)));
+        Assert.True(DownloadOutputContract.IsSatisfied(request, new(true, true, true, "aac", DurationSeconds: 59.5)));
+        Assert.False(DownloadOutputContract.IsSatisfied(request, new(true, true, false, "aac", DurationSeconds: 60)));
+    }
+
+    [Fact]
+    public async Task CancelAfterFirstTrack100MustNotSucceed()
+    {
+        var root = FixtureRoot();
+        using var cancel = new CancellationTokenSource();
+        string? partial = null;
+        var runner = new StubRunner((spec, output) =>
+        {
+            var args = spec.Arguments.ToList();
+            partial = args[args.IndexOf("-o") + 1].Replace("%(ext)s", "mp4", StringComparison.Ordinal);
+            File.WriteAllBytes(partial, [107, 109, 113]);
+            output?.Invoke("filepath:" + partial);
+            output?.Invoke("videograbber:100|100|NA|NA|NA|1MiB/s|00:00");
+            cancel.Cancel();
+            return new ProcessResult(0, "", "");
+        });
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Downloader(root, runner, ValidVideo()).DownloadAsync(Request(root), null, cancel.Token));
+        Assert.True(File.Exists(partial));
+        Assert.Equal(new byte[] { 107, 109, 113 }, File.ReadAllBytes(partial!));
+        Assert.Empty(Directory.GetFiles(root, "*.mp4"));
+    }
+
+    [Theory]
+    [InlineData(null, false, true)]
+    [InlineData(null, true, true)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, true)]
+    public void Requested_audio_is_a_tristate_contract(bool? expectedAudio, bool hasAudio, bool satisfied)
+    {
+        var request = Request("output") with { ExpectedAudio = expectedAudio };
+        Assert.Equal(satisfied, DownloadOutputContract.IsSatisfied(request, new(true, hasAudio, true, hasAudio ? "aac" : null)));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0d)]
+    [InlineData(-1d)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void Unknown_duration_does_not_invent_a_completeness_requirement(double? expectedDuration)
+    {
+        var request = Request("output") with { ExpectedDurationSeconds = expectedDuration };
+        Assert.True(DownloadOutputContract.IsSatisfied(request, ValidVideo(0)));
+        Assert.False(DownloadOutputContract.IsSatisfied(request, new(false, true, true, "aac")));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("1\n00:00:05,000 --> 00:00:01,000\nSynthetic speech\n")]

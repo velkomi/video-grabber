@@ -15,6 +15,8 @@ public static class DiagnosticHub
         private readonly string _stage;
         private readonly Stopwatch _watch = Stopwatch.StartNew();
         private string _status = "failed";
+        private string _message = "";
+        private int? _exitCode;
         private bool _disposed;
         public string Id { get; }
         internal Operation(string stage, string message)
@@ -25,13 +27,23 @@ public static class DiagnosticHub
             Job.Value = Id;
             Log.Write(stage, "started", message, jobId: Id);
         }
-        public void Complete(bool success = true) => _status = success ? "succeeded" : "failed";
-        public void Cancel() => _status = "cancelled";
+        public void Complete(bool success = true, string message = "", int? exitCode = null)
+        {
+            _status = success ? "succeeded" : "failed";
+            _message = message;
+            _exitCode = exitCode;
+        }
+        public void Cancel() => Cancel("");
+        public void Cancel(string message)
+        {
+            _status = "cancelled";
+            _message = message;
+        }
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
-            Log.Write(_stage, _status, durationMs: _watch.Elapsed.TotalMilliseconds, jobId: Id);
+            Log.Write(_stage, _status, _message, durationMs: _watch.Elapsed.TotalMilliseconds, jobId: Id, exitCode: _exitCode);
             Job.Value = _parent;
         }
     }

@@ -24,7 +24,7 @@ public sealed partial class MainWindow
         await DownloadSourceAsync(uri);
     }
 
-    private async Task<DownloadAttemptOutcome> DownloadSourceAsync(Uri uri, Uri? referer = null, Uri? hlsVideoSource = null, Uri? hlsAudioSource = null, bool directManifest = false, string? suggestedBaseName = null, bool resetCookieSelectionAfterUse = true)
+    private async Task<DownloadAttemptOutcome> DownloadSourceAsync(Uri uri, Uri? referer = null, Uri? hlsVideoSource = null, Uri? hlsAudioSource = null, bool directManifest = false, string? suggestedBaseName = null, bool resetCookieSelectionAfterUse = true, double? expectedDurationSeconds = null, bool? expectedAudio = null)
     {
         if (_operation is not null || _isInstallingComponents)
         {
@@ -80,7 +80,8 @@ public sealed partial class MainWindow
             SetDownloadState("Анализирую страницу…", uri.Host);
             var routingProxy = EnsureRoutingProxy(uri, referer);
             var result = await _downloader.DownloadAsync(
-                new DownloadRequest(uri, outputDirectory, quality, browserName, audio, cookieFile?.Path, referer, agent, routingProxy?.ProxyUrl, hlsVideoSource, hlsAudioSource, DirectManifest: directManifest, SuggestedBaseName: suggestedBaseName),
+                new DownloadRequest(uri, outputDirectory, quality, browserName, audio, cookieFile?.Path, referer, agent, routingProxy?.ProxyUrl, hlsVideoSource, hlsAudioSource, DirectManifest: directManifest, SuggestedBaseName: suggestedBaseName,
+                    ExpectedDurationSeconds: expectedDurationSeconds, ExpectedAudio: audio ? true : expectedAudio),
                 progress, operation.Token);
             SetDownloadState(result.Message, result.Success ? result.OutputPath : result.Details ?? result.OutputPath, !result.Success);
             SetProgress(result.Success ? 100 : 0);
