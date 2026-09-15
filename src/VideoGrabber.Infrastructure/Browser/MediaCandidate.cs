@@ -7,6 +7,9 @@ public sealed record MediaCandidate(
     Uri? HlsVideoSource = null, Uri? HlsAudioSource = null, HlsManifestInfo? HlsManifest = null,
     string? FrameId = null, int? PageOrdinal = null, string? PageSectionTitle = null)
 {
+    public bool FrameEvidenceConflicted { get; init; }
+    public bool DurationNeedsRevalidation { get; init; }
+
     public string DisplayName => string.IsNullOrWhiteSpace(Details)
         ? $"{Kind} — {Source.IdnHost}"
         : $"{Kind} {Details} — {Source.IdnHost}";

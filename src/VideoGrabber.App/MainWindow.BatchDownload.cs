@@ -34,12 +34,13 @@ public sealed partial class MainWindow
     private string SelectedBrowserQuality(MediaCandidate candidate)
     {
         if (_mediaQualitySelections.TryGetValue(candidate.Source.AbsoluteUri, out var saved)) return saved;
-        return (_mediaQualityBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "best";
+        return "best";
     }
 
-    private void SyncMediaQualityChoices()
+    private void SyncMediaQualityChoices(string? selectedQuality = null)
     {
         if (_mediaQualityBox is null) return;
+        var wasUpdating = _updatingMediaQuality;
         _updatingMediaQuality = true;
         try
         {
@@ -51,14 +52,14 @@ public sealed partial class MainWindow
                 foreach (var height in manifest.Variants.Where(v => v.Height is > 0)
                     .Select(v => v.Height!.Value).Distinct().OrderDescending())
                     _mediaQualityBox.Items.Add(ComboItem(height + "p", height + "p"));
-                var saved = _mediaQualitySelections.GetValueOrDefault(candidate.Source.AbsoluteUri, "best");
+                var saved = selectedQuality ?? _mediaQualitySelections.GetValueOrDefault(candidate.Source.AbsoluteUri, "best");
                 _mediaQualityBox.SelectedIndex = _mediaQualityBox.Items.OfType<ComboBoxItem>()
                     .Select((item, index) => (item, index))
                     .FirstOrDefault(x => string.Equals(x.item.Tag?.ToString(), saved, StringComparison.Ordinal)).index;
             }
             if (_mediaQualityBox.SelectedIndex < 0) _mediaQualityBox.SelectedIndex = 0;
         }
-        finally { _updatingMediaQuality = false; }
+        finally { _updatingMediaQuality = wasUpdating; }
     }
 
     private void StoreSelectedMediaQuality()

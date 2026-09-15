@@ -5,6 +5,114 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class MediaCandidatePresentationTests
 {
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(0d)]
+    [InlineData(-1d)]
+    public void Unconfirmed_duration_cannot_erase_valid_metadata_or_complete_revalidation(double value)
+    {
+        var previous = Master() with { HlsManifest = Master().HlsManifest! with { DurationSeconds = 42 } };
+        var incoming = previous with { HlsManifest = previous.HlsManifest! with { DurationSeconds = value } };
+        Assert.Equal(42d, MediaCandidateMerge.Merge(previous, incoming).HlsManifest!.DurationSeconds);
+        Assert.Throws<ArgumentOutOfRangeException>(() => MediaCandidateMerge.ConfirmDuration(previous, value));
+    }
+
+    [Fact]
+    public void Different_sources_cannot_merge_metadata()
+    {
+        var previous = Master();
+        Assert.Throws<ArgumentException>(() => MediaCandidateMerge.Merge(previous,
+            previous with { Source = new Uri("https://cdn.example/another/master.m3u8") }));
+    }
+
+    [Fact]
+    public void Successful_duration_revalidation_clears_only_duration_conflict()
+    {
+        var candidate = Master() with { FrameEvidenceConflicted = true, DurationNeedsRevalidation = true };
+        var confirmed = MediaCandidateMerge.ConfirmDuration(candidate, 42);
+        Assert.Equal(42d, confirmed.HlsManifest!.DurationSeconds);
+        Assert.False(confirmed.DurationNeedsRevalidation);
+        Assert.True(confirmed.FrameEvidenceConflicted);
+        var duplicate = MediaCandidateMerge.Merge(confirmed, new(candidate.Source, candidate.Referer, "HLS"));
+        Assert.Equal(42d, duplicate.HlsManifest!.DurationSeconds);
+        Assert.False(duplicate.DurationNeedsRevalidation);
+    }
+
+    [Fact]
+    public void Conflicting_finite_durations_become_unknown_and_sparse_duplicates_cannot_restore_them()
+    {
+        var previous = Master() with { HlsManifest = Master().HlsManifest! with { DurationSeconds = 42 } };
+        var incoming = previous with { HlsManifest = previous.HlsManifest! with { DurationSeconds = 84 } };
+        var merged = MediaCandidateMerge.Merge(previous, incoming);
+        Assert.Null(merged.HlsManifest!.DurationSeconds);
+        Assert.True(merged.DurationNeedsRevalidation);
+        var sparse = new MediaCandidate(previous.Source, previous.Referer, "HLS");
+        var replayed = MediaCandidateMerge.Merge(MediaCandidateMerge.Merge(merged, sparse), previous);
+        Assert.Null(replayed.HlsManifest!.DurationSeconds);
+        Assert.True(replayed.DurationNeedsRevalidation);
+    }
+
+    [Fact]
+    public void Conflicting_frame_evidence_stays_unknown_after_sparse_duplicates_and_binding_refresh()
+    {
+        var player = new Uri("https://school.example/player4");
+        var previous = Master() with { Referer = player, FrameId = "frame4", PageOrdinal = 4, PageSectionTitle = "PART 4" };
+        var conflict = MediaCandidateMerge.Merge(previous, previous with { FrameId = "other-frame" });
+        Assert.Null(conflict.FrameId);
+        Assert.Null(conflict.PageOrdinal);
+        Assert.Null(conflict.PageSectionTitle);
+        Assert.True(conflict.FrameEvidenceConflicted);
+
+        var sparse = new MediaCandidate(previous.Source, player, "HLS");
+        var duplicate = MediaCandidateMerge.Merge(conflict, sparse);
+        var replay = MediaCandidateMerge.Merge(duplicate, previous);
+        var metadata = new BrowserPageMetadata("Lesson", ["PART 4"], [new(4, "PART 4", player)]);
+        var rebound = BrowserFrameBindingResolver.Bind(replay, [new("frame4", player, 1)], metadata);
+        Assert.Null(rebound.FrameId);
+        Assert.Null(rebound.PageOrdinal);
+        Assert.Null(rebound.PageSectionTitle);
+        Assert.True(rebound.FrameEvidenceConflicted);
+    }
+
+    [Fact]
+    public void Refreshed_manifest_preserves_duration_and_absent_tracks()
+    {
+        var previous = Master() with { HlsManifest = Master().HlsManifest! with { DurationSeconds = 42 } };
+        var incoming = previous with
+        {
+            HlsManifest = previous.HlsManifest! with
+            {
+                DurationSeconds = null,
+                Variants = [new(new Uri("https://cdn.example/new720.m3u8"), 1280, 720, 2_000_000, 30, null)]
+            }
+        };
+        var merged = MediaCandidateMerge.Merge(previous, incoming);
+        Assert.Equal(42d, merged.HlsManifest!.DurationSeconds);
+        Assert.Equal(new Uri("https://cdn.example/new720.m3u8"), Assert.Single(merged.HlsManifest.Variants).Uri);
+
+        var sparseManifest = incoming with { HlsManifest = incoming.HlsManifest! with { Variants = [] } };
+        Assert.Equal(merged.HlsManifest, MediaCandidateMerge.Merge(merged, sparseManifest).HlsManifest);
+    }
+
+    [Fact]
+    public void Sparse_discovery_preserves_confirmed_frame_and_duration()
+    {
+        var previous = Master() with
+        {
+            FrameId = "frame4", PageOrdinal = 4, PageSectionTitle = "PART 4",
+            HlsManifest = Master().HlsManifest! with { DurationSeconds = 42 }
+        };
+        var sparse = new MediaCandidate(previous.Source, previous.Referer, "HLS");
+        var merged = MediaCandidateMerge.Merge(previous, sparse);
+        Assert.Equal("frame4", merged.FrameId);
+        Assert.Equal(4, merged.PageOrdinal);
+        Assert.Equal("PART 4", merged.PageSectionTitle);
+        Assert.Equal(42d, merged.HlsManifest!.DurationSeconds);
+        Assert.Equal(new[] { 360, 720 }, merged.HlsManifest.Variants.Select(variant => variant.Height!.Value));
+    }
+
     private static MediaCandidate Master()
     {
         var info = new HlsManifestInfo(true,

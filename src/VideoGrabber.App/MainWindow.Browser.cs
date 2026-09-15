@@ -26,7 +26,11 @@ public sealed partial class MainWindow
         _browserAddress = new TextBox { Header = "Открытая страница — проверяйте адрес перед входом", IsReadOnly = true };
         _mediaCandidatesBox = new ComboBox { Header = "Найденные видео и потоки", HorizontalAlignment = HorizontalAlignment.Stretch };
         _mediaQualityBox = new ComboBox { Header = "Качество выбранного видео", HorizontalAlignment = HorizontalAlignment.Stretch };
-        _mediaCandidatesBox.SelectionChanged += (_, _) => SyncMediaQualityChoices();
+        _mediaCandidatesBox.SelectionChanged += (_, _) =>
+        {
+            if (_updatingMediaQuality) return;
+            SyncMediaQualityChoices();
+        };
         _mediaQualityBox.SelectionChanged += (_, _) => StoreSelectedMediaQuality();
 
         var download = PrimaryButton("Скачать выбранное видео");

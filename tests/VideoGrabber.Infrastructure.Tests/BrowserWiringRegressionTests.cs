@@ -2,6 +2,23 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed partial class BrowserWiringRegressionTests
 {
+    // Supplemental wiring check; production reducer/merge behavior is tested directly.
+    [Fact]
+    public void Candidate_rebuild_uses_production_selection_and_merge_with_event_suppression()
+    {
+        var root = FindRepoRoot();
+        var devtools = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
+        var browser = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
+        var batch = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
+        Assert.Contains("MediaCandidateSelectionReducer.Reduce(", devtools);
+        Assert.Contains("MediaCandidateMerge.Merge(previous, candidate)", devtools);
+        Assert.Contains("foreach (var candidate in selection.Candidates)", devtools);
+        Assert.Contains("finally { _updatingMediaQuality = wasUpdating; }", devtools);
+        Assert.Contains("if (_updatingMediaQuality) return;", browser);
+        Assert.Contains("SyncMediaQualityChoices(selection.SelectedQuality)", devtools);
+        Assert.DoesNotContain("return (_mediaQualityBox.SelectedItem", batch);
+    }
+
     [Fact]
     public void Browser_download_does_not_force_private_session_and_resolves_hls_plan_at_click_time()
     {

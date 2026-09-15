@@ -74,6 +74,7 @@ public static class BrowserFrameBindingResolver
     public static MediaCandidate Bind(MediaCandidate candidate, IReadOnlyList<DevToolsFrameInfo> frames, BrowserPageMetadata metadata)
     {
         candidate = Unknown(candidate);
+        if (candidate.FrameEvidenceConflicted) return candidate;
         var evidence = new List<Uri> { candidate.Source, candidate.Referer };
         if (!string.IsNullOrWhiteSpace(candidate.FrameId))
         {

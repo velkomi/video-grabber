@@ -272,6 +272,9 @@ public sealed partial class MainWindow
             if (generation != Volatile.Read(ref _browserDiscoveryGeneration)
                 || _mediaBrowser?.CoreWebView2 is null || _browserPageUri is null || _seenMedia.Count >= 200) return;
 
+            var key = candidate.Source.AbsoluteUri;
+            if (_mediaCandidateItems.TryGetValue(key, out var previousItem) && previousItem.Tag is MediaCandidate previous)
+                candidate = MediaCandidateMerge.Merge(previous, candidate);
             candidate = BrowserFrameBindingResolver.Bind(candidate, _browserFrames, _browserMetadata);
             if (candidate.HlsManifest is { IsMaster: true })
                 DiagnosticHub.Log.Write("browser.binding.candidate", "observed",
@@ -297,7 +300,6 @@ public sealed partial class MainWindow
                 }
             }
 
-            var key = candidate.Source.AbsoluteUri;
             if (_mediaCandidateItems.TryGetValue(key, out var existing))
             {
                 var index = Math.Max(1, _mediaCandidatesBox.Items.IndexOf(existing) + 1);
@@ -362,8 +364,10 @@ public sealed partial class MainWindow
 
     private void RebindAndReorderMediaCandidates()
     {
+        var generation = Volatile.Read(ref _browserDiscoveryGeneration);
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
             var rawEntries = _mediaCandidatesBox.Items.OfType<Microsoft.UI.Xaml.Controls.ComboBoxItem>()
                 .Select((item, index) => (Item: item, Index: index, Candidate: item.Tag as MediaCandidate))
                 .Where(entry => entry.Candidate is not null)
@@ -375,18 +379,29 @@ public sealed partial class MainWindow
                 .OrderBy(entry => entry.Candidate.PageOrdinal ?? int.MaxValue)
                 .ThenBy(entry => entry.Index)
                 .ToArray();
-            _mediaCandidatesBox.Items.Clear();
-            foreach (var entry in entries)
+            var selectedSource = (_mediaCandidatesBox.SelectedItem as Microsoft.UI.Xaml.Controls.ComboBoxItem)?.Tag is MediaCandidate selected
+                ? selected.Source : null;
+            var selection = MediaCandidateSelectionReducer.Reduce(
+                entries.Select(entry => entry.Candidate).ToArray(), selectedSource, _mediaQualitySelections);
+            var wasUpdating = _updatingMediaQuality;
+            _updatingMediaQuality = true;
+            try
             {
-                entry.Item.Tag = entry.Candidate;
-                _mediaCandidatesBox.Items.Add(entry.Item);
-                SyncQueuedCandidate(entry.Candidate);
+                _mediaCandidatesBox.Items.Clear();
+                foreach (var candidate in selection.Candidates)
+                {
+                    var item = _mediaCandidateItems[candidate.Source.AbsoluteUri];
+                    item.Tag = candidate;
+                    item.Content = MediaCandidatePresentation.DisplayName(candidate, _mediaCandidatesBox.Items.Count + 1, _browserMetadata);
+                    _mediaCandidatesBox.Items.Add(item);
+                    SyncQueuedCandidate(candidate);
+                }
+                _mediaCandidatesBox.SelectedItem = _mediaCandidatesBox.Items.OfType<Microsoft.UI.Xaml.Controls.ComboBoxItem>()
+                    .FirstOrDefault(item => item.Tag is MediaCandidate value
+                        && string.Equals(value.Source.AbsoluteUri, selection.SelectedSource?.AbsoluteUri, StringComparison.Ordinal));
             }
-            for (var i = 0; i < _mediaCandidatesBox.Items.Count; i++)
-                if (_mediaCandidatesBox.Items[i] is Microsoft.UI.Xaml.Controls.ComboBoxItem { Tag: MediaCandidate candidate } item)
-                    item.Content = MediaCandidatePresentation.DisplayName(candidate, i + 1, _browserMetadata);
-            if (_mediaCandidatesBox.Items.Count > 0 && _mediaCandidatesBox.SelectedIndex < 0) _mediaCandidatesBox.SelectedIndex = 0;
-            SyncMediaQualityChoices();
+            finally { _updatingMediaQuality = wasUpdating; }
+            SyncMediaQualityChoices(selection.SelectedQuality);
             RefreshDownloadQueueList();
         });
     }
