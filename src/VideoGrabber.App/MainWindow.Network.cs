@@ -120,9 +120,10 @@ public sealed partial class MainWindow
         RefreshRouteList();
         DiagnosticHub.Log.Write("network.rules", "succeeded", "Saved rule count=" + settings.Rules.Count);
     }
-    private SiteRouteProxy? EnsureRoutingProxy(Uri source, Uri? referer = null)
+    private SiteRouteProxy? EnsureRoutingProxy(Uri source, Uri? referer = null, DownloadRouteScope? routeScope = null)
     {
         if (_routeReadError is not null) throw new InvalidOperationException("Исправьте файл правил подключения в разделе «Компоненты»: " + _routeReadError);
+        if (routeScope is not null) return routeScope.ResolveProxy(_routes, source, referer);
         if (DownloadRouteResolver.ResolveAdapterId(_routePolicy, _routes, source, referer) is null) return null;
         return _routeProxy ??= new SiteRouteProxy(new RouteConnector(_routePolicy).OpenAsync);
     }

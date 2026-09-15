@@ -31,13 +31,13 @@ public sealed partial class MainWindow
             (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString(), Volatile.Read(ref _browserDiscoveryGeneration));
 
     private Task<DownloadAttemptOutcome> DownloadSourceAsync(UserDownloadIntent intent, CancellationToken operationToken)
-        => RunDownloadOperationAsync(intent, null,
-            token => DownloadPreparedSourceAsync(intent,
-                new(intent.SelectedSource, null, null, null, null, null, null, false, false, null, null, null), token),
+        => RunDownloadOperationAsync(intent,
+            (token, routeScope) => DownloadPreparedSourceAsync(intent,
+                new(intent.SelectedSource, null, null, null, null, null, null, false, false, null, null, null), token, routeScope),
             operationToken: operationToken);
 
-    private async Task<DownloadAttemptOutcome> RunDownloadOperationAsync(UserDownloadIntent intent, Uri? referer,
-        Func<CancellationToken, Task<DownloadAttemptOutcome>> download,
+    private async Task<DownloadAttemptOutcome> RunDownloadOperationAsync(UserDownloadIntent intent,
+        Func<CancellationToken, DownloadRouteScope, Task<DownloadAttemptOutcome>> download,
         bool resetCookieSelectionAfterUse = true, CancellationToken operationToken = default)
     {
         if (_operation is not null || _isInstallingComponents)
@@ -57,15 +57,12 @@ public sealed partial class MainWindow
         _cancelButton.IsEnabled = true;
         _lastLoggedProgressBucket = -1;
         var selectedCookies = intent.CookieSelection;
-        var browserOwnsRouteSession = _mediaBrowser?.CoreWebView2 is not null
-            && _browserUsesSiteRoutes && _browserPageUri is not null
-            && DownloadRouteResolver.WouldConfigureSession(_routes, _browserPageUri, null);
-        var downloadOwnsRouteSession = !browserOwnsRouteSession && DownloadRouteResolver.WouldConfigureSession(_routes, intent.SelectedSource, referer);
+        var routeScope = new DownloadRouteScope(_routePolicy, _browserUsesSiteRoutes ? _routeProxy : null);
         SetProgress(null);
         try
         {
             EnsureIntentSession(intent, operation.Token);
-            var outcome = await download(operation.Token);
+            var outcome = await download(operation.Token, routeScope);
             job.Complete(outcome == DownloadAttemptOutcome.Succeeded);
             return outcome;
         }
@@ -83,16 +80,11 @@ public sealed partial class MainWindow
         }
         finally
         {
+            routeScope.Dispose();
             _operation = null;
             _downloadButton.IsEnabled = true;
             _cancelButton.IsEnabled = false;
             if (resetCookieSelectionAfterUse && BrowserDownloadSessionPolicy.ShouldResetAfterUse(selectedCookies)) _cookiesBox.SelectedIndex = 0;
-            if (downloadOwnsRouteSession)
-            {
-                _routePolicy.ClearSession();
-                _routeProxy?.Dispose();
-                _routeProxy = null;
-            }
             TryStartPendingQueue();
             TryCloseAfterOperation();
         }
@@ -106,7 +98,7 @@ public sealed partial class MainWindow
     }
 
     private async Task<DownloadAttemptOutcome> DownloadPreparedSourceAsync(
-        UserDownloadIntent intent, PreparedDownload selected, CancellationToken operationToken)
+        UserDownloadIntent intent, PreparedDownload selected, CancellationToken operationToken, DownloadRouteScope routeScope)
     {
         var operation = _operation;
         ScopedCookieFile? cookieFile = null;
@@ -135,7 +127,7 @@ public sealed partial class MainWindow
                 cookieFile = usingEmbeddedSession ? await ExportBrowserSessionAsync(captured, selected, token) : null;
                 EnsureIntentSession(captured, token);
                 var agent = usingEmbeddedSession ? _mediaBrowser?.CoreWebView2.Settings.UserAgent : null;
-                var routingProxy = EnsureRoutingProxy(selected.Source, selected.Referer);
+                var routingProxy = EnsureRoutingProxy(selected.Source, selected.Referer, routeScope);
                 return selected with { CookiesFile = cookieFile?.Path, UserAgent = agent, LocalProxy = routingProxy?.ProxyUrl };
             }, operationToken);
             EnsureIntentSession(intent, operationToken);

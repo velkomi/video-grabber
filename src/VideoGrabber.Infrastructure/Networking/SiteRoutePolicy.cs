@@ -116,6 +116,41 @@ public sealed class SiteRoutePolicy
             && MatchesFamily(host, session.Families);
     }
 
+    public SessionScope BeginSessionScope() => new(this);
+
+    public sealed class SessionScope : IDisposable
+    {
+        private readonly SiteRoutePolicy _policy;
+        private long? _ownedVersion;
+        private bool _disposed;
+
+        internal SessionScope(SiteRoutePolicy policy) => _policy = policy;
+
+        public bool ConfigureSession(string sourceHost, string adapterId)
+        {
+            lock (_policy._sessionGate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                // A browser or another owner may already hold (or replace) the session.
+                if (_policy._session is { } current && current.Version != _ownedVersion) return false;
+                if (!_policy.ConfigureSession(sourceHost, adapterId)) return false;
+                _ownedVersion = _policy._session!.Version;
+                return true;
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (_policy._sessionGate)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                if (_ownedVersion is not null && _policy._session?.Version == _ownedVersion)
+                    _policy.ClearSession();
+            }
+        }
+    }
+
     private static bool MatchesFamily(string host, IReadOnlyList<string> families)
         => families.Any(family => host.Equals(family, StringComparison.OrdinalIgnoreCase)
             || host.EndsWith("." + family, StringComparison.OrdinalIgnoreCase));

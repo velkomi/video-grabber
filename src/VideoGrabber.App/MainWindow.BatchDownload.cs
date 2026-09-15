@@ -17,7 +17,7 @@ public sealed partial class MainWindow
         string? qualityOverride = null)
     {
         var intent = CaptureDownloadIntent(candidate.Source, qualityOverride ?? SelectedBrowserQuality(candidate));
-        return await RunDownloadOperationAsync(intent, candidate.Referer, async operationToken =>
+        return await RunDownloadOperationAsync(intent, async (operationToken, routeScope) =>
         {
             EnsureIntentSession(intent, operationToken);
             candidate = await RefreshCandidateBindingAsync(candidate);
@@ -30,7 +30,7 @@ public sealed partial class MainWindow
                 async () =>
                 {
                     EnsureIntentSession(intent, operationToken);
-                    var verified = await EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token);
+                    var verified = await EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token, routeScope);
                     EnsureIntentSession(intent, operationToken);
                     return verified;
                 },
@@ -44,7 +44,7 @@ public sealed partial class MainWindow
                     var selected = new PreparedDownload(plan.Source, candidate.Referer, null, null, null,
                         plan.HlsVideoSource, plan.HlsAudioSource, plan.DirectManifest, plan.ResolvedHlsLeaf,
                         suggested, expectedDuration, expectedAudio);
-                    return DownloadPreparedSourceAsync(intent, selected, operationToken);
+                    return DownloadPreparedSourceAsync(intent, selected, operationToken, routeScope);
                 },
                 error =>
                 {

@@ -1,5 +1,6 @@
 using VideoGrabber.Infrastructure.Browser;
 using VideoGrabber.Infrastructure.Diagnostics;
+using VideoGrabber.Infrastructure.Networking;
 
 namespace VideoGrabber.App;
 
@@ -8,7 +9,7 @@ public sealed partial class MainWindow
     private async Task<bool> EnsureSelectedHlsVerifiedAsync(
         MediaCandidate candidate,
         MediaDownloadPlan plan,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, DownloadRouteScope routeScope)
     {
         if (!plan.IsResolved) return false;
         var verified = new HashSet<string>(_verifiedClearHls.Keys, StringComparer.Ordinal);
@@ -26,7 +27,7 @@ public sealed partial class MainWindow
         foreach (var source in selected.Distinct())
         {
             if (_verifiedClearHls.ContainsKey(source.AbsoluteUri)) continue;
-            var routeProxy = EnsureRoutingProxy(source, candidate.Referer);
+            var routeProxy = EnsureRoutingProxy(source, candidate.Referer, routeScope);
             var userAgent = _mediaBrowser?.CoreWebView2?.Settings.UserAgent;
             var result = await new HlsPreflightClient().FetchAsync(
                 source,
