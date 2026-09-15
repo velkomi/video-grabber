@@ -76,7 +76,9 @@ public sealed partial class MainWindow
         if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) return;
         var page = _browserPageUri;
         if (page is null) return;
-        var lease = _browserPages.Capture();
+        if (!TryGetDevToolsRequestIdentity(json, out var requestId, out var loaderId)
+            || !_browserPages.TryGetRequestLease(RequestKey(sessionId, requestId), loaderId, out var lease)
+            || !IsCurrentBrowserPage(lease, core)) return;
         TrimPendingStateIfNeeded();
 
         if (DevToolsGetCourseResponseParser.TryParsePlayerResponse(json, page, out var player) && player is not null)
@@ -110,6 +112,8 @@ public sealed partial class MainWindow
         var page = _browserPageUri;
         if (page is null) return;
         var lease = _browserPages.Capture();
+        if (!TryGetDevToolsRequestIdentity(json, out var requestId, out var loaderId)
+            || !_browserPages.RememberRequest(RequestKey(sessionId, requestId), loaderId, lease)) return;
         if (DevToolsHlsSnifferParser.TryParseRequest(json, page, out var context) && context is not null)
         {
             if (_networkRequestContexts.Count > 5000) _networkRequestContexts.Clear();
@@ -125,8 +129,8 @@ public sealed partial class MainWindow
         if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) return;
         if (!DevToolsGetCourseResponseParser.TryParseLoadingFinished(json, out var requestId) || requestId is null) return;
         var key = RequestKey(sessionId, requestId);
-        var lease = _browserPages.Capture();
-        if (!IsCurrentBrowserPage(lease, core)) return;
+        if (!_browserPages.TryGetRequestLease(key, null, out var lease)
+            || !IsCurrentBrowserPage(lease, core)) return;
         try
         {
             if (_pendingGetCoursePlayers.TryRemove(key, out var player))
@@ -137,7 +141,8 @@ public sealed partial class MainWindow
         }
         finally
         {
-            if (IsCurrentBrowserPage(lease, core)) _networkRequestContexts.TryRemove(key, out _);
+            if (IsCurrentBrowserPage(lease, core) && _browserPages.ForgetRequest(key, lease))
+                _networkRequestContexts.TryRemove(key, out _);
         }
     }
 
@@ -145,6 +150,8 @@ public sealed partial class MainWindow
     {
         if (!DevToolsGetCourseResponseParser.TryParseLoadingFailed(json, out var requestId) || requestId is null) return;
         var key = RequestKey(sessionId, requestId);
+        if (!_browserPages.TryGetRequestLease(key, null, out var lease)
+            || !_browserPages.ForgetRequest(key, lease)) return;
         _pendingGetCoursePlayers.TryRemove(key, out _);
         _pendingHlsManifests.TryRemove(key, out _);
         _networkRequestContexts.TryRemove(key, out _);
@@ -452,6 +459,22 @@ public sealed partial class MainWindow
         _browserMetadata = BrowserPageMetadata.Empty;
         if (clearUi) _mediaCandidatesBox.Items.Clear();
         RefreshDownloadQueueList();
+    }
+
+    private static bool TryGetDevToolsRequestIdentity(string json, out string requestId, out string loaderId)
+    {
+        requestId = loaderId = string.Empty;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("requestId", out var request) || request.ValueKind != JsonValueKind.String
+                || !root.TryGetProperty("loaderId", out var loader) || loader.ValueKind != JsonValueKind.String) return false;
+            requestId = request.GetString() ?? string.Empty;
+            loaderId = loader.GetString() ?? string.Empty;
+            return requestId.Length > 0;
+        }
+        catch (JsonException) { return false; }
     }
 
     private static string RequestKey(string? sessionId, string requestId)

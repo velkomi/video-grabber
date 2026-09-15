@@ -156,6 +156,9 @@ public sealed partial class MainWindow
                     if (!IsCurrentBrowserPage(completedLease, core)) return;
                     await RefreshBrowserBindingsAsync(core, completedLease);
                 };
+                core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All,
+                    CoreWebView2WebResourceRequestSourceKinds.All);
+                core.WebResourceRequested += Browser_WebResourceRequested;
                 core.WebResourceResponseReceived += Browser_WebResourceResponseReceived;
                 await EnableDevToolsMediaDiscoveryAsync(core);
                 if (!IsCurrentBrowserPage(lease, core)) return;
@@ -174,13 +177,23 @@ public sealed partial class MainWindow
         finally { _browserInitializing = false; }
     }
 
+    private void Browser_WebResourceRequested(CoreWebView2 sender, CoreWebView2WebResourceRequestedEventArgs args)
+    {
+        if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, sender)) return;
+        var request = args.Request;
+        if (!Uri.TryCreate(request.Uri, UriKind.Absolute, out var source) || source.Scheme is not ("http" or "https")) return;
+        _browserPages.RememberRequest(request, string.Empty, _browserPages.Capture());
+    }
+
     private async void Browser_WebResourceResponseReceived(CoreWebView2 sender, CoreWebView2WebResourceResponseReceivedEventArgs args)
     {
         try
         {
             if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, sender)) return;
-            var lease = _browserPages.Capture();
-            if (!IsCurrentBrowserPage(lease, sender)) return;
+            var request = args.Request;
+            if (!_browserPages.TryGetRequestLease(request, string.Empty, out var lease)
+                || !_browserPages.ForgetRequest(request, lease)
+                || !IsCurrentBrowserPage(lease, sender)) return;
             if (_browserPageUri is null || args.Response.StatusCode < 200 || args.Response.StatusCode >= 300) return;
             var mime = args.Response.Headers.Contains("Content-Type") ? args.Response.Headers.GetHeader("Content-Type") : "";
             var referer = _browserPageUri;
@@ -291,6 +304,11 @@ public sealed partial class MainWindow
         {
             DisableDevToolsMediaDiscovery(clearUi: !forWindowClose);
             if (forWindowClose) _browserPages.Dispose();
+            if (_mediaBrowser?.CoreWebView2 is { } core)
+            {
+                core.WebResourceRequested -= Browser_WebResourceRequested;
+                core.WebResourceResponseReceived -= Browser_WebResourceResponseReceived;
+            }
             if (!forWindowClose) _mediaBrowser?.CoreWebView2?.CookieManager.DeleteAllCookies();
             _mediaBrowser?.Close();
         }

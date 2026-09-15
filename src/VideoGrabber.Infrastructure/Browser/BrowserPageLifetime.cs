@@ -1,3 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
+
 namespace VideoGrabber.Infrastructure.Browser;
 
 public sealed record BrowserPageLease(long Generation, CancellationToken Token);
@@ -10,6 +13,47 @@ public sealed class BrowserPageLifetime : IDisposable
     private long _generation;
     private bool _disposed;
     private readonly SemaphoreSlim _probes;
+    private sealed class RequestIdentityComparer : IEqualityComparer<object>
+    {
+        public new bool Equals(object? x, object? y) => x is string a && y is string b
+            ? StringComparer.Ordinal.Equals(a, b) : ReferenceEquals(x, y);
+        public int GetHashCode(object value) => value is string text
+            ? StringComparer.Ordinal.GetHashCode(text) : RuntimeHelpers.GetHashCode(value);
+    }
+
+    private readonly Dictionary<object, (BrowserPageLease Lease, string DocumentId)> _requests = new(new RequestIdentityComparer());
+    public int PendingRequestCount { get { lock (_gate) return _requests.Count; } }
+
+    public bool RememberRequest(object request, string documentId, BrowserPageLease lease)
+    {
+        lock (_gate)
+        {
+            if (!IsCurrent(lease)) return false;
+            if (_requests.Count >= 4096 && !_requests.ContainsKey(request)) return false;
+            _requests[request] = (lease, documentId);
+            return true;
+        }
+    }
+
+    public bool TryGetRequestLease(object request, string? documentId, [NotNullWhen(true)] out BrowserPageLease? lease)
+    {
+        lock (_gate)
+        {
+            lease = null;
+            if (!_requests.TryGetValue(request, out var pending)
+                || !IsCurrent(pending.Lease)
+                || (documentId is not null && !string.Equals(documentId, pending.DocumentId, StringComparison.Ordinal))) return false;
+            lease = pending.Lease;
+            return true;
+        }
+    }
+
+    public bool ForgetRequest(object request, BrowserPageLease lease)
+    {
+        lock (_gate)
+            return _requests.TryGetValue(request, out var pending) && pending.Lease == lease
+                && _requests.Remove(request);
+    }
 
     public BrowserPageLifetime(int maxConcurrentProbes = 3)
     {
@@ -40,6 +84,7 @@ public sealed class BrowserPageLifetime : IDisposable
             previous = _page;
             _page = new();
             _generation++;
+            _requests.Clear();
         }
         previous.Cancel();
         previous.Dispose();
@@ -82,6 +127,7 @@ public sealed class BrowserPageLifetime : IDisposable
         {
             if (_disposed) return;
             _disposed = true;
+            _requests.Clear();
         }
         _page.Cancel();
         _page.Dispose();

@@ -316,3 +316,26 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.DoesNotContain("RefreshBrowserFrameTreeAsync(core);", metadata);
     }
 }
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Network_response_handlers_resolve_recorded_start_identity()
+    {
+        var root = FindRepoRoot();
+        var devtools = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
+        var browser = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
+        var response = devtools[devtools.IndexOf("private void OnDevToolsResponse", StringComparison.Ordinal)..
+            devtools.IndexOf("private void OnDevToolsRequest", StringComparison.Ordinal)];
+        var webResponse = browser[browser.IndexOf("private async void Browser_WebResourceResponseReceived", StringComparison.Ordinal)..
+            browser.IndexOf("private static async Task<string> ReadLimitedTextAsync", StringComparison.Ordinal)];
+        Assert.DoesNotContain("_browserPages.Capture()", response);
+        Assert.DoesNotContain("_browserPages.Capture()", webResponse);
+        Assert.Contains("TryGetRequestLease(RequestKey(sessionId, requestId), loaderId", response);
+        Assert.Contains("RememberRequest(RequestKey(sessionId, requestId), loaderId, lease)", devtools);
+        Assert.Contains("core.WebResourceRequested += Browser_WebResourceRequested", browser);
+        Assert.Contains("RememberRequest(request, string.Empty, _browserPages.Capture())", browser);
+        Assert.Contains("TryGetRequestLease(request, string.Empty, out var lease)", webResponse);
+        Assert.Contains("_browserPages.ForgetRequest(key, lease)", devtools);
+    }
+}

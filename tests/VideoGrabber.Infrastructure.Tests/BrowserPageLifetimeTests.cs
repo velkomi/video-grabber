@@ -4,6 +4,69 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class BrowserPageLifetimeTests
 {
+    [Fact]
+    public void Request_registry_is_bounded_rejects_stale_starts_and_clears_on_close()
+    {
+        using var pages = new BrowserPageLifetime();
+        var lease = pages.Capture();
+        for (var i = 0; i < 4096; i++) Assert.True(pages.RememberRequest(i, "document", lease));
+        Assert.False(pages.RememberRequest(4096, "document", lease));
+        Assert.Equal(4096, pages.PendingRequestCount);
+        pages.Reset();
+        Assert.Equal(0, pages.PendingRequestCount);
+        Assert.False(pages.RememberRequest("late-start", "document", lease));
+        Assert.True(pages.RememberRequest("new", "document-b", pages.Capture()));
+        pages.Dispose();
+        Assert.Equal(0, pages.PendingRequestCount);
+        Assert.False(pages.TryGetRequestLease("new", "document-b", out _));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Response_uses_initiating_request_generation_and_never_adopts_current_page(bool webResource)
+    {
+        using var pages = new BrowserPageLifetime();
+        object requestA = webResource ? new object() : "session|request-1";
+        var pageA = pages.Capture();
+        var documentA = webResource ? string.Empty : "loader-A";
+        var documentB = webResource ? string.Empty : "loader-B";
+        Assert.True(pages.RememberRequest(requestA, documentA, pageA));
+        pages.Reset();
+        var queue = new BrowserDownloadQueue();
+        var verified = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
+        var merged = 0;
+        var source = new Uri("https://fixture.invalid/video.m3u8");
+        void OnResponse(object request, string loader)
+        {
+            if (!pages.TryGetRequestLease(request, loader, out var lease)) return;
+            pages.TryApply(lease!, () => true, () =>
+            {
+                queue.AddOrUpdate(new(source, source, "HLS"), 1, "720p");
+                verified[source.AbsoluteUri] = 0;
+                merged++;
+            });
+        }
+        OnResponse(requestA, documentA);
+        Assert.Empty(queue.Items);
+        Assert.Empty(verified);
+        Assert.Equal(0, merged);
+        Assert.Equal(0, pages.PendingRequestCount);
+
+        object requestB = webResource ? new object() : "session|request-1";
+        var pageB = pages.Capture();
+        Assert.True(pages.RememberRequest(requestB, documentB, pageB));
+        OnResponse(requestA, documentA);
+        Assert.Empty(queue.Items);
+        Assert.False(pages.ForgetRequest(requestB, pageA));
+        OnResponse(requestB, documentB);
+        Assert.Single(queue.Items);
+        Assert.Single(verified);
+        Assert.Equal(1, merged);
+        Assert.True(pages.ForgetRequest(requestB, pageB));
+        Assert.False(pages.TryGetRequestLease(requestB, documentB, out _));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
