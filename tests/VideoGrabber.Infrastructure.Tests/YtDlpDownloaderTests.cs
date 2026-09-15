@@ -44,9 +44,7 @@ public sealed class YtDlpDownloaderTests
     {
         var outputDirectory = Path.Combine(Path.GetTempPath(), "VideoGrabberTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(outputDirectory);
-        var output = Path.Combine(outputDirectory, "audio.mp3");
-        await File.WriteAllTextAsync(output, "not-empty");
-        var runner = new RecordingProcessRunner(output);
+        var runner = new RecordingProcessRunner("audio.mp3");
         var probe = new StubProbe(new MediaProbeResult(true, true, false, "mp3"));
 
         try
@@ -100,7 +98,12 @@ public sealed class YtDlpDownloaderTests
             CancellationToken cancellationToken)
         {
             Spec = spec;
-            if (outputPath is not null) onOutput?.Invoke($"filepath:{outputPath}");
+            if (outputPath is not null)
+            {
+                var output = Path.Combine(spec.WorkingDirectory!, outputPath);
+                File.WriteAllText(output, "not-empty");
+                onOutput?.Invoke($"filepath:{output}");
+            }
             return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));
         }
     }

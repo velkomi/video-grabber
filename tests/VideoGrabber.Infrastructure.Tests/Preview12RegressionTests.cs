@@ -52,13 +52,13 @@ public sealed class Preview12RegressionTests
     }
 
     [Fact]
-    public async Task Default_download_work_files_live_in_selected_output_folder()
+    public async Task Default_download_work_files_live_in_owned_child_of_selected_output_folder()
     {
         var root = Path.Combine(Path.GetTempPath(), "VG-preview12-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
-            var runner = new OutputFolderRunner(root);
+            var runner = new OutputFolderRunner();
             var probe = new StubProbe(new MediaProbeResult(true, true, true, "aac", DurationSeconds: 3559));
             var result = await new YtDlpDownloader(runner, new ToolLocator(root, root), probe).DownloadAsync(
                 new DownloadRequest(new Uri("https://cdn.example/master.m3u8"), root, "720p",
@@ -66,7 +66,8 @@ public sealed class Preview12RegressionTests
                 null, CancellationToken.None);
 
             Assert.True(result.Success, result.Message);
-            Assert.Equal(root, runner.ObservedWorkingDirectory);
+            Assert.Equal(root, Path.GetDirectoryName(runner.ObservedWorkingDirectory));
+            Assert.StartsWith(".vg-job-", Path.GetFileName(runner.ObservedWorkingDirectory));
             Assert.StartsWith(root, result.OutputPath!, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("59m19s", Path.GetFileName(result.OutputPath!), StringComparison.Ordinal);
         }
@@ -94,14 +95,13 @@ public sealed class Preview12RegressionTests
             [new(new Uri("https://cdn.example/720.m3u8"), 1280, 720, 1_500_000, 30, null)],
             [], false, null, false));
 
-    private sealed class OutputFolderRunner(string output) : IProcessRunner
+    private sealed class OutputFolderRunner : IProcessRunner
     {
         public string? ObservedWorkingDirectory { get; private set; }
         public Task<ProcessResult> RunAsync(ProcessSpec spec, Action<string>? onOutput, CancellationToken cancellationToken)
         {
             ObservedWorkingDirectory = spec.WorkingDirectory;
-            Directory.CreateDirectory(output);
-            var path = Path.Combine(output, "МОДУЛЬ №1 - Часть 3 - День 1 - 720p - downloading.mp4");
+            var path = Path.Combine(spec.WorkingDirectory!, "МОДУЛЬ №1 - Часть 3 - День 1 - 720p - downloading.mp4");
             File.WriteAllBytes(path, [1, 2, 3, 4]);
             onOutput?.Invoke("filepath:" + path);
             return Task.FromResult(new ProcessResult(0, string.Empty, string.Empty));

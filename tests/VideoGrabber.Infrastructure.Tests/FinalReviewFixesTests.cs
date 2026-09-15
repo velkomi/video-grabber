@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Media;
 using VideoGrabber.Core.Processes;
@@ -41,25 +42,29 @@ public sealed class FinalReviewFixesTests
     }
 
     [Fact]
-    public async Task Invalid_audio_only_output_is_deleted_after_probe_failure()
+    public async Task Invalid_audio_only_output_is_preserved_after_probe_failure()
     {
         var root = Path.Combine(Path.GetTempPath(), "VG-audio-clean-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
-            var runner = new AudioOutputRunner(root);
+            var runner = new AudioOutputRunner();
             var downloader = new YtDlpDownloader(runner, new ToolLocator(root, root), new InvalidAudioProbe());
             var result = await downloader.DownloadAsync(new DownloadRequest(new Uri("https://cdn.example/audio.m3u8"), root, "best", AudioOnly: true, DirectManifest: true), null, CancellationToken.None);
             Assert.False(result.Success);
-            Assert.False(File.Exists(runner.OutputPath));
+            Assert.True(File.Exists(runner.OutputPath));
+            Assert.Equal(SHA256.HashData(new byte[] { 1, 2, 3 }), SHA256.HashData(File.ReadAllBytes(runner.OutputPath)));
+            Assert.Contains(Path.GetDirectoryName(runner.OutputPath)!, result.Details);
+            Assert.Empty(Directory.GetFiles(root, "*.mp3"));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
-    private sealed class AudioOutputRunner(string root) : IProcessRunner
+    private sealed class AudioOutputRunner : IProcessRunner
     {
-        public string OutputPath { get; } = Path.Combine(root, "invalid.mp3");
+        public string OutputPath { get; private set; } = string.Empty;
         public Task<ProcessResult> RunAsync(ProcessSpec spec, Action<string>? onOutput, CancellationToken cancellationToken)
         {
+            OutputPath = Path.Combine(spec.WorkingDirectory!, "invalid.mp3");
             File.WriteAllBytes(OutputPath, [1, 2, 3]);
             onOutput?.Invoke("filepath:" + OutputPath);
             return Task.FromResult(new ProcessResult(0, "", ""));

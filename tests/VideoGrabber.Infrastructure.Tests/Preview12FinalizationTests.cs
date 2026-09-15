@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Media;
 using VideoGrabber.Core.Processes;
@@ -9,7 +10,7 @@ namespace VideoGrabber.Infrastructure.Tests;
 public sealed class Preview12FinalizationTests
 {
     [Fact]
-    public async Task Cancel_after_100_percent_finalizes_valid_downloading_file_and_removes_temp()
+    public async Task Cancel_after_100_percent_preserves_work_and_temp_without_promotion()
     {
         var root = Path.Combine(Path.GetTempPath(), "VG-p12-finalize-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -18,16 +19,16 @@ public sealed class Preview12FinalizationTests
             var runner = new CompletedThenCancelledRunner();
             var probe = new ValidVideoProbe(3842.4);
             var downloader = new YtDlpDownloader(runner, new ToolLocator(root, root), probe);
-            var result = await downloader.DownloadAsync(
+            var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => downloader.DownloadAsync(
                 new DownloadRequest(new Uri("https://cdn.example/master.m3u8"), root, "720p",
                     DirectManifest: true, SuggestedBaseName: "MODULE 1 - Part 2 - Day 1 - 720p"),
-                null, CancellationToken.None);
-            Assert.True(result.Success, result.Message);
-            Assert.NotNull(result.OutputPath);
-            Assert.Contains("01h04m02s", Path.GetFileName(result.OutputPath!), StringComparison.Ordinal);
-            Assert.DoesNotContain("downloading", Path.GetFileName(result.OutputPath!), StringComparison.OrdinalIgnoreCase);
-            Assert.False(File.Exists(runner.TempPath));
-            Assert.False(File.Exists(runner.WorkPath));
+                null, CancellationToken.None));
+            Assert.Equal(Path.GetDirectoryName(runner.WorkPath), error.Data["JobDirectory"]);
+            Assert.True(File.Exists(runner.TempPath));
+            Assert.True(File.Exists(runner.WorkPath));
+            Assert.Equal(SHA256.HashData(new byte[] { 5, 6, 7 }), SHA256.HashData(File.ReadAllBytes(runner.TempPath)));
+            Assert.Equal(SHA256.HashData(new byte[] { 1, 2, 3, 4 }), SHA256.HashData(File.ReadAllBytes(runner.WorkPath)));
+            Assert.Empty(Directory.GetFiles(root, "*.mp4"));
         }
         finally
         {

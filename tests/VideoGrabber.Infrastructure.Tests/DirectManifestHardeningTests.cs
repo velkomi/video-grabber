@@ -38,7 +38,7 @@ public sealed class DirectManifestHardeningTests
         Directory.CreateDirectory(root);
         try
         {
-            var runner = new RecordingRunner(root);
+            var runner = new RecordingRunner();
             var downloader = new YtDlpDownloader(runner, new ToolLocator(root, root), new ValidProbe());
             var result = await downloader.DownloadAsync(new DownloadRequest(
                 new Uri("https://vhapi02.getcourse.ru/api/playlist/master/abc"), root, "best",
@@ -59,13 +59,13 @@ public sealed class DirectManifestHardeningTests
         [new HlsVariant(new Uri("https://cdn.example/v.m3u8"), 1280, 720, 1_000_000, 30, null)],
         [], true, "AES-128", false);
 
-    private sealed class RecordingRunner(string root) : IProcessRunner
+    private sealed class RecordingRunner : IProcessRunner
     {
         public List<string> Arguments { get; } = [];
         public Task<ProcessResult> RunAsync(ProcessSpec spec, Action<string>? onOutput, CancellationToken cancellationToken)
         {
             Arguments.AddRange(spec.Arguments);
-            var output = Path.Combine(root, "direct.mp4");
+            var output = Path.Combine(spec.WorkingDirectory!, "direct.mp4");
             File.WriteAllBytes(output, [1, 2, 3]);
             onOutput?.Invoke("filepath:" + output);
             return Task.FromResult(new ProcessResult(0, "", ""));

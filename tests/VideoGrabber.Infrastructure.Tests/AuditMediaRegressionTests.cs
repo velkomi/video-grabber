@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Media;
 using VideoGrabber.Core.Processes;
@@ -26,6 +27,7 @@ public sealed class AuditMediaRegressionTests
         Assert.False(result.Success);
         Assert.True(File.Exists(foreign), "Recovery deleted media that was never owned by the download.");
         Assert.Equal(sentinel, File.ReadAllBytes(foreign));
+        Assert.Equal(SHA256.HashData(sentinel), SHA256.HashData(File.ReadAllBytes(foreign)));
     }
 
     [Fact]
@@ -41,6 +43,7 @@ public sealed class AuditMediaRegressionTests
         Assert.False(result.Success, "A failed download claimed an unchanged pre-existing video as its output.");
         Assert.True(File.Exists(foreign));
         Assert.Equal(sentinel, File.ReadAllBytes(foreign));
+        Assert.Equal(SHA256.HashData(sentinel), SHA256.HashData(File.ReadAllBytes(foreign)));
     }
 
     [Fact]
@@ -60,6 +63,7 @@ public sealed class AuditMediaRegressionTests
             Downloader(root, runner, ValidVideo()).DownloadAsync(Request(root), null, cancel.Token));
         Assert.True(File.Exists(foreign), "Cancel cleanup deleted a pre-existing foreign temp file.");
         Assert.Equal(sentinel, File.ReadAllBytes(foreign));
+        Assert.Equal(SHA256.HashData(sentinel), SHA256.HashData(File.ReadAllBytes(foreign)));
     }
 
     [Fact]
@@ -67,7 +71,8 @@ public sealed class AuditMediaRegressionTests
     {
         var root = FixtureRoot();
         var foreign = Path.Combine(root, "Lesson - downloading-old.mp4");
-        File.WriteAllBytes(foreign, [53, 59, 61]);
+        byte[] sentinel = [53, 59, 61];
+        File.WriteAllBytes(foreign, sentinel);
         using var cancel = new CancellationTokenSource();
         var runner = new StubRunner((_, output) =>
         {
@@ -78,6 +83,7 @@ public sealed class AuditMediaRegressionTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             Downloader(root, runner, ValidVideo()).DownloadAsync(Request(root), null, cancel.Token));
         Assert.True(File.Exists(foreign), "Cancellation recovery promoted an old prefix-matching file.");
+        Assert.Equal(SHA256.HashData(sentinel), SHA256.HashData(File.ReadAllBytes(foreign)));
     }
 
     [Fact]

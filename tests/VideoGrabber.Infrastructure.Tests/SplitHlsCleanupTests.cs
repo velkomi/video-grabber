@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Components;
@@ -20,6 +21,11 @@ public sealed class SplitHlsCleanupTests
                     HlsAudioSource: new Uri("https://cdn.example/audio.m3u8")), null, CancellationToken.None);
             Assert.False(result.Success);
             Assert.Empty(Directory.GetFiles(root, "*.mp4", SearchOption.TopDirectoryOnly));
+            var job = Assert.Single(Directory.GetDirectories(root, ".vg-job-*"));
+            Assert.Contains(job, result.Details);
+            foreach (var track in new[] { "video.mp4", "audio.mp4" })
+                Assert.Equal(SHA256.HashData(new byte[] { 1, 2, 3 }), SHA256.HashData(File.ReadAllBytes(Path.Combine(job, track))));
+            Assert.Equal(SHA256.HashData(new byte[] { 9, 9, 9 }), SHA256.HashData(File.ReadAllBytes(Path.Combine(job, "merged.mp4"))));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

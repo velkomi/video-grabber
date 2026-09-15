@@ -22,7 +22,6 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             return new(false, "Поддерживаются HTTP/HTTPS-ссылки без встроенного пароля.");
         if (request.CookiesFile is not null && request.CookiesFromBrowser is not null)
             return new(false, "Выберите только один способ входа.");
-        Directory.CreateDirectory(request.OutputDirectory);
         if (request.AudioOnly && request.HlsAudioSource is not null)
         {
             if (!IsSafeHttp(request.HlsAudioSource)) return new(false, "Некорректная HLS-аудиоссылка.");
@@ -39,23 +38,14 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         var suggestedBase = string.IsNullOrWhiteSpace(request.SuggestedBaseName)
             ? null
             : DownloadFileName.SanitizeBaseName(request.SuggestedBaseName);
-        var explicitJobDirectory = !string.IsNullOrWhiteSpace(request.JobDirectory);
-        var jobRoot = explicitJobDirectory
-            ? Path.GetFullPath(request.JobDirectory!)
-            : Path.GetFullPath(request.OutputDirectory);
-        var jobExisted = Directory.Exists(jobRoot);
-        var ownsJobDirectory = explicitJobDirectory && !jobExisted;
-        Directory.CreateDirectory(jobRoot);
-        var beforeOutputFiles = SnapshotOutputFiles(request.OutputDirectory);
-        var cleanupJob = true;
-        var downloadReached100 = false;
+        var workspace = DownloadWorkspace.Create(request.OutputDirectory, request.JobDirectory);
+        var jobRoot = workspace.Root;
         string? outputPath = null;
         try
         {
         var outputTemplate = suggestedBase is null
             ? Path.Combine(jobRoot, "%(title).180B [%(id)s].%(ext)s")
             : Path.Combine(jobRoot, suggestedBase + " - downloading.%(ext)s");
-        var beforeFiles = SnapshotOutputFiles(jobRoot);
 
         var arguments = new List<string>
         {
@@ -131,15 +121,18 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
                     }
                     return;
                 }
-                if (parsedProgress.Percent is >= 99.9) downloadReached100 = true;
                 progress?.Report(parsedProgress);
             },
             cancellationToken).ConfigureAwait(false);
 
+        workspace.DiscoverCreatedFiles();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!string.IsNullOrWhiteSpace(outputPath) && !workspace.Owns(outputPath))
+            return PreservedFailure(new(false, "Загрузчик вернул файл вне рабочей папки задания."), workspace);
         if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
-            outputPath = RecoverOutputPath(jobRoot, beforeFiles, suggestedBase);
-        if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
-            outputPath = RecoverOutputPath(request.OutputDirectory, beforeOutputFiles, suggestedBase);
+            outputPath = workspace.OwnedFiles.Where(IsMediaOutput)
+                .Where(path => workspace.Owns(path) && new FileInfo(path).Length > 0)
+                .OrderByDescending(path => File.GetLastWriteTimeUtc(path)).FirstOrDefault();
         if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
         {
             var failure = result.IsSuccess
@@ -147,62 +140,39 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
                 : DownloadFailureFormatter.Create(request.Source, result.StandardError);
             DiagnosticHub.Log.Write("download.failure", "failed", failure.Message + "\n" + failure.Details,
                 jobId: job.Id, exitCode: result.ExitCode);
-            return failure;
+            return PreservedFailure(failure, workspace);
         }
         progress?.Report(new DownloadProgress(null, "Проверяю медиафайл…"));
         var media = await (probe ?? new FfprobeMediaProbe(runner, tools)).ProbeAsync(outputPath, cancellationToken).ConfigureAwait(false);
         if (!media.IsValid || (request.AudioOnly && (!media.HasAudio || media.HasVideo || media.AudioCodec != "mp3")))
         {
-            TryDelete(outputPath);
             if (!result.IsSuccess)
             {
                 var failure = DownloadFailureFormatter.Create(request.Source, result.StandardError);
                 DiagnosticHub.Log.Write("download.failure", "failed", failure.Message + "\n" + failure.Details,
                     jobId: job.Id, exitCode: result.ExitCode);
-                return failure;
+                return PreservedFailure(failure, workspace);
             }
-            return new(false, "Файл получен, но проверка медиапотоков не пройдена.");
+            return PreservedFailure(new(false, "Файл получен, но проверка медиапотоков не пройдена."), workspace);
         }
         if (!result.IsSuccess)
             DiagnosticHub.Log.Write("download.recovered", "succeeded", "Valid media recovered after downloader finalization error", jobId: job.Id);
-        var outputParent = Path.GetDirectoryName(Path.GetFullPath(outputPath));
-        var targetParent = Path.GetFullPath(request.OutputDirectory).TrimEnd(Path.DirectorySeparatorChar);
-        string finalOutput;
-        if (suggestedBase is null
-            && string.Equals(outputParent?.TrimEnd(Path.DirectorySeparatorChar), targetParent, StringComparison.OrdinalIgnoreCase))
-        {
-            finalOutput = outputPath;
-        }
-        else
-        {
-            var finalBase = suggestedBase ?? DownloadFileName.SanitizeBaseName(Path.GetFileNameWithoutExtension(outputPath));
-            if (media.DurationSeconds > 0) finalBase += " - " + DownloadFileName.DurationTag(media.DurationSeconds);
-            finalOutput = AvailableOutputPath(request.OutputDirectory, finalBase, Path.GetExtension(outputPath));
-            finalOutput = await PromoteVerifiedOutputAsync(outputPath, finalOutput, cancellationToken).ConfigureAwait(false);
-        }
+        var finalBase = suggestedBase ?? DownloadFileName.SanitizeBaseName(Path.GetFileNameWithoutExtension(outputPath));
+        if (media.DurationSeconds > 0) finalBase += " - " + DownloadFileName.DurationTag(media.DurationSeconds);
+        var finalOutput = await PromoteVerifiedOutputAsync(workspace, outputPath, finalBase, cancellationToken).ConfigureAwait(false);
+        workspace.CleanupVerifiedIntermediates();
         progress?.Report(new DownloadProgress(100, "Готовый файл проверен и сохранён."));
         job.Complete();
         return new(true, request.AudioOnly ? "MP3 загружен и проверен." : "Видео загружено и проверено.", finalOutput);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            if (downloadReached100)
-            {
-                var recovered = await TryFinalizeCompletedAfterCancellationAsync(request, suggestedBase, jobRoot).ConfigureAwait(false);
-                if (recovered is not null)
-                {
-                    CleanupTransientTempFiles(jobRoot, suggestedBase);
-                    job.Complete();
-                    return new(true, request.AudioOnly ? "MP3 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d." : "\u0412\u0438\u0434\u0435\u043e \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043d\u043e \u0438 \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u043e.", recovered);
-                }
-            }
-            CleanupTransientTempFiles(jobRoot, suggestedBase);
-            cleanupJob = false;
+            ReportPreservedCancellation(workspace, progress, ex);
             throw;
         }
-        finally
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            if (cleanupJob && ownsJobDirectory) TryDeleteDirectory(jobRoot);
+            return PreservedFailure(new(false, "Не удалось сохранить файл задания.", Details: SensitiveDataRedactor.Redact(ex.Message)), workspace);
         }
     }
 
@@ -216,54 +186,65 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
         if (!IsSafeHttp(videoSource) || !IsSafeHttp(audioSource))
             return new(false, "Некорректные HLS-ссылки.");
 
-        var tempRoot = Path.Combine(request.OutputDirectory, ".videograbber-split-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempRoot);
+        var workspace = DownloadWorkspace.Create(request.OutputDirectory, request.JobDirectory);
+        var tempRoot = workspace.Root;
         try
         {
             progress?.Report(new DownloadProgress(null, "Загружаю видеодорожку HLS…"));
-            var video = await DownloadTrackAsync(videoSource, "video", tempRoot, request, progress, cancellationToken).ConfigureAwait(false);
-            if (!video.Success || video.OutputPath is null) return video;
+            var video = await DownloadTrackAsync(videoSource, "video", workspace, request, progress, cancellationToken).ConfigureAwait(false);
+            if (!video.Success || video.OutputPath is null) return PreservedFailure(video, workspace);
 
             progress?.Report(new DownloadProgress(null, "Загружаю аудиодорожку HLS…"));
-            var audio = await DownloadTrackAsync(audioSource, "audio", tempRoot, request, progress, cancellationToken).ConfigureAwait(false);
-            if (!audio.Success || audio.OutputPath is null) return audio;
+            var audio = await DownloadTrackAsync(audioSource, "audio", workspace, request, progress, cancellationToken).ConfigureAwait(false);
+            if (!audio.Success || audio.OutputPath is null) return PreservedFailure(audio, workspace);
 
             var safeBase = string.IsNullOrWhiteSpace(request.SuggestedBaseName)
                 ? "HLS-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8]
                 : DownloadFileName.SanitizeBaseName(request.SuggestedBaseName);
-            var finalOutput = AvailableOutputPath(request.OutputDirectory, safeBase, ".mp4");
             var mergedTemp = Path.Combine(tempRoot, "merged.mp4");
+            workspace.ValidateOwnedPath(mergedTemp);
+            if (!workspace.Owns(video.OutputPath) || !workspace.Owns(audio.OutputPath))
+                throw new InvalidOperationException("HLS tracks are outside the owned job directory.");
             progress?.Report(new DownloadProgress(null, "Объединяю видео и аудио…"));
             var merge = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
                 ["-hide_banner", "-nostdin", "-n", "-i", video.OutputPath, "-i", audio.OutputPath,
                  "-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-movflags", "+faststart", mergedTemp],
                 tempRoot), null, cancellationToken).ConfigureAwait(false);
-            if (!merge.IsSuccess || !File.Exists(mergedTemp) || new FileInfo(mergedTemp).Length == 0)
-                return new(false, "Не удалось объединить HLS-видео и аудио.", Details: SensitiveDataRedactor.Redact(merge.StandardError));
+            workspace.DiscoverCreatedFiles();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!merge.IsSuccess || !workspace.Owns(mergedTemp) || !File.Exists(mergedTemp) || new FileInfo(mergedTemp).Length == 0)
+                return PreservedFailure(new(false, "Не удалось объединить HLS-видео и аудио.", Details: SensitiveDataRedactor.Redact(merge.StandardError)), workspace);
 
             progress?.Report(new DownloadProgress(null, "Проверяю итоговый медиафайл…"));
             var media = await (probe ?? new FfprobeMediaProbe(runner, tools)).ProbeAsync(mergedTemp, cancellationToken).ConfigureAwait(false);
             if (!media.IsValid || !media.HasVideo || !media.HasAudio)
-                return new(false, "Итоговый HLS-файл не прошёл проверку наличия видео и звука.", Details: media.Error);
-            File.Move(mergedTemp, finalOutput, overwrite: false);
+                return PreservedFailure(new(false, "Итоговый HLS-файл не прошёл проверку наличия видео и звука.", Details: media.Error), workspace);
+            var finalOutput = await PromoteVerifiedOutputAsync(workspace, mergedTemp, safeBase, cancellationToken).ConfigureAwait(false);
+            workspace.CleanupVerifiedIntermediates();
             progress?.Report(new DownloadProgress(100, "HLS-видео со звуком проверено."));
             return new(true, "Видео загружено и проверено.", finalOutput);
         }
-        finally
+        catch (OperationCanceledException ex)
         {
-            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); } catch { }
+            ReportPreservedCancellation(workspace, progress, ex);
+            throw;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return PreservedFailure(new(false, "Не удалось сохранить HLS-файл задания.", Details: SensitiveDataRedactor.Redact(ex.Message)), workspace);
         }
     }
 
     private async Task<DownloadResult> DownloadTrackAsync(
         Uri source,
         string role,
-        string tempRoot,
+        DownloadWorkspace workspace,
         DownloadRequest request,
         IProgress<DownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
-        var template = Path.Combine(tempRoot, role + ".%(ext)s");
+        var tempRoot = workspace.Root;
+        var template = workspace.ValidateOwnedPath(Path.Combine(tempRoot, role + ".%(ext)s"));
         var arguments = BuildTrackArguments(source, template, request);
         string? outputPath = null;
         var result = await runner.RunAsync(new ProcessSpec(tools.YtDlp, arguments, tempRoot), line =>
@@ -272,9 +253,11 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
                 outputPath = line["filepath:".Length..].Trim();
             if (YtDlpProgressParser.TryParse(line, out var parsed)) progress?.Report(parsed);
         }, cancellationToken).ConfigureAwait(false);
+        workspace.DiscoverCreatedFiles();
+        cancellationToken.ThrowIfCancellationRequested();
         if (!result.IsSuccess)
             return DownloadFailureFormatter.Create(source, result.StandardError);
-        if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+        if (string.IsNullOrWhiteSpace(outputPath) || !workspace.Owns(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
             return new(false, $"{role}: загрузчик завершился без готового файла.");
         return new(true, role + " HLS загружен.", outputPath);
     }
@@ -311,84 +294,10 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             arguments.AddRange(["--user-agent", request.UserAgent]);
     }
 
-    private static Dictionary<string, (long Length, DateTime LastWriteUtc)> SnapshotOutputFiles(string directory)
-    {
-        if (!Directory.Exists(directory)) return new(StringComparer.OrdinalIgnoreCase);
-        return Directory.EnumerateFiles(directory)
-            .Where(IsMediaOutput)
-            .Select(path => new FileInfo(path))
-            .ToDictionary(info => info.FullName, info => (info.Length, info.LastWriteTimeUtc), StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static string? RecoverOutputPath(
-        string directory,
-        IReadOnlyDictionary<string, (long Length, DateTime LastWriteUtc)> before,
-        string? suggestedBase)
-    {
-        if (!Directory.Exists(directory)) return null;
-        var files = Directory.EnumerateFiles(directory).Where(IsMediaOutput).Select(path => new FileInfo(path)).Where(info => info.Length > 0).ToArray();
-        var changed = files.Where(info => !before.TryGetValue(info.FullName, out var old)
-                || old.Length != info.Length || old.LastWriteUtc != info.LastWriteTimeUtc)
-            .OrderByDescending(info => info.LastWriteTimeUtc)
-            .ThenByDescending(info => info.Length)
-            .FirstOrDefault();
-        if (changed is not null) return changed.FullName;
-        if (string.IsNullOrWhiteSpace(suggestedBase)) return null;
-        return files.Where(info => string.Equals(Path.GetFileNameWithoutExtension(info.Name), suggestedBase, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(info => info.LastWriteTimeUtc).Select(info => info.FullName).FirstOrDefault();
-    }
-
     private static bool IsMediaOutput(string path)
     {
         var ext = Path.GetExtension(path).ToLowerInvariant();
         return ext is ".mp4" or ".mkv" or ".webm" or ".mov" or ".m4a" or ".mp3" or ".aac" or ".opus" or ".ts";
-    }
-
-    private async Task<string?> TryFinalizeCompletedAfterCancellationAsync(
-        DownloadRequest request,
-        string? suggestedBase,
-        string jobRoot)
-    {
-        if (string.IsNullOrWhiteSpace(suggestedBase) || !Directory.Exists(jobRoot)) return null;
-        var prefix = suggestedBase + " - downloading";
-        var candidates = Directory.EnumerateFiles(jobRoot, prefix + "*", SearchOption.TopDirectoryOnly)
-            .Where(path => !Path.GetFileName(path).Contains(".temp.", StringComparison.OrdinalIgnoreCase))
-            .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".mp4" or ".mkv" or ".webm" or ".mp3" or ".m4a")
-            .OrderByDescending(path => new FileInfo(path).Length)
-            .ToArray();
-        foreach (var candidate in candidates)
-        {
-            if (!File.Exists(candidate) || new FileInfo(candidate).Length == 0) continue;
-            try
-            {
-                using var verify = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                var media = await (probe ?? new FfprobeMediaProbe(runner, tools)).ProbeAsync(candidate, verify.Token).ConfigureAwait(false);
-                var valid = media.IsValid && (request.AudioOnly
-                    ? media.HasAudio && !media.HasVideo && string.Equals(media.AudioCodec, "mp3", StringComparison.OrdinalIgnoreCase)
-                    : media.HasVideo && media.HasAudio);
-                if (!valid) continue;
-                var finalBase = suggestedBase;
-                if (media.DurationSeconds > 0) finalBase += " - " + DownloadFileName.DurationTag(media.DurationSeconds);
-                var destination = AvailableOutputPath(request.OutputDirectory, finalBase, Path.GetExtension(candidate));
-                return await PromoteVerifiedOutputAsync(candidate, destination, verify.Token).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
-            {
-            }
-        }
-        return null;
-    }
-
-    private static void CleanupTransientTempFiles(string directory, string? suggestedBase)
-    {
-        if (string.IsNullOrWhiteSpace(suggestedBase) || !Directory.Exists(directory)) return;
-        var prefix = suggestedBase + " - downloading";
-        foreach (var path in Directory.EnumerateFiles(directory, prefix + "*", SearchOption.TopDirectoryOnly))
-        {
-            var name = Path.GetFileName(path);
-            if (name.Contains(".temp.", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".temp", StringComparison.OrdinalIgnoreCase))
-                TryDelete(path);
-        }
     }
 
     private static string AvailableOutputPath(string directory, string baseName, string extension)
@@ -405,46 +314,41 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
     }
 
 
-    private static async Task<string> PromoteVerifiedOutputAsync(string source, string destination, CancellationToken cancellationToken)
+    private static async Task<string> PromoteVerifiedOutputAsync(
+        DownloadWorkspace workspace, string source, string baseName, CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (!workspace.Owns(source)) throw new InvalidOperationException("Cannot promote an unowned file.");
+            var destination = AvailableOutputPath(workspace.OutputDirectory, baseName, Path.GetExtension(source));
+            workspace.ValidateDestination(destination);
             try
             {
+                // The owned root is on the output volume; an atomic move needs no destructive copy fallback.
                 File.Move(source, destination, overwrite: false);
                 return destination;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (IOException) when (attempt < 2)
             {
-                if (attempt == 2) break;
                 await Task.Delay(200 * (attempt + 1), cancellationToken).ConfigureAwait(false);
             }
         }
-        var temp = destination + ".videograbber-copy-" + Guid.NewGuid().ToString("N");
-        try
-        {
-            File.Copy(source, temp, overwrite: false);
-            File.Move(temp, destination, overwrite: false);
-            TryDelete(source);
-            return destination;
-        }
-        finally { TryDelete(temp); }
     }
 
-    private static void TryDeleteDirectory(string path)
+    private static DownloadResult PreservedFailure(DownloadResult failure, DownloadWorkspace workspace)
+        => failure with { Details = (failure.Details is null ? "" : failure.Details + "\n")
+            + "Рабочие файлы сохранены: " + workspace.Root };
+
+    private static void ReportPreservedCancellation(
+        DownloadWorkspace workspace, IProgress<DownloadProgress>? progress, OperationCanceledException exception)
     {
-        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); } catch { }
+        exception.Data["JobDirectory"] = workspace.Root;
+        progress?.Report(new DownloadProgress(null, "Загрузка отменена. Рабочие файлы сохранены: " + workspace.Root));
     }
 
     private static bool IsSafeHttp(Uri uri)
         => uri.Scheme is "http" or "https" && string.IsNullOrEmpty(uri.UserInfo);
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
-    }
-
     private static string SelectFormat(DownloadRequest request)
     {
         if (request.AudioOnly)
