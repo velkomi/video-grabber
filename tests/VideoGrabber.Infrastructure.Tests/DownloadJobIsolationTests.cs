@@ -1,10 +1,16 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Media;
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Components;
 using VideoGrabber.Infrastructure.Downloads;
+using VideoGrabber.Infrastructure.Media;
+using VideoGrabber.Infrastructure.Processes;
 
 namespace VideoGrabber.Infrastructure.Tests;
 
@@ -396,5 +402,251 @@ public sealed class DownloadJobIsolationTests
     private sealed class StubProbe(MediaProbeResult result) : IMediaProbe
     {
         public Task<MediaProbeResult> ProbeAsync(string path, CancellationToken cancellationToken) => Task.FromResult(result);
+    }
+}
+
+public sealed class DownloadJobIsolationMediaIntegrationTests
+{
+    [MediaToolsFact]
+    public async Task Real_tools_normal_and_split_collisions_decode_and_preserve_sources()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var (root, tools) = Setup();
+        var runner = new LoopbackRealRunner(tools);
+        var media = await GenerateMediaAsync(root, tools, runner, deadline.Token);
+        var sourceHashes = Snapshot(media);
+        await using var server = new LocalMediaServer(media);
+        foreach (var split in new[] { false, true })
+        {
+            var output = Path.Combine(root, split ? "split" : "normal");
+            var parent = Path.Combine(output, "parent");
+            Directory.CreateDirectory(parent);
+            var sentinel = Path.Combine(parent, "preexisting.temp.mp4");
+            File.Copy(Path.Combine(media, "source.mp4"), sentinel);
+            var sentinelHash = Hash(sentinel);
+            var request = Request(server, output, parent, split);
+            var downloader = new YtDlpDownloader(runner, tools);
+            var first = await downloader.DownloadAsync(request, null, deadline.Token);
+            Assert.True(first.Success, first.Message + first.Details);
+            var firstHash = Hash(first.OutputPath!);
+            var second = await downloader.DownloadAsync(request, null, deadline.Token);
+            Assert.True(second.Success, second.Message + second.Details);
+            Assert.NotEqual(first.OutputPath, second.OutputPath);
+            Assert.Contains("(2)", Path.GetFileName(second.OutputPath));
+            Assert.Equal(firstHash, Hash(first.OutputPath!));
+            Assert.Equal(sentinelHash, Hash(sentinel));
+            foreach (var result in new[] { first, second })
+            {
+                Assert.Equal(output, Path.GetDirectoryName(result.OutputPath));
+                var probe = await new FfprobeMediaProbe(runner, tools).ProbeAsync(result.OutputPath!, deadline.Token);
+                Assert.True(probe.IsValid && probe.HasVideo && probe.HasAudio, probe.Error);
+                Assert.InRange(probe.DurationSeconds, 3.9, 4.2);
+                await RunAsync(runner, tools.Ffmpeg,
+                    ["-v", "error", "-xerror", "-i", result.OutputPath!, "-f", "null", "-"], deadline.Token);
+            }
+            Assert.Empty(Directory.GetDirectories(parent, ".vg-job-*"));
+        }
+        AssertSnapshot(sourceHashes);
+        File.WriteAllText(Path.Combine(root, "preserved-sources.json"), JsonSerializer.Serialize(sourceHashes));
+        Assert.True(runner.YtDlpCalls >= 6);
+    }
+
+    [MediaToolsFact]
+    public async Task Real_tools_cancel_preserves_downloaded_partial_in_normal_and_split_jobs()
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var (root, tools) = Setup();
+        var media = await GenerateMediaAsync(root, tools, new ProcessRunner(), deadline.Token);
+        var sourceHashes = Snapshot(media);
+        foreach (var split in new[] { false, true })
+        {
+            await using var server = new LocalMediaServer(media, stallSecondSegment: true);
+            var output = Path.Combine(root, split ? "split-cancel" : "normal-cancel");
+            var parent = Path.Combine(output, "parent");
+            Directory.CreateDirectory(parent);
+            var sentinel = Path.Combine(parent, "preexisting.temp.mp4");
+            File.Copy(Path.Combine(media, "source.mp4"), sentinel);
+            var sentinelHash = Hash(sentinel);
+            var runner = new LoopbackRealRunner(tools);
+            using var cancel = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
+            var download = new YtDlpDownloader(runner, tools).DownloadAsync(Request(server, output, parent, split), null, cancel.Token);
+            try
+            {
+                var reached = await Task.WhenAny(server.BlockedRequest.Task, download).WaitAsync(TimeSpan.FromSeconds(40), deadline.Token);
+                if (reached == download)
+                {
+                    var early = await download;
+                    Assert.Fail("Download ended before the second segment: " + early.Message + early.Details);
+                }
+                var wait = Stopwatch.StartNew();
+                while (!Directory.EnumerateFiles(parent, "*.part", SearchOption.AllDirectories).Any(path => new FileInfo(path).Length > 0))
+                {
+                    Assert.True(wait.Elapsed < TimeSpan.FromSeconds(10), "Real yt-dlp must create a nonempty partial before cancellation.");
+                    await Task.Delay(25, deadline.Token);
+                }
+                var beforeCancel = Directory.EnumerateFiles(parent, "*.part", SearchOption.AllDirectories)
+                    .Where(path => new FileInfo(path).Length > 0).ToDictionary(path => path, Hash);
+                cancel.Cancel();
+                var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => download.WaitAsync(TimeSpan.FromSeconds(20)));
+                Assert.Equal(runner.JobRoot, error.Data["JobDirectory"]);
+                Assert.NotEmpty(runner.CancelledFiles);
+                Assert.Contains(runner.CancelledFiles.Keys, path => path.EndsWith(".part", StringComparison.Ordinal) && new FileInfo(path).Length > 0);
+                AssertSnapshot(runner.CancelledFiles);
+                AssertSnapshot(beforeCancel);
+                Assert.Equal(sentinelHash, Hash(sentinel));
+                Assert.Empty(Directory.GetFiles(output, "*.mp4"));
+                File.WriteAllText(Path.Combine(output, "preserved-after-cancel.json"), JsonSerializer.Serialize(runner.CancelledFiles));
+                File.WriteAllText(Path.Combine(output, "partial-before-cancel.json"), JsonSerializer.Serialize(beforeCancel));
+            }
+            finally
+            {
+                cancel.Cancel();
+                try { await download.WaitAsync(TimeSpan.FromSeconds(20)); }
+                catch (OperationCanceledException) { }
+            }
+        }
+        AssertSnapshot(sourceHashes);
+        File.WriteAllText(Path.Combine(root, "preserved-sources.json"), JsonSerializer.Serialize(sourceHashes));
+    }
+
+    private static (string Root, ToolLocator Tools) Setup()
+    {
+        var toolsPath = Environment.GetEnvironmentVariable("VIDEOGRABBER_INTEGRATION_TOOLS")!;
+        var tools = new ToolLocator(toolsPath, toolsPath);
+        foreach (var path in new[] { tools.YtDlp, tools.Ffmpeg, tools.Ffprobe })
+            Assert.True(File.Exists(path), "BLOCKED: required local tool missing: " + path);
+        var root = Path.Combine(Environment.GetEnvironmentVariable("VIDEOGRABBER_EVIDENCE")!, "r1-media-" + Guid.NewGuid().ToString("N")[..12]);
+        Directory.CreateDirectory(root);
+        return (root, tools);
+    }
+
+    private static async Task<string> GenerateMediaAsync(string root, ToolLocator tools, IProcessRunner runner, CancellationToken token)
+    {
+        var media = Path.Combine(root, "media");
+        Directory.CreateDirectory(media);
+        var source = Path.Combine(media, "source.mp4");
+        await RunAsync(runner, tools.Ffmpeg,
+            ["-hide_banner", "-nostdin", "-n", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25",
+             "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "4",
+             "-c:v", "libx264", "-preset", "ultrafast", "-g", "25", "-c:a", "aac", source], token);
+        foreach (var role in new[] { "normal", "video", "audio" })
+        {
+            var args = new List<string> { "-hide_banner", "-nostdin", "-n", "-i", source };
+            if (role == "video") args.Add("-an");
+            if (role == "audio") args.Add("-vn");
+            args.AddRange(["-c", "copy", "-f", "hls", "-hls_time", "1", "-hls_list_size", "0",
+                "-hls_segment_filename", Path.Combine(media, role + "%03d.ts"), Path.Combine(media, role + ".m3u8")]);
+            await RunAsync(runner, tools.Ffmpeg, args, token);
+        }
+        return media;
+    }
+
+    private static DownloadRequest Request(LocalMediaServer server, string output, string parent, bool split) =>
+        new(server.Url("normal.m3u8"), output, "best", DirectManifest: true, SuggestedBaseName: "Lesson", JobDirectory: parent,
+            HlsVideoSource: split ? server.Url("video.m3u8") : null,
+            HlsAudioSource: split ? server.Url("audio.m3u8") : null);
+
+    private static async Task RunAsync(IProcessRunner runner, string executable, IReadOnlyList<string> arguments, CancellationToken token)
+    {
+        var result = await runner.RunAsync(new ProcessSpec(executable, arguments), null, token);
+        Assert.True(result.IsSuccess, result.StandardError);
+    }
+    private static string Hash(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        return Convert.ToHexString(SHA256.HashData(stream));
+    }
+    private static Dictionary<string, string> Snapshot(string root) => Directory.GetFiles(root).ToDictionary(path => path, Hash);
+    private static void AssertSnapshot(IReadOnlyDictionary<string, string> files)
+    {
+        foreach (var (path, hash) in files)
+        {
+            Assert.True(File.Exists(path), "Original path must remain: " + path);
+            Assert.Equal(hash, Hash(path));
+        }
+    }
+
+    // Executes the real tools; only isolates transport and records files at the process-exit boundary.
+    private sealed class LoopbackRealRunner(ToolLocator tools) : IProcessRunner
+    {
+        private readonly ProcessRunner real = new();
+        public string? JobRoot { get; private set; }
+        public int YtDlpCalls { get; private set; }
+        public IReadOnlyDictionary<string, string> CancelledFiles { get; private set; } = new Dictionary<string, string>();
+        public async Task<ProcessResult> RunAsync(ProcessSpec spec, Action<string>? onOutput, CancellationToken token)
+        {
+            var isDownload = spec.FileName == tools.YtDlp;
+            if (isDownload)
+            {
+                Assert.True(Uri.TryCreate(spec.Arguments[^1], UriKind.Absolute, out var uri) && uri.IsLoopback && uri.Scheme == "http");
+                JobRoot = spec.WorkingDirectory;
+                YtDlpCalls++;
+                spec = spec with { Arguments = [.. spec.Arguments.Take(spec.Arguments.Count - 1), "--proxy", "", "--no-remote-components", spec.Arguments[^1]] };
+            }
+            try { return await real.RunAsync(spec, onOutput, token); }
+            catch (OperationCanceledException) when (isDownload)
+            {
+                CancelledFiles = Snapshot(JobRoot!);
+                throw;
+            }
+        }
+    }
+
+    private sealed class LocalMediaServer : IAsyncDisposable
+    {
+        private readonly TcpListener listener = new(IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource stop = new();
+        private readonly Dictionary<string, byte[]> files;
+        private readonly bool stallSecondSegment;
+        private readonly Task serve;
+        public TaskCompletionSource BlockedRequest { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public LocalMediaServer(string root, bool stallSecondSegment = false)
+        {
+            files = Directory.GetFiles(root).ToDictionary(path => "/" + Path.GetFileName(path), File.ReadAllBytes);
+            this.stallSecondSegment = stallSecondSegment;
+            listener.Start();
+            serve = ServeAsync();
+        }
+        public Uri Url(string file) => new($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/{file}");
+        private async Task ServeAsync()
+        {
+            try
+            {
+                while (!stop.IsCancellationRequested)
+                {
+                    using var client = await listener.AcceptTcpClientAsync(stop.Token);
+                    try
+                    {
+                        await using var stream = client.GetStream();
+                        using var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, leaveOpen: true);
+                        var request = await reader.ReadLineAsync(stop.Token) ?? "";
+                        for (var i = 0; i < 100; i++)
+                            if (string.IsNullOrEmpty(await reader.ReadLineAsync(stop.Token))) break;
+                        var parts = request.Split(' ');
+                        var path = parts.Length > 1 ? parts[1] : "";
+                        var found = files.TryGetValue(path, out var body);
+                        body ??= [];
+                        if (stallSecondSegment && path.EndsWith("001.ts", StringComparison.Ordinal))
+                        {
+                            BlockedRequest.TrySetResult();
+                            await Task.Delay(Timeout.Infinite, stop.Token);
+                        }
+                        var type = path.EndsWith(".m3u8", StringComparison.Ordinal) ? "application/vnd.apple.mpegurl" : "video/mp2t";
+                        var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {(found ? "200 OK" : "404 Not Found")}\r\nContent-Type: {type}\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");
+                        await stream.WriteAsync(header, stop.Token);
+                        if (!request.StartsWith("HEAD ", StringComparison.Ordinal)) await stream.WriteAsync(body, stop.Token);
+                    }
+                    catch (IOException) { /* A media client can close its metadata request early. */ }
+                }
+            }
+            catch (Exception ex) when (stop.IsCancellationRequested && ex is OperationCanceledException or SocketException or ObjectDisposedException) { }
+        }
+        public async ValueTask DisposeAsync()
+        {
+            stop.Cancel();
+            listener.Stop();
+            await serve.WaitAsync(TimeSpan.FromSeconds(10));
+            stop.Dispose();
+        }
     }
 }
