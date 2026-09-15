@@ -20,9 +20,10 @@ public sealed class BatchDownloadWiringTests
         var root = FindRepoRoot();
         var batch = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
         var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
-        Assert.Contains("DownloadAttemptOutcome.Cancelled", batch);
+        Assert.Contains("OperationOutcome.Cancelled", batch);
         Assert.Contains("return;", batch);
-        Assert.Contains("enum DownloadAttemptOutcome", download);
+        Assert.Contains("service.RunAsync(intent, lease, _windowLifetime.Token)", download);
+        Assert.DoesNotContain("_operations.Complete(", download);
     }
 
     [Fact]
@@ -37,6 +38,32 @@ public sealed class BatchDownloadWiringTests
         Assert.Contains("RemoveQueuedCandidate", batch);
         Assert.Contains("DownloadQueuedCandidatesAsync", batch);
     }
+    [Fact]
+    public void Editor_audio_and_transcription_share_completion_and_close_dispatch()
+    {
+        var root = FindRepoRoot();
+        var shell = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
+        var media = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.MediaActions.cs"));
+        var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
+        foreach (var source in new[] { shell, media })
+        {
+            Assert.Contains("_operations.TryBegin()", source);
+            Assert.Contains("CompleteOperation(_operations.Complete(outcome))", source);
+            Assert.Contains("CreateLinkedTokenSource(_windowLifetime.Token)", source);
+        }
+        Assert.Contains("VideoEditMode.FastTrim", shell);
+        Assert.Contains("VideoEditMode.Join", shell);
+        Assert.Contains("RunLocalMediaAsync(false)", media);
+        Assert.Contains("RunLocalMediaAsync(true)", media);
+        Assert.Contains("_operations.RequestClose();", shell);
+        Assert.Contains("_browserOperation?.RequestClose();", shell);
+        Assert.Contains("case OperationCompletion.CloseWindow:", download);
+        Assert.Contains("case OperationCompletion.StartQueue:", download);
+        Assert.Contains("ReferenceEquals(_progressOwner, owner)", download);
+        Assert.Contains("_progressOwner = null", download);
+        Assert.DoesNotContain("TryStartPendingQueue", download);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

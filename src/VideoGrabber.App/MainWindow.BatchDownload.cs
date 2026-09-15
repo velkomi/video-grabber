@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml.Controls;
 using VideoGrabber.Core.Downloads;
+using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Browser;
 
 namespace VideoGrabber.App;
@@ -7,51 +8,13 @@ namespace VideoGrabber.App;
 public sealed partial class MainWindow
 {
     private bool _updatingMediaQuality;
-    private bool _queueRunRequested;
     private bool _queueRunnerActive;
 
-    private async Task<DownloadAttemptOutcome> DownloadCandidateAsync(
-        MediaCandidate candidate,
-        int ordinal,
-        bool resetCookieSelectionAfterUse = true,
-        string? qualityOverride = null)
+    private async Task<OperationOutcome> DownloadCandidateAsync(MediaCandidate candidate, int ordinal,
+        bool resetCookieSelectionAfterUse = true, string? qualityOverride = null)
     {
         var intent = CaptureDownloadIntent(candidate.Source, qualityOverride ?? SelectedBrowserQuality(candidate));
-        return await RunDownloadOperationAsync(intent, async (operationToken, routeScope) =>
-        {
-            EnsureIntentSession(intent, operationToken);
-            candidate = await RefreshCandidateBindingAsync(candidate);
-            EnsureIntentSession(intent, operationToken);
-            ordinal = candidate.PageOrdinal ?? ordinal;
-            var plan = MediaDownloadPlanResolver.Resolve(candidate, intent.Quality, intent.AudioOnly);
-            using var preflight = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
-            preflight.CancelAfter(TimeSpan.FromSeconds(60));
-            return await HlsDownloadPolicy.RunVerifiedAsync(candidate, plan,
-                async () =>
-                {
-                    EnsureIntentSession(intent, operationToken);
-                    var verified = await EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token, routeScope);
-                    EnsureIntentSession(intent, operationToken);
-                    return verified;
-                },
-                () =>
-                {
-                    EnsureIntentSession(intent, operationToken);
-                    var suggested = MediaCandidatePresentation.SuggestedBaseName(candidate, ordinal, intent.Quality, _browserMetadata);
-                    var duration = candidate.HlsManifest?.DurationSeconds;
-                    var expectedDuration = duration is > 0 && double.IsFinite(duration.Value) ? duration : null;
-                    bool? expectedAudio = intent.AudioOnly || plan.HlsAudioSource is not null ? true : null;
-                    var selected = new PreparedDownload(plan.Source, candidate.Referer, null, null, null,
-                        plan.HlsVideoSource, plan.HlsAudioSource, plan.DirectManifest, plan.ResolvedHlsLeaf,
-                        suggested, expectedDuration, expectedAudio);
-                    return DownloadPreparedSourceAsync(intent, selected, operationToken, routeScope);
-                },
-                error =>
-                {
-                    if (error is not null) _browserHint.Text = error;
-                    return DownloadAttemptOutcome.Failed;
-                });
-        }, resetCookieSelectionAfterUse);
+        return await RunDownloadOperationAsync(intent, new BrowserDownloadPreparation(this, candidate, ordinal), resetCookieSelectionAfterUse);
     }
     private string SelectedBrowserQuality(MediaCandidate candidate)
     {
@@ -159,9 +122,10 @@ public sealed partial class MainWindow
 
     private async Task DownloadQueuedCandidatesAsync()
     {
-        if (_operation is not null)
+        if (_windowLifetime.IsCancellationRequested) return;
+        if (_operations.IsBusy)
         {
-            _queueRunRequested = true;
+            _operations.RequestQueue();
             _browserHint.Text = "\u041e\u0447\u0435\u0440\u0435\u0434\u044c \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438 \u043f\u043e\u0441\u043b\u0435 \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438.";
             return;
         }
@@ -173,7 +137,6 @@ public sealed partial class MainWindow
         }
         var selectedCookies = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
         _queueRunnerActive = true;
-        _queueRunRequested = false;
         try
         {
             var completed = 0;
@@ -183,14 +146,14 @@ public sealed partial class MainWindow
                 _browserHint.Text = $"\u041E\u0447\u0435\u0440\u0435\u0434\u044C: \u0441\u043A\u0430\u0447\u0430\u043D\u043E {completed}. \u041E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {_browserDownloadQueue.Items.Count}.";
                 var outcome = await DownloadCandidateAsync(entry.Candidate, entry.Ordinal,
                     resetCookieSelectionAfterUse: false, qualityOverride: entry.Quality);
-                if (outcome == DownloadAttemptOutcome.Succeeded)
+                if (outcome == OperationOutcome.Succeeded)
                 {
                     completed++;
                     _browserDownloadQueue.RemoveBySource(entry.Candidate.Source);
                     RefreshDownloadQueueList();
                     continue;
                 }
-                if (outcome == DownloadAttemptOutcome.Cancelled)
+                if (outcome == OperationOutcome.Cancelled)
                 {
                     _browserHint.Text = "\u041E\u0447\u0435\u0440\u0435\u0434\u044C \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430. \u041D\u0435\u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u043D\u044B\u0435 \u043F\u0443\u043D\u043A\u0442\u044B \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B \u2014 \u043D\u0430\u0436\u043C\u0438\u0442\u0435 \u00AB\u0421\u043A\u0430\u0447\u0430\u0442\u044C \u043E\u0447\u0435\u0440\u0435\u0434\u044C / \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C\u00BB.";
                     return;
@@ -211,7 +174,7 @@ public sealed partial class MainWindow
 
     private async Task DownloadAllVisibleCandidatesAsync()
     {
-        if (_operation is not null) return;
+        if (_operations.IsBusy) return;
         QueueAllVisibleCandidates();
         if (_browserDownloadQueue.Items.Count == 0)
         {

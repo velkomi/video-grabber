@@ -225,13 +225,14 @@ public sealed class AuditBrowserRegressionTests
         while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src", "VideoGrabber.App"))) directory = directory.Parent;
         Assert.NotNull(directory);
         var batch = File.ReadAllText(Path.Combine(directory!.FullName, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
-        var method = batch[batch.IndexOf("private async Task<DownloadAttemptOutcome> DownloadCandidateAsync", StringComparison.Ordinal)..];
+        var method = batch[batch.IndexOf("private async Task<OperationOutcome> DownloadCandidateAsync", StringComparison.Ordinal)..];
         method = method[..method.IndexOf("private string SelectedBrowserQuality", StringComparison.Ordinal)];
         Assert.Contains("CaptureDownloadIntent(", method[..method.IndexOf("await ", StringComparison.Ordinal)]);
         var download = File.ReadAllText(Path.Combine(directory.FullName, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
-        Assert.Contains("DownloadRequestFactory.PrepareAsync(", download);
+        var service = File.ReadAllText(Path.Combine(directory.FullName, "src", "VideoGrabber.Infrastructure", "Browser", "BrowserDownloadOperation.cs"));
+        Assert.Contains("DownloadRequestFactory.Create(intent, prepared.Values)", service);
         Assert.DoesNotContain("new DownloadRequest(", download);
-        var preparation = download[download.IndexOf("private async Task<DownloadAttemptOutcome> DownloadPreparedSourceAsync", StringComparison.Ordinal)..];
+        var preparation = File.ReadAllText(Path.Combine(directory.FullName, "src", "VideoGrabber.App", "BrowserDownloadPreparation.cs"));
         foreach (var field in new[] { "_qualityBox", "_audioOnlyBox", "_outputFolderBox", "_cookiesBox.SelectedItem" })
             Assert.DoesNotContain(field, preparation);
     }

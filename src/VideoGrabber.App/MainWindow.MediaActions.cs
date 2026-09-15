@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using VideoGrabber.Core.Security;
+using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Audio;
 using VideoGrabber.Infrastructure.Diagnostics;
 using VideoGrabber.Infrastructure.Processes;
@@ -59,7 +60,7 @@ public sealed partial class MainWindow
         _mp3Button.Click += async (_, _) => await RunLocalMediaAsync(false);
         _textButton.Click += async (_, _) => await RunLocalMediaAsync(true);
         var cancel = SecondaryButton("Отменить обработку");
-        cancel.Click += (_, _) => _operation?.Cancel();
+        cancel.Click += (_, _) => CancelOperation();
         _localMediaStatus = MutedText("Для текста сначала укажите whisper.cpp и модель в разделе «Компоненты». Передачи аудио в облако нет.");
         panel.Children.Add(TwoColumn(_localMediaBox, choose, secondAuto: true));
         panel.Children.Add(_localOutputBaseBox);
@@ -71,7 +72,7 @@ public sealed partial class MainWindow
 
     private async Task RunLocalMediaAsync(bool text)
     {
-        if (_operation is not null || _isInstallingComponents)
+        if (_operations.IsBusy || _isInstallingComponents)
         {
             _localMediaStatus.Text = "Другая операция уже выполняется. Сначала завершите или отмените её.";
             return;
@@ -83,11 +84,12 @@ public sealed partial class MainWindow
             _localMediaStatus.Text = "Проверьте исходный файл и путь результата.";
             return;
         }
-        using var operation = new CancellationTokenSource();
+        if (!_operations.TryBegin()) return;
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
+        var outcome = OperationOutcome.Failed;
         using var job = DiagnosticHub.Begin(text ? "ui.transcription" : "ui.audio");
         _operation = operation;
-        _downloadButton.IsEnabled = _mp3Button.IsEnabled = _textButton.IsEnabled = false;
-        _cancelButton.IsEnabled = true;
+        SetOperationControls(true);
         _localMediaStatus.Text = text ? "Распознаю речь локально…" : "Извлекаю и проверяю MP3…";
         try
         {
@@ -98,16 +100,20 @@ public sealed partial class MainWindow
                 var result = await new WhisperTranscriber(runner, _tools).TranscribeAsync(input, output,
                     _whisperExeBox.Text.Trim().Trim('"'), _whisperModelBox.Text.Trim().Trim('"'), language, operation.Token);
                 _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.TextPath + "\n" + result.SubtitlesPath : "");
+                operation.Token.ThrowIfCancellationRequested();
+                outcome = result.Success ? OperationOutcome.Succeeded : OperationOutcome.Failed;
                 job.Complete(result.Success);
             }
             else
             {
                 var result = await new FfmpegAudioExtractor(runner, _tools).ExtractAsync(input, output + ".mp3", operation.Token);
                 _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.OutputPath : "");
+                operation.Token.ThrowIfCancellationRequested();
+                outcome = result.Success ? OperationOutcome.Succeeded : OperationOutcome.Failed;
                 job.Complete(result.Success);
             }
         }
-        catch (OperationCanceledException) { job.Cancel(); _localMediaStatus.Text = "Обработка отменена."; }
+        catch (OperationCanceledException) { outcome = OperationOutcome.Cancelled; job.Cancel(); _localMediaStatus.Text = "Обработка отменена."; }
         catch (Exception ex)
         {
             DiagnosticHub.Log.Write("ui.media", "failed", ex.Message, jobId: job.Id);
@@ -115,9 +121,7 @@ public sealed partial class MainWindow
         }
         finally
         {
-            _operation = null;
-            _downloadButton.IsEnabled = _mp3Button.IsEnabled = _textButton.IsEnabled = true;
-            _cancelButton.IsEnabled = false;
+            CompleteOperation(_operations.Complete(outcome));
         }
     }
 

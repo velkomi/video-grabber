@@ -67,7 +67,6 @@ public sealed partial class MainWindow : Window
     private WebView2? _mediaBrowser;
     private CancellationTokenSource? _operation;
     private bool _isInstallingComponents;
-    private bool _closeRequested;
     private bool _allowWindowClose;
     private int _lastLoggedProgressBucket = -1;
 
@@ -108,19 +107,21 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += (_, args) =>
         {
             if (_allowWindowClose) return;
-            if (_operation is not null)
+            if (_operations.IsBusy)
             {
                 args.Cancel = true;
-                _closeRequested = true;
-                _queueRunRequested = false;
+                _operations.RequestClose();
+                _browserOperation?.RequestClose();
+                _windowLifetime.Cancel();
                 SetDownloadState("\u0417\u0430\u0432\u0435\u0440\u0448\u0430\u044e \u0442\u0435\u043a\u0443\u0449\u0443\u044e \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0443\u2026", "\u041f\u043e\u0441\u043b\u0435 \u043e\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0438 \u043f\u0440\u043e\u0446\u0435\u0441\u0441\u0430 \u043e\u043a\u043d\u043e \u0437\u0430\u043a\u0440\u043e\u0435\u0442\u0441\u044f \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438.");
-                _operation.Cancel();
+                _operation?.Cancel();
                 return;
             }
             _allowWindowClose = true;
         };
         Closed += (_, _) =>
         {
+            _windowLifetime.Cancel();
             _logTimer?.Stop();
             DestroyBrowser(forWindowClose: true);
             _routeProxy?.Dispose();
@@ -250,7 +251,7 @@ public sealed partial class MainWindow : Window
         _downloadButton.Click += Download_Click;
         _cancelButton = SecondaryButton("Отменить");
         _cancelButton.IsEnabled = false;
-        _cancelButton.Click += (_, _) => _operation?.Cancel();
+        _cancelButton.Click += (_, _) => CancelOperation();
         var browserButton = SecondaryButton("Открыть во встроенном браузере");
         browserButton.Click += OpenBrowser_Click;
         var openFolderButton = SecondaryButton("Открыть папку загрузок");
@@ -356,7 +357,7 @@ public sealed partial class MainWindow : Window
         _editorInfo.Visibility = Visibility.Collapsed;
         body.Children.Add(_editorInfo);
         var cancelEdit = SecondaryButton("Отменить обработку");
-        cancelEdit.Click += (_, _) => _operation?.Cancel();
+        cancelEdit.Click += (_, _) => CancelOperation();
         body.Children.Add(cancelEdit);
         return new ScrollViewer { Content = body };
     }
@@ -496,27 +497,31 @@ public sealed partial class MainWindow : Window
 
     private async Task RunEditAsync(VideoEditRequest request)
     {
-        if (_operation is not null || _isInstallingComponents)
+        if (_operations.IsBusy || _isInstallingComponents)
         {
             ShowEditorMessage("Другая операция уже выполняется. Сначала завершите или отмените её.", InfoBarSeverity.Error);
             return;
         }
-        using var operation = new CancellationTokenSource();
+        if (!_operations.TryBegin()) return;
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
+        var outcome = OperationOutcome.Failed;
         _operation = operation;
-        _cancelButton.IsEnabled = true;
+        SetOperationControls(true);
         ShowEditorMessage("FFmpeg обрабатывает видео…", InfoBarSeverity.Informational);
         try
         {
             await _editor.EditAsync(request, operation.Token);
+            operation.Token.ThrowIfCancellationRequested();
+            outcome = OperationOutcome.Succeeded;
             ShowEditorMessage($"Проверено: {request.OutputPath}", InfoBarSeverity.Success);
         }
-        catch (OperationCanceledException) { ShowEditorMessage("Обработка отменена.", InfoBarSeverity.Informational); }
+        catch (OperationCanceledException) { outcome = OperationOutcome.Cancelled; ShowEditorMessage("Обработка отменена.", InfoBarSeverity.Informational); }
         catch (Exception exception)
         {
             ShowEditorMessage(SensitiveDataRedactor.Redact(exception.Message), InfoBarSeverity.Error);
             AppDiagnostics.Write("Editor failed: " + exception.Message);
         }
-        finally { _operation = null; _cancelButton.IsEnabled = false; }
+        finally { CompleteOperation(_operations.Complete(outcome)); }
     }
 
     private async Task<IReadOnlyList<string>> PickVideoFilesAsync(bool multiple)
@@ -541,7 +546,7 @@ public sealed partial class MainWindow : Window
 
     private async void InstallComponents_Click(object sender, RoutedEventArgs e)
     {
-        if (_operation is not null) { _ytDlpStatus.Text = "Сначала завершите текущую операцию."; return; }
+        if (_operations.IsBusy) { _ytDlpStatus.Text = "Сначала завершите текущую операцию."; return; }
         await InstallComponentsAsync(forceUpdate: true);
     }
 

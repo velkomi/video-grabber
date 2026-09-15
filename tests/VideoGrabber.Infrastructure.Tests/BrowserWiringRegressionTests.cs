@@ -27,12 +27,11 @@ public sealed partial class BrowserWiringRegressionTests
     {
         var root = FindRepoRoot();
         var browser = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
-        var batch = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
-        var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
+        var preparation = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "BrowserDownloadPreparation.cs"));
         Assert.DoesNotContain("forceEmbeddedSession: true", browser);
-        Assert.DoesNotContain("forceEmbeddedSession", download);
-        Assert.Contains("MediaDownloadPlanResolver.Resolve(candidate", batch);
-        Assert.Contains("BrowserDownloadSessionPolicy.UseEmbeddedSession(selectedCookies)", download);
+        Assert.DoesNotContain("forceEmbeddedSession", preparation);
+        Assert.Contains("MediaDownloadPlanResolver.Resolve(candidate", preparation);
+        Assert.Contains("BrowserDownloadSessionPolicy.UseEmbeddedSession(intent.CookieSelection)", preparation);
     }
 
     [Fact]
@@ -89,18 +88,18 @@ public sealed partial class BrowserWiringRegressionTests
     {
         var root = FindRepoRoot();
         var devtools = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
-        var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
+        var preparation = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "BrowserDownloadPreparation.cs"));
         Assert.Contains("Target.detachedFromTarget", devtools);
         Assert.Contains("OnDevToolsTargetDetached", devtools);
         Assert.Contains("RemoveSessionScopedPending", devtools);
-        Assert.Contains("new DownloadRouteScope(_routePolicy", download);
-        Assert.Contains("routeScope.Dispose();", download);
-        Assert.DoesNotContain("WouldConfigureSession", download);
-        Assert.Contains("EnsureRoutingProxy(selected.Source, selected.Referer, routeScope)", download);
+        Assert.Contains("new DownloadRouteScope(window._routePolicy", preparation);
+        Assert.Contains("routeScope.Dispose();", preparation);
+        Assert.DoesNotContain("WouldConfigureSession", preparation);
+        Assert.Contains("EnsureRoutingProxy(selected.Source, selected.Referer, routeScope)", preparation);
         var preflight = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.HlsPreflight.cs"));
         Assert.Contains("EnsureRoutingProxy(source, candidate.Referer, routeScope)", preflight);
         Assert.Contains("EnsureRoutingProxy(variant.Uri, candidate.Referer)", preflight);
-        Assert.DoesNotContain("_routePolicy.ClearSession();", download);
+        Assert.DoesNotContain("_routePolicy.ClearSession();", preparation);
     }
 }
 
@@ -149,14 +148,15 @@ public sealed partial class BrowserWiringRegressionTests
     public void Direct_manifest_and_routed_browser_ownership_are_wired_through_UI()
     {
         var root = FindRepoRoot();
-        var batch = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
-        var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
-        Assert.Contains("plan.DirectManifest", batch);
-        Assert.Contains("new PreparedDownload(plan.Source", batch);
-        Assert.Contains("DownloadPreparedSourceAsync(intent, selected, operationToken, routeScope)", batch);
-        Assert.Contains("DownloadRequestFactory.PrepareAsync(intent", download);
-        Assert.Contains("DownloadSourceAsync(UserDownloadIntent intent, CancellationToken operationToken)", download);
-        Assert.Contains("_browserUsesSiteRoutes", download);
+        var preparation = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "BrowserDownloadPreparation.cs"));
+        Assert.Contains("plan.DirectManifest", preparation);
+        Assert.Contains("new PreparedDownload(plan.Source", preparation);
+        Assert.Contains("new PreparedBrowserDownload(selected with", preparation);
+        var service = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.Infrastructure", "Browser", "BrowserDownloadOperation.cs"));
+        Assert.Contains("DownloadRequestFactory.Create(intent, prepared.Values)", service);
+        var ui = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
+        Assert.Contains("service.RunAsync(intent, lease, _windowLifetime.Token)", ui);
+        Assert.Contains("_browserUsesSiteRoutes", preparation);
     }
 
     [Fact]
@@ -174,10 +174,10 @@ public sealed partial class BrowserWiringRegressionTests
     public void Selected_child_HLS_tracks_require_verified_clear_manifests_before_download()
     {
         var root = FindRepoRoot();
-        var batch = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
+        var preparation = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "BrowserDownloadPreparation.cs"));
         var preflight = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.HlsPreflight.cs"));
         var devtools = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
-        Assert.Contains("EnsureSelectedHlsVerifiedAsync", batch);
+        Assert.Contains("EnsureSelectedHlsVerifiedAsync", preparation);
         Assert.Contains("HlsDownloadPolicy.AreSelectedTracksVerified", preflight);
         Assert.Contains("_verifiedClearHls", devtools);
         Assert.Contains("pending.Response.Source.AbsoluteUri", devtools);

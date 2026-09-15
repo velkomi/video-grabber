@@ -77,7 +77,7 @@ public sealed partial class MainWindow
     private async void OpenBrowser_Click(object sender, RoutedEventArgs e)
     {
         if (_browserInitializing) return;
-        if (_operation is not null)
+        if (_operations.IsBusy)
         {
             _browserHint.Text = "Сначала завершите или отмените текущую загрузку.";
             return;
@@ -288,7 +288,7 @@ public sealed partial class MainWindow
 
     private void CloseBrowser_Click(object sender, RoutedEventArgs e)
     {
-        if (_browserInitializing || _operation is not null)
+        if (_browserInitializing || _operations.IsBusy)
         {
             _browserHint.Text = "Сначала завершите или отмените текущую операцию.";
             return;

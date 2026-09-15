@@ -137,9 +137,9 @@ public sealed class Preview12QueueAndShutdownWiringTests
         var root = FindRepoRoot();
         var batch = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
         var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
-        Assert.Contains("_queueRunRequested", batch);
-        Assert.Contains("_queueRunRequested = true", batch);
-        Assert.Contains("TryStartPendingQueue", download);
+        Assert.Contains("_operations.RequestQueue();", batch);
+        Assert.Contains("case OperationCompletion.StartQueue:", download);
+        Assert.DoesNotContain("_operations.Complete(", download);
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class Preview12QueueAndShutdownWiringTests
         var root = FindRepoRoot();
         var shell = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
         Assert.Contains("AppWindow.Closing +=", shell);
-        Assert.Contains("_closeRequested", shell);
+        Assert.Contains("_operations.RequestClose();", shell);
         Assert.Contains("args.Cancel = true", shell);
     }
     private static string FindRepoRoot()

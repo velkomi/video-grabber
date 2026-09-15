@@ -75,7 +75,7 @@ public sealed partial class MainWindow
     }
     private bool RoutingBusy()
     {
-        if (_operation is null && !_isInstallingComponents && !_browserInitializing && !_routeProbeRunning) return false;
+        if (!_operations.IsBusy && !_isInstallingComponents && !_browserInitializing && !_routeProbeRunning) return false;
         _routeStatus.Text = "Сначала завершите текущую загрузку, проверку или обработку.";
         return true;
     }
