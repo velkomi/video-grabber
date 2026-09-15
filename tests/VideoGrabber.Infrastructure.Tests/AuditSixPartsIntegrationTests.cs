@@ -1,0 +1,102 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+using VideoGrabber.Core.Downloads;
+using VideoGrabber.Core.Processes;
+using VideoGrabber.Infrastructure.Browser;
+using VideoGrabber.Infrastructure.Components;
+using VideoGrabber.Infrastructure.Downloads;
+using VideoGrabber.Infrastructure.Media;
+using VideoGrabber.Infrastructure.Processes;
+
+namespace VideoGrabber.Infrastructure.Tests;
+
+public sealed partial class AuthenticatedHlsDownloadIntegrationTests
+{
+    [MediaToolsFact]
+    public async Task Audit_Six_real_parts_delayed_manifests_match_content_when_binding_is_known()
+    {
+        var evidence = Environment.GetEnvironmentVariable("VIDEOGRABBER_EVIDENCE")!;
+        var root = Path.Combine(evidence, "six-parts");
+        var output = Path.Combine(evidence, "six-parts-downloaded");
+        Directory.CreateDirectory(output);
+        var servers = Enumerable.Range(1, 6).Select(part => new HlsFixture(Path.Combine(root, "part-" + part))).ToArray();
+        var runner = new ProcessRunner();
+        var tools = new ToolLocator(Environment.GetEnvironmentVariable("VIDEOGRABBER_INTEGRATION_TOOLS"));
+        var slots = Enumerable.Range(1, 6).Select(part => new BrowserPlayerSlot(part, "PART " + part,
+            new Uri("https://api1.gcvh.ru/sign-player/?part=" + part))).ToArray();
+        var metadata = new BrowserPageMetadata("SYNTHETIC LESSON", slots.Select(s => s.Title!).ToArray(), slots);
+        var arrivals = new List<MediaCandidate>();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        try
+        {
+            // Seeded shuffled delays exercise arrival order without dependence on machine timing.
+            var delays = new[] { 600, 400, 0, 800, 200, 1000 };
+            await Task.WhenAll(Enumerable.Range(1, 6).Select(async part =>
+            {
+                await Task.Delay(delays[part - 1], deadline.Token);
+                var server = servers[part - 1];
+                using var http = new HttpClient(new SocketsHttpHandler { UseProxy = false });
+                using var request = new HttpRequestMessage(HttpMethod.Get, server.Playlist);
+                request.Headers.Add("Cookie", "vg_session=fixture-only");
+                request.Headers.Referrer = server.Lesson;
+                using var response = await http.SendAsync(request, deadline.Token);
+                response.EnsureSuccessStatusCode();
+                var text = await response.Content.ReadAsStringAsync(deadline.Token);
+                Assert.True(HlsManifestParser.TryParse(text, new Uri("https://fixture.example/master.m3u8"), out var manifest));
+                // Test-only transport mapping: production URL policy is not relaxed.
+                manifest = manifest! with { Variants = manifest.Variants.Select(v => v with
+                    { Uri = new Uri(server.Playlist, Path.GetFileName(v.Uri.AbsolutePath)) }).ToArray(),
+                    DurationSeconds = part <= 2 ? 2 : part };
+                lock (arrivals) arrivals.Add(new MediaCandidate(server.Playlist, slots[part - 1].Source!, "HLS", HlsManifest: manifest));
+            }));
+            var bound = BrowserFrameBindingResolver.BindAll(arrivals, [], metadata);
+            var ambiguous = BrowserFrameBindingResolver.BindAll(arrivals.Select(c => c with
+                { Referer = new Uri("https://school.example/lesson") }).ToArray(), [], metadata);
+            var rows = new List<object>();
+            foreach (var candidate in bound.OrderBy(c => c.PageOrdinal))
+            {
+                var part = Array.FindIndex(servers, s => s.Playlist == candidate.Source) + 1;
+                var height = part % 2 == 1 ? 360 : 720;
+                var server = servers[part - 1];
+                var plan = MediaDownloadPlanResolver.Resolve(candidate, height + "p", false);
+                using var cookies = ScopedCookieFile.Create([plan.Source, server.Lesson],
+                    [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]);
+                var result = await new YtDlpDownloader(runner, tools).DownloadAsync(new DownloadRequest(
+                    plan.Source, output, "best", DirectManifest: true,
+                    CookiesFile: cookies.Path, Referer: server.Lesson, SuggestedBaseName: "PART " + part), null, deadline.Token);
+                Assert.True(result.Success, result.Message + result.Details);
+                var probe = await new FfprobeMediaProbe(runner, tools).ProbeAsync(result.OutputPath!, deadline.Token);
+                Assert.True(probe.HasVideo && probe.HasAudio);
+                var frame = await FrameHash(result.OutputPath!);
+                var reference = await FrameHash(Path.Combine(root, "part-" + part, "part-" + part + "-" + height + ".mp4"));
+                var decode = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
+                    ["-v", "error", "-nostdin", "-i", result.OutputPath!, "-f", "null", "-"]), null, deadline.Token);
+                var rawProbe = await runner.RunAsync(new ProcessSpec(tools.Ffprobe,
+                    ["-v", "error", "-show_streams", "-of", "json", result.OutputPath!]), null, deadline.Token);
+                using var parsed = JsonDocument.Parse(rawProbe.StandardOutput);
+                var actualHeight = parsed.RootElement.GetProperty("streams").EnumerateArray()
+                    .Single(s => s.GetProperty("codec_type").GetString() == "video").GetProperty("height").GetInt32();
+                var wrongOrdinal = ambiguous.Single(c => c.Source == candidate.Source).PageOrdinal;
+                rows.Add(new { part, selectedOrdinal = candidate.PageOrdinal, ambiguousOrdinal = wrongOrdinal,
+                    expectedHeight = height, actualHeight, frame, reference, sameDecodedFrame = frame == reference,
+                    output = result.OutputPath, sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(result.OutputPath!))),
+                    fullDecode = decode.IsSuccess, duration = probe.DurationSeconds });
+                File.WriteAllText(Path.Combine(evidence, "six-parts-behavior.json"), JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
+                Assert.Equal(part, candidate.PageOrdinal);
+                Assert.Equal(height, actualHeight);
+                Assert.Equal(reference, frame);
+                Assert.True(decode.IsSuccess, decode.StandardError);
+            }
+            Assert.Contains(ambiguous, c => c.PageOrdinal != Array.FindIndex(servers, s => s.Playlist == c.Source) + 1);
+        }
+        finally { foreach (var server in servers) await server.DisposeAsync(); }
+
+        async Task<string> FrameHash(string path)
+        {
+            var result = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
+                ["-v", "error", "-nostdin", "-i", path, "-map", "0:v:0", "-frames:v", "1", "-f", "hash", "-hash", "sha256", "-"]), null, deadline.Token);
+            Assert.True(result.IsSuccess, result.StandardError);
+            return result.StandardOutput.Trim();
+        }
+    }
+}
