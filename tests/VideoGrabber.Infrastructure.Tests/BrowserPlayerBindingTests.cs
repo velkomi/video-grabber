@@ -16,7 +16,7 @@ public sealed class BrowserPlayerBindingTests
         FrameId: frameId);
 
     [Fact]
-    public void Frame_tree_order_binds_master_to_real_page_part()
+    public void Frame_id_and_exact_dom_url_bind_master_to_real_page_part()
     {
         const string json = """
         {"frameTree":{"frame":{"id":"root","url":"https://school.example/lesson"},"childFrames":[
@@ -27,7 +27,8 @@ public sealed class BrowserPlayerBindingTests
         """;
         Assert.True(DevToolsFrameTreeParser.TryParse(json, out var frames));
         var metadata = new BrowserPageMetadata("День 1", ["Часть 1", "Часть 2"],
-            [new BrowserPlayerSlot(1, "Часть 1"), new BrowserPlayerSlot(2, "Часть 2")]);
+            [new BrowserPlayerSlot(1, "Часть 1", new Uri("https://api1.gcvh.ru/sign-player/?one=1")),
+             new BrowserPlayerSlot(2, "Часть 2", new Uri("https://api2.gcvh.ru/sign-player/?two=1"))]);
 
         var bound = BrowserFrameBindingResolver.Bind(Master("part-2"), frames!, metadata);
 

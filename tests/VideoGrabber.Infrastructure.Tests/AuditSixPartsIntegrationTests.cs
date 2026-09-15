@@ -53,6 +53,12 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
             var ambiguous = BrowserFrameBindingResolver.BindAll(arrivals.Select(c => c with
                 { Referer = new Uri("https://school.example/lesson") }).ToArray(), [], metadata);
             var rows = new List<object>();
+            var frameHashes = new Dictionary<int, string>();
+            var durations = new Dictionary<int, double?>();
+            var neutralNames = ambiguous.Select((candidate, index) =>
+                MediaCandidatePresentation.SuggestedBaseName(candidate, index + 1, "720p", metadata)).ToArray();
+            Assert.Equal(6, neutralNames.Distinct().Count());
+            Assert.All(neutralNames, name => Assert.DoesNotContain("PART", name));
             foreach (var candidate in bound.OrderBy(c => c.PageOrdinal))
             {
                 var part = Array.FindIndex(servers, s => s.Playlist == candidate.Source) + 1;
@@ -63,12 +69,20 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
                     [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]);
                 var result = await new YtDlpDownloader(runner, tools).DownloadAsync(new DownloadRequest(
                     plan.Source, output, "best", DirectManifest: true,
-                    CookiesFile: cookies.Path, Referer: server.Lesson, SuggestedBaseName: "PART " + part), null, deadline.Token);
+                    CookiesFile: cookies.Path, Referer: server.Lesson,
+                    SuggestedBaseName: MediaCandidatePresentation.SuggestedBaseName(candidate, 99, height + "p", metadata)), null, deadline.Token);
                 Assert.True(result.Success, result.Message + result.Details);
+                Assert.Contains("PART " + part, Path.GetFileName(result.OutputPath!));
                 var probe = await new FfprobeMediaProbe(runner, tools).ProbeAsync(result.OutputPath!, deadline.Token);
                 Assert.True(probe.HasVideo && probe.HasAudio);
                 var frame = await FrameHash(result.OutputPath!);
-                var reference = await FrameHash(Path.Combine(root, "part-" + part, "part-" + part + "-" + height + ".mp4"));
+                var referencePath = Path.Combine(root, "part-" + part, "part-" + part + "-" + height + ".mp4");
+                var reference = await FrameHash(referencePath);
+                var audio = await AudioHash(result.OutputPath!);
+                // Compare the transmitted HLS samples: the pre-HLS MP4 trims AAC priming differently.
+                var referenceAudio = await AudioHash(Path.Combine(root, "part-" + part, height + ".m3u8"));
+                frameHashes[part] = frame;
+                durations[part] = probe.DurationSeconds;
                 var decode = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
                     ["-v", "error", "-nostdin", "-i", result.OutputPath!, "-f", "null", "-"]), null, deadline.Token);
                 var rawProbe = await runner.RunAsync(new ProcessSpec(tools.Ffprobe,
@@ -76,18 +90,22 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
                 using var parsed = JsonDocument.Parse(rawProbe.StandardOutput);
                 var actualHeight = parsed.RootElement.GetProperty("streams").EnumerateArray()
                     .Single(s => s.GetProperty("codec_type").GetString() == "video").GetProperty("height").GetInt32();
-                var wrongOrdinal = ambiguous.Single(c => c.Source == candidate.Source).PageOrdinal;
-                rows.Add(new { part, selectedOrdinal = candidate.PageOrdinal, ambiguousOrdinal = wrongOrdinal,
+                var unknownOrdinal = ambiguous.Single(c => c.Source == candidate.Source).PageOrdinal;
+                rows.Add(new { part, selectedOrdinal = candidate.PageOrdinal, ambiguousOrdinal = unknownOrdinal,
                     expectedHeight = height, actualHeight, frame, reference, sameDecodedFrame = frame == reference,
+                    audio, referenceAudio, sameDecodedAudio = audio == referenceAudio,
                     output = result.OutputPath, sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(result.OutputPath!))),
                     fullDecode = decode.IsSuccess, duration = probe.DurationSeconds });
                 File.WriteAllText(Path.Combine(evidence, "six-parts-behavior.json"), JsonSerializer.Serialize(rows, new JsonSerializerOptions { WriteIndented = true }));
                 Assert.Equal(part, candidate.PageOrdinal);
                 Assert.Equal(height, actualHeight);
                 Assert.Equal(reference, frame);
+                Assert.Equal(referenceAudio, audio);
                 Assert.True(decode.IsSuccess, decode.StandardError);
             }
-            Assert.Contains(ambiguous, c => c.PageOrdinal != Array.FindIndex(servers, s => s.Playlist == c.Source) + 1);
+            Assert.Equal(durations[1], durations[2]);
+            Assert.NotEqual(frameHashes[1], frameHashes[2]);
+            Assert.All(ambiguous, c => { Assert.Null(c.PageOrdinal); Assert.Null(c.PageSectionTitle); });
         }
         finally { foreach (var server in servers) await server.DisposeAsync(); }
 
@@ -95,6 +113,14 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         {
             var result = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
                 ["-v", "error", "-nostdin", "-i", path, "-map", "0:v:0", "-frames:v", "1", "-f", "hash", "-hash", "sha256", "-"]), null, deadline.Token);
+            Assert.True(result.IsSuccess, result.StandardError);
+            return result.StandardOutput.Trim();
+        }
+
+        async Task<string> AudioHash(string path)
+        {
+            var result = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
+                ["-v", "error", "-nostdin", "-i", path, "-map", "0:a:0", "-f", "hash", "-hash", "sha256", "-"]), null, deadline.Token);
             Assert.True(result.IsSuccess, result.StandardError);
             return result.StandardOutput.Trim();
         }

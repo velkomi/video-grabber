@@ -11,7 +11,7 @@ public sealed class BrowserUniqueBindingTests
                 [], false, null, false));
 
     [Fact]
-    public void BindAll_keeps_ordinals_unique_when_frame_fallback_collides_with_exact_dom_match()
+    public void BindAll_marks_both_sources_unknown_when_frame_evidence_collides_with_exact_dom_match()
     {
         var slot1 = new Uri("https://api1.gcvh.ru/sign-player/?id=one");
         var slot2 = new Uri("https://api2.gcvh.ru/sign-player/?id=two");
@@ -35,9 +35,51 @@ public sealed class BrowserUniqueBindingTests
 
         var bound = BrowserFrameBindingResolver.BindAll([exact2, fallbackCollision, exact3], frames, metadata);
 
-        Assert.Equal([2, 1, 3], bound.Select(item => item.PageOrdinal!.Value).ToArray());
-        Assert.Equal(3, bound.Select(item => item.PageOrdinal).Distinct().Count());
-        Assert.Equal("Part 1", bound[1].PageSectionTitle);
+        Assert.Null(bound[0].PageOrdinal);
+        Assert.Null(bound[0].PageSectionTitle);
+        Assert.Null(bound[1].PageOrdinal);
+        Assert.Null(bound[1].PageSectionTitle);
+        Assert.Equal(3, bound[2].PageOrdinal);
+        Assert.Equal("Part 3", bound[2].PageSectionTitle);
+        Assert.Equal(bound.Reverse(), BrowserFrameBindingResolver.BindAll([exact3, fallbackCollision, exact2], frames, metadata));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Duplicate_dom_urls_or_ordinals_are_unknown(bool duplicateOrdinal)
+    {
+        var first = new Uri("https://player.example/embed?id=1");
+        var second = duplicateOrdinal ? new Uri("https://player.example/embed?id=2") : first;
+        var metadata = new BrowserPageMetadata("Lesson", [],
+            [new(1, "PART 1", first), new(duplicateOrdinal ? 1 : 2, "PART 2", second)]);
+        var candidate = Candidate("one", first);
+
+        Assert.Null(BrowserFrameBindingResolver.Bind(candidate, [], metadata).PageOrdinal);
+        Assert.Null(Assert.Single(BrowserFrameBindingResolver.BindAll([candidate], [], metadata)).PageOrdinal);
+    }
+
+    [Fact]
+    public void Same_source_with_conflicting_parts_invalidates_every_occurrence()
+    {
+        var one = new Uri("https://player.example/embed?id=1");
+        var two = new Uri("https://player.example/embed?id=2");
+        var metadata = new BrowserPageMetadata("Lesson", [], [new(1, "PART 1", one), new(2, "PART 2", two)]);
+        Assert.All(BrowserFrameBindingResolver.BindAll([Candidate("same", one), Candidate("same", two)], [], metadata), c =>
+        {
+            Assert.Null(c.PageOrdinal);
+            Assert.Null(c.PageSectionTitle);
+        });
+    }
+
+    [Fact]
+    public void Exact_dom_source_can_bind_without_a_player_referer()
+    {
+        var candidate = Candidate("one", new Uri("https://school.example/lesson"));
+        var metadata = new BrowserPageMetadata("Lesson", [], [new(4, "PART 4", candidate.Source)]);
+        var bound = BrowserFrameBindingResolver.Bind(candidate, [], metadata);
+        Assert.Equal(4, bound.PageOrdinal);
+        Assert.Equal("PART 4", bound.PageSectionTitle);
     }
 }
 

@@ -47,6 +47,67 @@ public sealed class AuditBrowserRegressionTests
     }
 
     [Fact]
+    public void Audit_A001_Frame_urls_bind_six_parts_independently_of_frame_and_arrival_order()
+    {
+        var order = new[] { 3, 1, 6, 2, 5, 4 };
+        var frames = order.Select((part, index) => new DevToolsFrameInfo($"f{part}", Player(part), index)).ToArray();
+        var candidates = order.Reverse().Select(part => Part(part, false) with { FrameId = $"f{part}" }).ToArray();
+
+        var bound = BrowserFrameBindingResolver.BindAll(candidates, frames, SixSlots());
+
+        foreach (var part in order)
+        {
+            var candidate = Assert.Single(bound, c => c.Source == Master(part));
+            Assert.Equal(part, candidate.PageOrdinal);
+            Assert.Equal($"PART {part}", candidate.PageSectionTitle);
+            Assert.Equal(candidate, BrowserFrameBindingResolver.Bind(candidates.Single(c => c.Source == Master(part)), frames, SixSlots()));
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("absent")]
+    public void Audit_A001_Missing_frame_evidence_clears_obsolete_part_bindings(string? frameId)
+    {
+        var candidates = Enumerable.Range(1, 6).Reverse().Select(part => Part(part, false) with
+            { FrameId = frameId, PageOrdinal = part, PageSectionTitle = $"PART {part}" }).ToArray();
+        var frames = Enumerable.Range(1, 6).Select(part => new DevToolsFrameInfo($"f{part}", Player(part), 7 - part)).ToArray();
+
+        Assert.All(BrowserFrameBindingResolver.BindAll(candidates, frames, SixSlots()), Unknown);
+        Assert.All(candidates.Select(c => BrowserFrameBindingResolver.Bind(c, frames, SixSlots())), Unknown);
+    }
+
+    [Fact]
+    public void Audit_A001_Conflicting_frame_id_or_referer_evidence_is_unknown()
+    {
+        var duplicateId = new[] { new DevToolsFrameInfo("same", Player(1), 1), new DevToolsFrameInfo("same", Player(2), 2) };
+        var candidate = Part(1, false) with { FrameId = "same" };
+        Unknown(BrowserFrameBindingResolver.Bind(candidate, duplicateId, SixSlots()));
+        Assert.All(BrowserFrameBindingResolver.BindAll([candidate], duplicateId, SixSlots()), Unknown);
+
+        var conflicting = Part(1, true) with { FrameId = "f2" };
+        var frames = new[] { new DevToolsFrameInfo("f2", Player(2), 1) };
+        Unknown(BrowserFrameBindingResolver.Bind(conflicting, frames, SixSlots()));
+        Assert.All(BrowserFrameBindingResolver.BindAll([conflicting], frames, SixSlots()), Unknown);
+    }
+
+    [Fact]
+    public void Audit_A001_Frame_position_without_full_dom_url_match_is_unknown()
+    {
+        var candidate = Part(1, false) with { FrameId = "f1" };
+        var frames = new[] { new DevToolsFrameInfo("f1", new Uri(Player(1).AbsoluteUri + "&other=1"), 0) };
+        Unknown(BrowserFrameBindingResolver.Bind(candidate, frames, SixSlots()));
+        Assert.All(BrowserFrameBindingResolver.BindAll([candidate], frames, SixSlots()), Unknown);
+    }
+
+    private static void Unknown(MediaCandidate candidate)
+    {
+        Assert.Null(candidate.PageOrdinal);
+        Assert.Null(candidate.PageSectionTitle);
+    }
+
+    [Fact]
     public void Audit_Control_Exact_full_player_referer_binds_six_reverse_arrivals_to_correct_parts()
     {
         var candidates = Enumerable.Range(1, 6).Reverse().Select(i => Part(i, true)).ToArray();

@@ -57,84 +57,49 @@ public static class BrowserFrameBindingResolver
         IReadOnlyList<DevToolsFrameInfo> frames,
         BrowserPageMetadata metadata)
     {
-        if (candidates.Count == 0) return [];
-        var result = candidates.ToArray();
-        var assigned = new bool[result.Length];
-        var occupied = new HashSet<int>();
-        var slots = metadata.PlayerSlots.OrderBy(slot => slot.Ordinal).ToArray();
-
-        for (var i = 0; i < result.Length; i++)
-        {
-            var slot = slots.FirstOrDefault(item => MatchesReferer(item.Source, result[i].Referer));
-            if (slot is null || !occupied.Add(slot.Ordinal)) continue;
-            result[i] = result[i] with { PageOrdinal = slot.Ordinal, PageSectionTitle = slot.Title };
-            assigned[i] = true;
-        }
-
-        var playerFrames = frames.Where(IsPlayerFrame).OrderBy(frame => frame.TreeOrder).ToArray();
-        for (var i = 0; i < result.Length; i++)
-        {
-            if (assigned[i]) continue;
-            var ordinal = FrameOrdinal(result[i], playerFrames);
-            if (ordinal <= 0 || occupied.Contains(ordinal)) continue;
-            var slot = slots.FirstOrDefault(item => item.Ordinal == ordinal);
-            if (slot is null) continue;
-            occupied.Add(ordinal);
-            result[i] = result[i] with { PageOrdinal = ordinal, PageSectionTitle = slot.Title };
-            assigned[i] = true;
-        }
-
-        var freeSlots = new Queue<BrowserPlayerSlot>(slots.Where(slot => !occupied.Contains(slot.Ordinal)));
-        for (var i = 0; i < result.Length; i++)
-        {
-            if (assigned[i] || freeSlots.Count == 0) continue;
-            var slot = freeSlots.Dequeue();
-            occupied.Add(slot.Ordinal);
-            result[i] = result[i] with { PageOrdinal = slot.Ordinal, PageSectionTitle = slot.Title };
-            assigned[i] = true;
-        }
-        return result;
+        var result = candidates.Select(candidate => Bind(candidate, frames, metadata)).ToArray();
+        // Resolve all evidence before checking collisions so discovery order cannot choose a winner.
+        var conflictingSources = result.GroupBy(candidate => candidate.Source.AbsoluteUri, StringComparer.Ordinal)
+            .Where(group => group.Select(candidate => candidate.PageOrdinal).Distinct().Count() > 1)
+            .Select(group => group.Key).ToHashSet(StringComparer.Ordinal);
+        var conflictingParts = result.Where(candidate => candidate.PageOrdinal is not null)
+            .GroupBy(candidate => candidate.PageOrdinal!.Value)
+            .Where(group => group.Select(candidate => candidate.Source.AbsoluteUri).Distinct(StringComparer.Ordinal).Count() > 1)
+            .Select(group => group.Key).ToHashSet();
+        return result.Select(candidate => conflictingSources.Contains(candidate.Source.AbsoluteUri)
+                || candidate.PageOrdinal is int part && conflictingParts.Contains(part)
+            ? Unknown(candidate) : candidate).ToArray();
     }
 
     public static MediaCandidate Bind(MediaCandidate candidate, IReadOnlyList<DevToolsFrameInfo> frames, BrowserPageMetadata metadata)
     {
-        var domSlot = metadata.PlayerSlots.FirstOrDefault(slot => MatchesReferer(slot.Source, candidate.Referer));
-        if (domSlot is not null)
-            return candidate with { PageOrdinal = domSlot.Ordinal, PageSectionTitle = domSlot.Title };
+        candidate = Unknown(candidate);
+        var evidence = new List<Uri> { candidate.Source, candidate.Referer };
+        if (!string.IsNullOrWhiteSpace(candidate.FrameId))
+        {
+            var matchingFrames = frames.Where(frame => string.Equals(frame.FrameId, candidate.FrameId, StringComparison.Ordinal)).ToArray();
+            if (matchingFrames.Length > 1) return candidate;
+            if (matchingFrames.Length == 1 && matchingFrames[0].Source is Uri frameSource)
+                evidence.Add(frameSource);
+        }
 
-        var playerFrames = frames.Where(IsPlayerFrame).OrderBy(frame => frame.TreeOrder).ToArray();
-        if (playerFrames.Length == 0) return candidate;
-        var frame = !string.IsNullOrWhiteSpace(candidate.FrameId)
-            ? playerFrames.FirstOrDefault(item => string.Equals(item.FrameId, candidate.FrameId, StringComparison.Ordinal))
-            : null;
-        frame ??= playerFrames.FirstOrDefault(item => MatchesReferer(item.Source, candidate.Referer));
-        if (frame is null) return candidate;
-        var ordinal = Array.IndexOf(playerFrames, frame) + 1;
-        var title = metadata.PlayerSlots.FirstOrDefault(slot => slot.Ordinal == ordinal)?.Title;
-        return candidate with { PageOrdinal = ordinal, PageSectionTitle = title };
+        var matches = metadata.PlayerSlots.Where(slot => evidence.Any(uri => MatchesUrl(slot.Source, uri))).ToArray();
+        if (matches.Length != 1) return candidate;
+        var match = matches[0];
+        if (match.Ordinal <= 0 || metadata.PlayerSlots.Count(slot => slot.Ordinal == match.Ordinal) != 1) return candidate;
+        return candidate with { PageOrdinal = match.Ordinal, PageSectionTitle = match.Title };
     }
 
-    private static int FrameOrdinal(MediaCandidate candidate, IReadOnlyList<DevToolsFrameInfo> playerFrames)
-    {
-        var frame = !string.IsNullOrWhiteSpace(candidate.FrameId)
-            ? playerFrames.FirstOrDefault(item => string.Equals(item.FrameId, candidate.FrameId, StringComparison.Ordinal))
-            : null;
-        frame ??= playerFrames.FirstOrDefault(item => MatchesReferer(item.Source, candidate.Referer));
-        if (frame is null) return 0;
-        for (var i = 0; i < playerFrames.Count; i++)
-            if (ReferenceEquals(playerFrames[i], frame) || playerFrames[i] == frame) return i + 1;
-        return 0;
-    }
+    private static MediaCandidate Unknown(MediaCandidate candidate)
+        => candidate with { PageOrdinal = null, PageSectionTitle = null };
 
-    private static bool IsPlayerFrame(DevToolsFrameInfo frame)
-        => frame.Source is not null
-            && MediaCandidate.TryCreate(frame.Source.AbsoluteUri, null, frame.Source, out var candidate)
-            && candidate?.Kind == "GetCourse";
-
-    private static bool MatchesReferer(Uri? frame, Uri referer)
-        => frame is not null
-            && string.Equals(frame.Scheme, referer.Scheme, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(frame.IdnHost, referer.IdnHost, StringComparison.OrdinalIgnoreCase)
-            && frame.Port == referer.Port
-            && string.Equals(frame.PathAndQuery, referer.PathAndQuery, StringComparison.Ordinal);
+    private static bool MatchesUrl(Uri? source, Uri target)
+        => source is { IsAbsoluteUri: true } && target.IsAbsoluteUri
+            && source.Scheme is "http" or "https" && target.Scheme is "http" or "https"
+            && string.IsNullOrEmpty(source.UserInfo) && string.IsNullOrEmpty(target.UserInfo)
+            && string.Equals(source.Scheme, target.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(source.IdnHost, target.IdnHost, StringComparison.OrdinalIgnoreCase)
+            && source.Port == target.Port
+            && string.Equals(source.PathAndQuery, target.PathAndQuery, StringComparison.Ordinal)
+            && string.Equals(source.Fragment, target.Fragment, StringComparison.Ordinal);
 }

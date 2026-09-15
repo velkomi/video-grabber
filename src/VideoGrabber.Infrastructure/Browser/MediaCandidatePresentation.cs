@@ -15,6 +15,7 @@ public static class MediaCandidatePresentation
     {
         var effectiveOrdinal = candidate.PageOrdinal ?? ordinal;
         var title = HumanTitle(candidate, metadata, effectiveOrdinal);
+        if (candidate.PageOrdinal is null) title += " — Привязка к части не подтверждена";
         if (candidate.HlsManifest is { IsMaster: true } manifest)
         {
             var qualities = manifest.Variants
@@ -33,6 +34,13 @@ public static class MediaCandidatePresentation
 
     public static string SuggestedBaseName(MediaCandidate candidate, int ordinal, string quality, BrowserPageMetadata metadata)
     {
+        if (candidate.PageOrdinal is null)
+        {
+            var sourceId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(candidate.Source.AbsoluteUri)))[..12].ToLowerInvariant();
+            var safeQuality = DownloadFileName.SanitizeBaseName(string.IsNullOrWhiteSpace(quality) ? "best" : quality, 24);
+            return DownloadFileName.SanitizeBaseName($"source-{sourceId} - {Clean(metadata.PageTitle) ?? "Видео"} - {safeQuality}");
+        }
         var effectiveOrdinal = candidate.PageOrdinal ?? ordinal;
         var page = Clean(metadata.PageTitle);
         var section = Clean(candidate.PageSectionTitle);
@@ -80,8 +88,8 @@ public static class MediaCandidatePresentation
     private static string HumanTitle(MediaCandidate? candidate, BrowserPageMetadata metadata, int ordinal)
     {
         var page = Clean(metadata.PageTitle);
-        var section = Clean(candidate?.PageSectionTitle);
-        if (string.IsNullOrWhiteSpace(section))
+        var section = candidate is null || candidate.PageOrdinal is not null ? Clean(candidate?.PageSectionTitle) : null;
+        if (string.IsNullOrWhiteSpace(section) && (candidate is null || candidate.PageOrdinal is not null))
             section = ordinal > 0 && ordinal <= metadata.SectionTitles.Count
                 ? Clean(metadata.SectionTitles[ordinal - 1])
                 : null;
