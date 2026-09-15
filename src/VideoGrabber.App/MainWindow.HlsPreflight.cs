@@ -54,7 +54,9 @@ public sealed partial class MainWindow
     private async Task EnrichMediaDurationAsync(MediaCandidate candidate, long generation)
     {
         if (candidate.HlsManifest is not { IsMaster: true } manifest
-            || manifest.DurationSeconds is > 0 || manifest.Variants.Count == 0) return;
+            || (manifest.DurationSeconds is > 0 and <= HlsManifestParser.MaxDurationSeconds
+                && !manifest.DurationInvalid)
+            || manifest.Variants.Count == 0) return;
         var key = candidate.Source.AbsoluteUri;
         if (!_durationProbeInFlight.TryAdd(key, 0)) return;
         try
@@ -70,7 +72,7 @@ public sealed partial class MainWindow
                 new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl,
                     CookieProvider: (uri, token) => BuildBrowserCookieHeaderAsync(uri, generation, token)), timeout.Token);
             var duration = HlsDownloadPolicy.RecordDurationProbeResult(_verifiedClearHls, variant.Uri, result);
-            if (duration is null) return;
+            if (duration is null || result.Info is not { IsMaster: false, HasEndList: true, DurationInvalid: false }) return;
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;

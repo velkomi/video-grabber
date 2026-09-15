@@ -6,11 +6,62 @@ namespace VideoGrabber.Infrastructure.Tests;
 public sealed class MediaCandidatePresentationTests
 {
     [Theory]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    [InlineData(double.NaN)]
+    [InlineData(-1d)]
+    [InlineData(0d)]
+    [InlineData(double.MaxValue)]
+    [InlineData(31536001d)]
+    public void Unsafe_external_duration_never_throws_or_changes_label_and_filename(double duration)
+    {
+        var candidate = Master();
+        var unsafeCandidate = candidate with { HlsManifest = candidate.HlsManifest! with { DurationSeconds = duration } };
+        Assert.Equal(MediaCandidatePresentation.DisplayName(candidate, 1, BrowserPageMetadata.Empty),
+            MediaCandidatePresentation.DisplayName(unsafeCandidate, 1, BrowserPageMetadata.Empty));
+        Assert.Equal(MediaCandidatePresentation.SuggestedBaseName(candidate, 1, "best", BrowserPageMetadata.Empty),
+            MediaCandidatePresentation.SuggestedBaseName(unsafeCandidate, 1, "best", BrowserPageMetadata.Empty));
+    }
+
+    [Fact]
+    public void Live_label_never_presents_window_or_external_total_as_full_duration()
+    {
+        var live = Master() with { HlsManifest = new(false, [], [], false, null, false, 600, WindowDurationSeconds: 600) };
+        var label = MediaCandidatePresentation.DisplayName(live, 1, BrowserPageMetadata.Empty);
+        Assert.Contains("Прямой эфир", label);
+        Assert.DoesNotContain("10:00", label);
+    }
+
+    [Fact]
+    public void Explicit_live_snapshot_clears_previous_vod_total_and_retains_window()
+    {
+        var vod = Master() with { HlsManifest = new(false, [], [], false, null, false, 42, HasEndList: true, WindowDurationSeconds: 42) };
+        var live = vod with { HlsManifest = new(false, [], [], false, null, false, WindowDurationSeconds: 10) };
+        var merged = MediaCandidateMerge.Merge(vod, live);
+        Assert.Null(merged.HlsManifest!.DurationSeconds);
+        Assert.True(merged.HlsManifest.IsLive);
+        Assert.Equal(10, merged.HlsManifest.WindowDurationSeconds);
+        Assert.Equal(42, MediaCandidateMerge.Merge(vod, vod with { HlsManifest = null }).HlsManifest!.DurationSeconds);
+    }
+
+    [Fact]
+    public void Confirmed_vod_probe_can_repair_invalid_master_duration_but_cannot_assign_total_to_live()
+    {
+        var invalid = Master() with { HlsManifest = Master().HlsManifest! with { DurationInvalid = true } };
+        var repaired = MediaCandidateMerge.ConfirmDuration(invalid, 20.75);
+        Assert.Equal(20.75, repaired.HlsManifest!.DurationSeconds);
+        Assert.False(repaired.HlsManifest.DurationInvalid);
+        Assert.Throws<ArgumentException>(() => MediaCandidateMerge.ConfirmDuration(invalid with
+            { HlsManifest = new(false, [], [], false, null, false, WindowDurationSeconds: 10) }, 20.75));
+    }
+
+    [Theory]
     [InlineData(double.NaN)]
     [InlineData(double.PositiveInfinity)]
     [InlineData(double.NegativeInfinity)]
     [InlineData(0d)]
     [InlineData(-1d)]
+    [InlineData(31536001d)]
     public void Unconfirmed_duration_cannot_erase_valid_metadata_or_complete_revalidation(double value)
     {
         var previous = Master() with { HlsManifest = Master().HlsManifest! with { DurationSeconds = 42 } };

@@ -6,10 +6,12 @@ public static class MediaCandidateMerge
     public static MediaCandidate ConfirmDuration(MediaCandidate candidate, double duration)
     {
         if (KnownDuration(duration) is null) throw new ArgumentOutOfRangeException(nameof(duration));
-        if (candidate.HlsManifest is null) throw new ArgumentException("An HLS manifest is required.", nameof(candidate));
+        if (candidate.HlsManifest is null || candidate.HlsManifest.IsLive
+            || !candidate.HlsManifest.IsMaster && candidate.HlsManifest.DurationInvalid)
+            throw new ArgumentException("A master or completed valid media manifest is required.", nameof(candidate));
         return candidate with
         {
-            HlsManifest = candidate.HlsManifest with { DurationSeconds = duration },
+            HlsManifest = candidate.HlsManifest with { DurationSeconds = duration, DurationInvalid = false },
             DurationNeedsRevalidation = false
         };
     }
@@ -22,8 +24,9 @@ public static class MediaCandidateMerge
         var frameConflict = previous.FrameEvidenceConflicted || incoming.FrameEvidenceConflicted
             || previous.FrameId is not null && incoming.FrameId is not null
                 && !string.Equals(previous.FrameId, incoming.FrameId, StringComparison.Ordinal);
-        var previousDuration = KnownDuration(previous.HlsManifest?.DurationSeconds);
-        var incomingDuration = KnownDuration(incoming.HlsManifest?.DurationSeconds);
+        var previousDuration = KnownManifestDuration(previous.HlsManifest);
+        var incomingDuration = KnownManifestDuration(incoming.HlsManifest);
+        var explicitUnknownMedia = incoming.HlsManifest is { IsMaster: false } && incomingDuration is null;
         var durationConflict = previous.DurationNeedsRevalidation || incoming.DurationNeedsRevalidation
             || previousDuration is not null && incomingDuration is not null && previousDuration != incomingDuration;
         var manifest = MergeManifest(previous.HlsManifest, incoming.HlsManifest);
@@ -37,13 +40,16 @@ public static class MediaCandidateMerge
             HlsVideoSource = incoming.HlsVideoSource ?? previous.HlsVideoSource,
             HlsAudioSource = incoming.HlsAudioSource ?? previous.HlsAudioSource,
             HlsManifest = manifest is null ? null : manifest with
-                { DurationSeconds = durationConflict ? null : incomingDuration ?? previousDuration },
-            DurationNeedsRevalidation = durationConflict
+                { DurationSeconds = explicitUnknownMedia || durationConflict ? null : incomingDuration ?? previousDuration },
+            DurationNeedsRevalidation = !explicitUnknownMedia && durationConflict
         };
     }
 
     private static double? KnownDuration(double? value)
-        => value is > 0 && double.IsFinite(value.Value) ? value : null;
+        => value is > 0 and <= HlsManifestParser.MaxDurationSeconds && double.IsFinite(value.Value) ? value : null;
+
+    private static double? KnownManifestDuration(HlsManifestInfo? info)
+        => info is { IsLive: false, DurationInvalid: false } ? KnownDuration(info.DurationSeconds) : null;
 
     private static HlsManifestInfo? MergeManifest(HlsManifestInfo? previous, HlsManifestInfo? incoming)
     {

@@ -20,8 +20,9 @@ public static class HlsDownloadPolicy
         Uri source, HlsPreflightFetchResult result)
     {
         UpdateVerifiedClearLeafCache(cache, source, IsVerifiedClearLeaf(result) ? result.Info : null);
-        if (!IsVerifiedClearLeaf(result) || result.Info?.DurationSeconds is not > 0
-            || !double.IsFinite(result.Info.DurationSeconds.Value)) return null;
+        if (!IsVerifiedClearLeaf(result) || result.Info is not { HasEndList: true, DurationInvalid: false }
+            || result.Info.DurationSeconds is not > 0 || !double.IsFinite(result.Info.DurationSeconds.Value)
+            || result.Info.DurationSeconds > HlsManifestParser.MaxDurationSeconds) return null;
         return result.Info.DurationSeconds.Value;
     }
 

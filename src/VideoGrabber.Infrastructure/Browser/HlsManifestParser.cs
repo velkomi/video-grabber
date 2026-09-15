@@ -14,8 +14,13 @@ public sealed record HlsManifestInfo(
     bool IsEncrypted,
     string? EncryptionMethod,
     bool UsesDrmLikeEncryption,
-    double? DurationSeconds = null)
+    double? DurationSeconds = null,
+    bool HasEndList = false,
+    double? WindowDurationSeconds = null,
+    bool DurationInvalid = false)
 {
+    public bool IsLive => !IsMaster && !HasEndList;
+
     public string SafeSummary
     {
         get
@@ -34,6 +39,9 @@ public sealed record HlsManifestInfo(
 
 public static partial class HlsManifestParser
 {
+    // Parser safety limit (365 days), not an inferred media duration.
+    public const double MaxDurationSeconds = 31_536_000;
+
     [GeneratedRegex("([A-Z0-9-]+)=(\\\"[^\\\"]*\\\"|[^,]*)", RegexOptions.CultureInvariant)]
     private static partial Regex AttributeRegex();
 
@@ -49,15 +57,22 @@ public static partial class HlsManifestParser
         var encryptionMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var hasMediaSegments = false;
         var mediaDurationSeconds = 0d;
+        var hasEndList = false;
+        var durationInvalid = false;
 
         for (var i = 0; i < lines.Length; i++)
         {
             var line = lines[i].Trim();
+            if (line.Equals("#EXT-X-ENDLIST", StringComparison.OrdinalIgnoreCase)) hasEndList = true;
             if (line.StartsWith("#EXTINF:", StringComparison.OrdinalIgnoreCase))
             {
                 hasMediaSegments = true;
                 var rawDuration = line["#EXTINF:".Length..].Split(',', 2)[0].Trim();
-                if (double.TryParse(rawDuration, NumberStyles.Float, CultureInfo.InvariantCulture, out var segmentDuration) && segmentDuration > 0)
+                if (!double.TryParse(rawDuration, NumberStyles.Float, CultureInfo.InvariantCulture, out var segmentDuration)
+                    || !double.IsFinite(segmentDuration) || segmentDuration <= 0
+                    || segmentDuration > MaxDurationSeconds || mediaDurationSeconds > MaxDurationSeconds - segmentDuration)
+                    durationInvalid = true;
+                else if (!durationInvalid)
                     mediaDurationSeconds += segmentDuration;
             }
             if (line.StartsWith("#EXT-X-KEY:", StringComparison.OrdinalIgnoreCase)
@@ -101,8 +116,9 @@ public static partial class HlsManifestParser
         if (!isMaster && !hasMediaSegments && !lines.Any(l => l.TrimStart().StartsWith("#EXT-X-TARGETDURATION:", StringComparison.OrdinalIgnoreCase))) return false;
         var method = encryptionMethods.Count == 0 ? null : string.Join("+", encryptionMethods.Order(StringComparer.OrdinalIgnoreCase));
         var drmLike = encryptionMethods.Any(m => m.Contains("SAMPLE-AES", StringComparison.OrdinalIgnoreCase));
+        double? windowDuration = !isMaster && !durationInvalid && mediaDurationSeconds > 0 ? mediaDurationSeconds : null;
         info = new HlsManifestInfo(isMaster, variants, audio, encryptionMethods.Count > 0, method, drmLike,
-            !isMaster && mediaDurationSeconds > 0 ? mediaDurationSeconds : null);
+            hasEndList ? windowDuration : null, hasEndList, windowDuration, durationInvalid);
         return true;
     }
 

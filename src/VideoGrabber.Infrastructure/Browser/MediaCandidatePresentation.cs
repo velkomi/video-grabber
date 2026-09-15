@@ -26,10 +26,15 @@ public static class MediaCandidatePresentation
                 .Select(height => height + "p")
                 .ToArray();
             var qualityText = qualities.Length == 0 ? "HLS" : string.Join(" / ", qualities);
-            var durationText = manifest.DurationSeconds is > 0 ? " ? " + FormatDuration(manifest.DurationSeconds.Value) : string.Empty;
+            var duration = manifest.DurationInvalid ? null : FormatDuration(manifest.DurationSeconds);
+            var durationText = duration is null ? string.Empty : " — " + duration;
             return $"\u0412\u0438\u0434\u0435\u043e {Math.Max(1, effectiveOrdinal):00} \u2014 {title}{durationText} \u2014 {qualityText}";
         }
-        return $"Видео {Math.Max(1, effectiveOrdinal):00} — {title} — {candidate.Kind}";
+        var mediaDuration = candidate.HlsManifest is { IsLive: false, DurationInvalid: false } media
+            ? FormatDuration(media.DurationSeconds) : null;
+        var mediaStatus = candidate.HlsManifest is { IsLive: true } ? " — Прямой эфир"
+            : mediaDuration is null ? string.Empty : " — " + mediaDuration;
+        return $"Видео {Math.Max(1, effectiveOrdinal):00} — {title}{mediaStatus} — {candidate.Kind}";
     }
 
     public static string SuggestedBaseName(MediaCandidate candidate, int ordinal, string quality, BrowserPageMetadata metadata)
@@ -101,9 +106,10 @@ public static class MediaCandidatePresentation
         return $"Видео {Math.Max(1, ordinal):00}";
     }
 
-    private static string FormatDuration(double seconds)
+    private static string? FormatDuration(double? seconds)
     {
-        var span = TimeSpan.FromSeconds(Math.Max(0, Math.Round(seconds)));
+        if (seconds is not > 0 || !double.IsFinite(seconds.Value) || seconds > HlsManifestParser.MaxDurationSeconds) return null;
+        var span = TimeSpan.FromSeconds(Math.Round(seconds.Value));
         return span.TotalHours >= 1
             ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
             : $"{span.Minutes}:{span.Seconds:00}";

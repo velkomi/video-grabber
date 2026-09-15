@@ -240,6 +240,9 @@ public sealed class AuditBrowserRegressionTests
     [InlineData("Infinity")]
     [InlineData("1e309")]
     [InlineData("1e20")]
+    [InlineData("NaN")]
+    [InlineData("-1")]
+    [InlineData("0")]
     public void Audit_A008_Extinf_cannot_publish_nonfinite_or_TimeSpan_overflow_duration(string duration)
     {
         var body = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:" + duration +
@@ -247,12 +250,10 @@ public sealed class AuditBrowserRegressionTests
 
         var parsed = HlsManifestParser.TryParse(body, new Uri("https://cdn.example/media.m3u8"), out var info);
 
-        // Reject the malformed playlist or preserve it with an unknown safe duration.
-        Assert.True(!parsed || info?.DurationSeconds is null ||
-                    (double.IsFinite(info.DurationSeconds.Value) &&
-                     info.DurationSeconds.Value > 0 &&
-                     info.DurationSeconds.Value < TimeSpan.MaxValue.TotalSeconds),
-            "A parsed EXTINF must not poison presentation with a nonfinite or excessive duration.");
+        Assert.True(parsed);
+        Assert.Null(info!.DurationSeconds);
+        Assert.Null(info.WindowDurationSeconds);
+        Assert.True(info.DurationInvalid);
     }
 
     [Fact]
@@ -265,6 +266,9 @@ public sealed class AuditBrowserRegressionTests
 
         Assert.NotNull(info);
         Assert.Null(info!.DurationSeconds);
+        Assert.True(info.IsLive);
+        Assert.False(info.HasEndList);
+        Assert.Equal(30, info.WindowDurationSeconds);
     }
 
     [Fact]
@@ -276,6 +280,9 @@ public sealed class AuditBrowserRegressionTests
         Assert.True(HlsManifestParser.TryParse(body, new Uri("https://cdn.example/vod.m3u8"), out var info));
 
         Assert.Equal(20.75, info!.DurationSeconds);
+        Assert.Equal(20.75, info.WindowDurationSeconds);
+        Assert.True(info.HasEndList);
+        Assert.False(info.IsLive);
     }
 
     [Fact]
