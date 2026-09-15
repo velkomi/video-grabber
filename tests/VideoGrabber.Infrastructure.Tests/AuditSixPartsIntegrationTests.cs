@@ -64,17 +64,37 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
                 var part = Array.FindIndex(servers, s => s.Playlist == candidate.Source) + 1;
                 var height = part % 2 == 1 ? 360 : 720;
                 var server = servers[part - 1];
-                var plan = MediaDownloadPlanResolver.Resolve(candidate, height + "p", false);
+                var globalQuality = part % 2 == 1 ? "720p" : "360p";
+                var selectedQuality = part == 6 ? "best" : height + "p";
+                if (part == 6) globalQuality = "best";
+                var selectedCandidate = candidate;
+                if (part == 1)
+                {
+                    // A directly captured 360p leaf carries no variant height metadata.
+                    Assert.True(HlsManifestParser.TryParse(File.ReadAllText(Path.Combine(root, "part-1", "360.m3u8")),
+                        new Uri("https://fixture.example/360.m3u8"), out var leaf));
+                    Assert.Empty(leaf!.Variants);
+                    selectedCandidate = candidate with { Source = new Uri(server.Playlist, "360.m3u8"), HlsManifest = leaf };
+                }
+                var controls = new UserDownloadIntent(selectedCandidate.Source, globalQuality, false, output, "embedded", 1);
+                var intent = controls with { Quality = selectedQuality };
+                var plan = MediaDownloadPlanResolver.Resolve(selectedCandidate, intent.Quality, intent.AudioOnly);
+                Assert.True(plan.IsResolved);
+                Assert.True(plan.ResolvedHlsLeaf);
                 using var cookies = ScopedCookieFile.Create([plan.Source, server.Lesson],
                     [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]);
-                var result = await new YtDlpDownloader(runner, tools).DownloadAsync(new DownloadRequest(
-                    plan.Source, output, "best", DirectManifest: true,
-                    CookiesFile: cookies.Path, Referer: server.Lesson,
-                    SuggestedBaseName: MediaCandidatePresentation.SuggestedBaseName(candidate, 99, height + "p", metadata)), null, deadline.Token);
+                var request = await DownloadRequestFactory.PrepareAsync(intent, (captured, _) => Task.FromResult(new PreparedDownload(
+                    plan.Source, server.Lesson, cookies.Path, null, null, plan.HlsVideoSource, plan.HlsAudioSource,
+                    plan.DirectManifest, plan.ResolvedHlsLeaf,
+                    MediaCandidatePresentation.SuggestedBaseName(candidate, 99, captured.Quality, metadata),
+                    candidate.HlsManifest!.DurationSeconds, true)), deadline.Token);
+                Assert.Equal(selectedQuality, request.Quality);
+                var result = await new YtDlpDownloader(runner, tools).DownloadAsync(request, null, deadline.Token);
                 Assert.True(result.Success, result.Message + result.Details);
                 Assert.Contains("PART " + part, Path.GetFileName(result.OutputPath!));
                 var probe = await new FfprobeMediaProbe(runner, tools).ProbeAsync(result.OutputPath!, deadline.Token);
                 Assert.True(probe.HasVideo && probe.HasAudio);
+                Assert.InRange(probe.DurationSeconds, request.ExpectedDurationSeconds!.Value - .2, request.ExpectedDurationSeconds.Value + .2);
                 var frame = await FrameHash(result.OutputPath!);
                 var referencePath = Path.Combine(root, "part-" + part, "part-" + part + "-" + height + ".mp4");
                 var reference = await FrameHash(referencePath);
@@ -92,6 +112,8 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
                     .Single(s => s.GetProperty("codec_type").GetString() == "video").GetProperty("height").GetInt32();
                 var unknownOrdinal = ambiguous.Single(c => c.Source == candidate.Source).PageOrdinal;
                 rows.Add(new { part, selectedOrdinal = candidate.PageOrdinal, ambiguousOrdinal = unknownOrdinal,
+                    globalQuality, selectedQuality, resolvedHlsLeaf = request.ResolvedHlsLeaf,
+                    unknownManifestHeight = part == 1,
                     expectedHeight = height, actualHeight, frame, reference, sameDecodedFrame = frame == reference,
                     audio, referenceAudio, sameDecodedAudio = audio == referenceAudio,
                     output = result.OutputPath, sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(result.OutputPath!))),

@@ -1,3 +1,5 @@
+using VideoGrabber.Core.Downloads;
+
 namespace VideoGrabber.Infrastructure.Browser;
 
 public sealed record BrowserDownloadQueueItem(
@@ -45,7 +47,5 @@ public sealed class BrowserDownloadQueue
     public void Clear() => _items.Clear();
 
     private static string NormalizeQuality(string? quality)
-        => quality is "360p" or "480p" or "720p" or "1080p" or "4K" or "best"
-            ? quality
-            : "best";
+        => DownloadQuality.TryParse(quality, out _) ? quality! : throw new ArgumentException("Invalid download quality.", nameof(quality));
 }

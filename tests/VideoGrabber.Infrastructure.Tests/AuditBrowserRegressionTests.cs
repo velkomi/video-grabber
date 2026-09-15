@@ -1,4 +1,5 @@
 using VideoGrabber.Infrastructure.Browser;
+using VideoGrabber.Core.Downloads;
 using Xunit;
 
 namespace VideoGrabber.Infrastructure.Tests;
@@ -141,6 +142,98 @@ public sealed class AuditBrowserRegressionTests
         queue.AddOrUpdate(candidate, 1, "1440p");
 
         Assert.Equal("1440p", Assert.Single(queue.Items).Quality);
+    }
+
+    [Theory]
+    [InlineData("1440p", 1440, "1440p")]
+    [InlineData("2160p", 2160, "2160p")]
+    [InlineData("4K", 2160, "2160p")]
+    [InlineData("2147483647p", int.MaxValue, "2147483647p")]
+    [InlineData("best", null, "best")]
+    public void Audit_A003_Shared_quality_parser_roundtrips(string tag, int? height, string canonical)
+    {
+        Assert.True(DownloadQuality.TryParse(tag, out var quality));
+        Assert.Equal(height, quality.MaximumHeight);
+        Assert.Equal(canonical, quality.ToTag());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("-720p")]
+    [InlineData("+720p")]
+    [InlineData("720 p")]
+    [InlineData(" 720p")]
+    [InlineData("720p[height=1]")]
+    public void Audit_A003_Parser_rejects_invalid_tags(string? value)
+        => Assert.False(DownloadQuality.TryParse(value, out _));
+
+    [Fact]
+    public async Task Audit_A003_Preparation_retains_intent_and_receives_verified_late_values()
+    {
+        var controls = new UserDownloadIntent(Master(1), "4K", false, "original-output", "embedded", 41);
+        var captured = controls;
+        var ready = new TaskCompletionSource<PreparedDownload>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var pending = DownloadRequestFactory.PrepareAsync(captured, async (intent, token) =>
+        {
+            calls++;
+            Assert.Same(captured, intent);
+            return await ready.Task.WaitAsync(token);
+        }, CancellationToken.None);
+        controls = new(Master(6), "360p", true, "later-output", "chrome", 42);
+        Assert.False(pending.IsCompleted);
+        var leaf = new Uri("https://cdn.example/2160.m3u8");
+        ready.SetResult(new(leaf, Lesson, "verified.cookies", "verified-agent", "socks5://127.0.0.1:12000",
+            null, null, true, true, "original-name", 12, true));
+        var request = await pending;
+        Assert.Equal(1, calls);
+        Assert.Equal(leaf, request.Source);
+        Assert.Equal("2160p", request.Quality);
+        Assert.False(request.AudioOnly);
+        Assert.Equal("original-output", request.OutputDirectory);
+        Assert.Null(request.CookiesFromBrowser);
+        Assert.Equal("verified.cookies", request.CookiesFile);
+        Assert.Equal("verified-agent", request.UserAgent);
+        Assert.Equal("socks5://127.0.0.1:12000", request.LocalProxy);
+        Assert.Equal(Lesson, request.Referer);
+        Assert.True(request.ResolvedHlsLeaf);
+        Assert.True(request.DirectManifest);
+        Assert.Equal("original-name", request.SuggestedBaseName);
+        Assert.Equal(12, request.ExpectedDurationSeconds);
+        Assert.True(request.ExpectedAudio);
+        Assert.Equal(41, captured.SessionEpoch);
+        Assert.NotEqual(controls.SelectedSource, captured.SelectedSource);
+    }
+
+    [Fact]
+    public async Task Audit_A003_Preparation_does_not_create_a_request_after_cancellation()
+    {
+        using var cancel = new CancellationTokenSource();
+        var ready = new TaskCompletionSource<PreparedDownload>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var intent = new UserDownloadIntent(Master(1), "best", false, "output", null, 1);
+        var pending = DownloadRequestFactory.PrepareAsync(intent, (_, _) => ready.Task, cancel.Token);
+        cancel.Cancel();
+        ready.SetResult(new(Master(1), null, null, null, null, null, null, false, false, null, null, null));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+    }
+
+    [Fact]
+    public void Audit_A003_App_captures_before_await_and_uses_factory_without_late_control_reads()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src", "VideoGrabber.App"))) directory = directory.Parent;
+        Assert.NotNull(directory);
+        var batch = File.ReadAllText(Path.Combine(directory!.FullName, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
+        var method = batch[batch.IndexOf("private async Task<DownloadAttemptOutcome> DownloadCandidateAsync", StringComparison.Ordinal)..];
+        method = method[..method.IndexOf("private string SelectedBrowserQuality", StringComparison.Ordinal)];
+        Assert.Contains("CaptureDownloadIntent(", method[..method.IndexOf("await ", StringComparison.Ordinal)]);
+        var download = File.ReadAllText(Path.Combine(directory.FullName, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
+        Assert.Contains("DownloadRequestFactory.PrepareAsync(", download);
+        Assert.DoesNotContain("new DownloadRequest(", download);
+        var preparation = download[download.IndexOf("private async Task<DownloadAttemptOutcome> DownloadPreparedSourceAsync", StringComparison.Ordinal)..];
+        foreach (var field in new[] { "_qualityBox", "_audioOnlyBox", "_outputFolderBox", "_cookiesBox.SelectedItem" })
+            Assert.DoesNotContain(field, preparation);
     }
 
     [Theory]

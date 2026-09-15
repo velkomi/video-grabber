@@ -143,7 +143,10 @@ public sealed partial class BrowserWiringRegressionTests
         var batch = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
         var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
         Assert.Contains("plan.DirectManifest", batch);
-        Assert.Contains("DirectManifest: directManifest", download);
+        Assert.Contains("new PreparedDownload(plan.Source", batch);
+        Assert.Contains("DownloadPreparedSourceAsync(intent, selected, operationToken)", batch);
+        Assert.Contains("DownloadRequestFactory.PrepareAsync(intent", download);
+        Assert.Contains("DownloadSourceAsync(UserDownloadIntent intent, CancellationToken operationToken)", download);
         Assert.Contains("_browserUsesSiteRoutes", download);
     }
 

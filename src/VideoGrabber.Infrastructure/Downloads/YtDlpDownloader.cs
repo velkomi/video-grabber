@@ -23,6 +23,8 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             job.Complete(false, failure.Message + "\n" + failure.Details, exitCode);
             return workspace is null ? failure : PreservedFailure(failure, workspace);
         }
+        if (!DownloadQuality.TryParse(request.Quality, out var quality))
+            return Fail(new(false, "Некорректное качество видео."));
         if (request.Source.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(request.Source.UserInfo))
             return Fail(new(false, "Поддерживаются HTTP/HTTPS-ссылки без встроенного пароля."));
         if (request.CookiesFile is not null && request.CookiesFromBrowser is not null)
@@ -74,7 +76,7 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             "--progress",
             "--remote-components", "ejs:github",
             "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg,
-            "-f", SelectFormat(request),
+            "-f", SelectFormat(request, quality),
             "--merge-output-format", "mp4",
             "-o", outputTemplate
         };
@@ -349,22 +351,17 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
 
     private static bool IsSafeHttp(Uri uri)
         => uri.Scheme is "http" or "https" && string.IsNullOrEmpty(uri.UserInfo);
-    private static string SelectFormat(DownloadRequest request)
+    private static string SelectFormat(DownloadRequest request, DownloadQuality quality)
     {
         if (request.AudioOnly)
         {
             return "bestaudio/best";
         }
 
-        return request.Quality switch
-        {
-            "360p" => "bestvideo*[height<=360]+bestaudio/best[height<=360]",
-            "480p" => "bestvideo*[height<=480]+bestaudio/best[height<=480]",
-            "720p" => "bestvideo*[height<=720]+bestaudio/best[height<=720]",
-            "1080p" => "bestvideo*[height<=1080]+bestaudio/best[height<=1080]",
-            "4K" => "bestvideo*[height<=2160]+bestaudio/best[height<=2160]",
-            _ => "bestvideo*+bestaudio/best"
-        };
+        if (request.ResolvedHlsLeaf) return "best";
+        return quality.MaximumHeight is int height
+            ? FormattableString.Invariant($"bestvideo*[height<={height}]+bestaudio/best[height<={height}]")
+            : "bestvideo*+bestaudio/best";
     }
 
 }

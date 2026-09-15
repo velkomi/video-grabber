@@ -1,3 +1,5 @@
+using VideoGrabber.Core.Downloads;
+
 namespace VideoGrabber.Infrastructure.Browser;
 
 public sealed record HlsTrackPlan(HlsVariant Video, HlsAudioRendition? Audio);
@@ -6,17 +8,9 @@ public static class HlsTrackSelector
 {
     public static HlsTrackPlan? Select(HlsManifestInfo info, string quality)
     {
-        if (info.Variants.Count == 0) return null;
-        var maxHeight = quality switch
-        {
-            "360p" => 360,
-            "480p" => 480,
-            "720p" => 720,
-            "1080p" => 1080,
-            "4K" => 2160,
-            _ => int.MaxValue
-        };
-        var candidates = maxHeight == int.MaxValue
+        if (info.Variants.Count == 0 || !DownloadQuality.TryParse(quality, out var parsed)) return null;
+        var maxHeight = parsed.MaximumHeight;
+        var candidates = maxHeight is null
             ? info.Variants
             : info.Variants.Where(v => v.Height is not null && v.Height <= maxHeight).ToArray();
         var video = candidates

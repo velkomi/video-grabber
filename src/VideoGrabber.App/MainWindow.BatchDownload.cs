@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml.Controls;
+using VideoGrabber.Core.Downloads;
 using VideoGrabber.Infrastructure.Browser;
 
 namespace VideoGrabber.App;
@@ -15,30 +16,43 @@ public sealed partial class MainWindow
         bool resetCookieSelectionAfterUse = true,
         string? qualityOverride = null)
     {
-        candidate = await RefreshCandidateBindingAsync(candidate);
-        ordinal = candidate.PageOrdinal ?? ordinal;
-        var quality = qualityOverride ?? SelectedBrowserQuality(candidate);
-        var audioOnly = _audioOnlyBox.IsChecked == true;
-        var plan = MediaDownloadPlanResolver.Resolve(candidate, quality, audioOnly);
-        using var preflight = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        return await HlsDownloadPolicy.RunVerifiedAsync(candidate, plan,
-            () => EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token),
-            () =>
-            {
-                var suggested = MediaCandidatePresentation.SuggestedBaseName(candidate, ordinal, quality, _browserMetadata);
-                var duration = candidate.HlsManifest?.DurationSeconds;
-                var expectedDuration = duration is > 0 && double.IsFinite(duration.Value) ? duration : null;
-                bool? expectedAudio = audioOnly || plan.HlsAudioSource is not null ? true : null;
-                return DownloadSourceAsync(plan.Source, candidate.Referer, plan.HlsVideoSource, plan.HlsAudioSource,
-                    plan.DirectManifest, suggested, resetCookieSelectionAfterUse, expectedDuration, expectedAudio);
-            },
-            error =>
-            {
-                if (error is not null) _browserHint.Text = error;
-                return DownloadAttemptOutcome.Failed;
-            });
+        var intent = CaptureDownloadIntent(candidate.Source, qualityOverride ?? SelectedBrowserQuality(candidate));
+        return await RunDownloadOperationAsync(intent, candidate.Referer, async operationToken =>
+        {
+            EnsureIntentSession(intent, operationToken);
+            candidate = await RefreshCandidateBindingAsync(candidate);
+            EnsureIntentSession(intent, operationToken);
+            ordinal = candidate.PageOrdinal ?? ordinal;
+            var plan = MediaDownloadPlanResolver.Resolve(candidate, intent.Quality, intent.AudioOnly);
+            using var preflight = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
+            preflight.CancelAfter(TimeSpan.FromSeconds(60));
+            return await HlsDownloadPolicy.RunVerifiedAsync(candidate, plan,
+                async () =>
+                {
+                    EnsureIntentSession(intent, operationToken);
+                    var verified = await EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token);
+                    EnsureIntentSession(intent, operationToken);
+                    return verified;
+                },
+                () =>
+                {
+                    EnsureIntentSession(intent, operationToken);
+                    var suggested = MediaCandidatePresentation.SuggestedBaseName(candidate, ordinal, intent.Quality, _browserMetadata);
+                    var duration = candidate.HlsManifest?.DurationSeconds;
+                    var expectedDuration = duration is > 0 && double.IsFinite(duration.Value) ? duration : null;
+                    bool? expectedAudio = intent.AudioOnly || plan.HlsAudioSource is not null ? true : null;
+                    var selected = new PreparedDownload(plan.Source, candidate.Referer, null, null, null,
+                        plan.HlsVideoSource, plan.HlsAudioSource, plan.DirectManifest, plan.ResolvedHlsLeaf,
+                        suggested, expectedDuration, expectedAudio);
+                    return DownloadPreparedSourceAsync(intent, selected, operationToken);
+                },
+                error =>
+                {
+                    if (error is not null) _browserHint.Text = error;
+                    return DownloadAttemptOutcome.Failed;
+                });
+        }, resetCookieSelectionAfterUse);
     }
-
     private string SelectedBrowserQuality(MediaCandidate candidate)
     {
         if (_mediaQualitySelections.TryGetValue(candidate.Source.AbsoluteUri, out var saved)) return saved;

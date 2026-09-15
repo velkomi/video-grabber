@@ -25,4 +25,30 @@ public sealed class HlsTrackSelectorTests
         Assert.Equal(expectedHeight, plan!.Video.Height);
         Assert.Equal("ru", plan.Audio!.Language);
     }
+
+    [Theory]
+    [InlineData("1440p", 1440)]
+    [InlineData("2160p", 2160)]
+    [InlineData("4K", 2160)]
+    [InlineData("4320p", 4320)]
+    [InlineData("best", 4320)]
+    public void Audit_A003_Dynamic_heights_remain_distinct_from_best(string quality, int expectedHeight)
+    {
+        var manifest = Sample() with { Variants = new[] { 720, 1440, 2160, 4320 }
+            .Select(height => new HlsVariant(new Uri($"https://cdn.test/{height}.m3u8"), null, height, height * 1000, null, null)).ToArray() };
+        Assert.Equal(expectedHeight, HlsTrackSelector.Select(manifest, quality)!.Video.Height);
+    }
+
+    [Theory]
+    [InlineData("broken")]
+    [InlineData("0p")]
+    [InlineData("2147483648p")]
+    [InlineData("７２０p")]
+    public void Audit_A003_Invalid_quality_is_rejected(string quality)
+    {
+        Assert.Null(HlsTrackSelector.Select(Sample(), quality));
+        var queue = new BrowserDownloadQueue();
+        Assert.Throws<ArgumentException>(() => queue.AddOrUpdate(new(new Uri("https://cdn.test/master.m3u8"), new Uri("https://site.test/lesson"), "HLS"), 1, quality));
+        Assert.Empty(queue.Items);
+    }
 }
