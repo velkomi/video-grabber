@@ -28,43 +28,55 @@ public sealed partial class MainWindow
     private readonly ConcurrentDictionary<string, PendingHlsManifest> _pendingHlsManifests = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.ComboBoxItem> _mediaCandidateItems = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _verifiedClearHls = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, byte> _durationProbeInFlight = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(long Generation, string Source), byte> _durationProbeInFlight = new();
+    private readonly BrowserPageLifetime _browserPages = new();
     private IReadOnlyList<DevToolsFrameInfo> _browserFrames = [];
     private long _browserDiscoveryGeneration;
     private const string AutoAttachJson = "{\"autoAttach\":true,\"waitForDebuggerOnStart\":true,\"flatten\":true}";
 
     private async Task EnableDevToolsMediaDiscoveryAsync(CoreWebView2 core)
     {
+        var lease = _browserPages.Capture();
+        if (!IsCurrentBrowserPage(lease, core)) return;
         _targetAttachedReceiver = core.GetDevToolsProtocolEventReceiver("Target.attachedToTarget");
         _targetAttachedHandler = async (_, args) => await OnDevToolsTargetAttachedAsync(core, args.ParameterObjectAsJson);
         _targetAttachedReceiver.DevToolsProtocolEventReceived += _targetAttachedHandler;
         _targetDetachedReceiver = core.GetDevToolsProtocolEventReceiver("Target.detachedFromTarget");
-        _targetDetachedHandler = (_, args) => OnDevToolsTargetDetached(args.ParameterObjectAsJson);
+        _targetDetachedHandler = (_, args) =>
+        {
+            if (ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) OnDevToolsTargetDetached(args.ParameterObjectAsJson);
+        };
         _targetDetachedReceiver.DevToolsProtocolEventReceived += _targetDetachedHandler;
 
         _networkResponseReceiver = core.GetDevToolsProtocolEventReceiver("Network.responseReceived");
         _networkRequestReceiver = core.GetDevToolsProtocolEventReceiver("Network.requestWillBeSent");
         _networkLoadingFinishedReceiver = core.GetDevToolsProtocolEventReceiver("Network.loadingFinished");
         _networkLoadingFailedReceiver = core.GetDevToolsProtocolEventReceiver("Network.loadingFailed");
-        _networkResponseHandler = (_, args) => OnDevToolsResponse(args.ParameterObjectAsJson, args.SessionId);
-        _networkRequestHandler = (_, args) => OnDevToolsRequest(args.ParameterObjectAsJson, args.SessionId);
+        _networkResponseHandler = (_, args) => OnDevToolsResponse(core, args.ParameterObjectAsJson, args.SessionId);
+        _networkRequestHandler = (_, args) => OnDevToolsRequest(core, args.ParameterObjectAsJson, args.SessionId);
         _networkLoadingFinishedHandler = async (_, args) => await OnDevToolsLoadingFinishedAsync(core, args.ParameterObjectAsJson, args.SessionId);
-        _networkLoadingFailedHandler = (_, args) => OnDevToolsLoadingFailed(args.ParameterObjectAsJson, args.SessionId);
+        _networkLoadingFailedHandler = (_, args) =>
+        {
+            if (ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) OnDevToolsLoadingFailed(args.ParameterObjectAsJson, args.SessionId);
+        };
         _networkResponseReceiver.DevToolsProtocolEventReceived += _networkResponseHandler;
         _networkRequestReceiver.DevToolsProtocolEventReceived += _networkRequestHandler;
         _networkLoadingFinishedReceiver.DevToolsProtocolEventReceived += _networkLoadingFinishedHandler;
         _networkLoadingFailedReceiver.DevToolsProtocolEventReceived += _networkLoadingFailedHandler;
 
         await core.CallDevToolsProtocolMethodAsync("Network.enable", "{}");
+        if (!IsCurrentBrowserPage(lease, core)) return;
         await core.CallDevToolsProtocolMethodAsync("Target.setAutoAttach", AutoAttachJson);
+        if (!IsCurrentBrowserPage(lease, core)) return;
         DiagnosticHub.Log.Write("browser.devtools", "succeeded", "Network enabled; iframe auto-attach enabled; HLS sniffer active");
     }
 
-    private void OnDevToolsResponse(string json, string? sessionId)
+    private void OnDevToolsResponse(CoreWebView2 core, string json, string? sessionId)
     {
+        if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) return;
         var page = _browserPageUri;
         if (page is null) return;
-        var generation = Volatile.Read(ref _browserDiscoveryGeneration);
+        var lease = _browserPages.Capture();
         TrimPendingStateIfNeeded();
 
         if (DevToolsGetCourseResponseParser.TryParsePlayerResponse(json, page, out var player) && player is not null)
@@ -79,24 +91,25 @@ public sealed partial class MainWindow
             var key = RequestKey(sessionId, hls.RequestId);
             var referer = _networkRequestContexts.TryGetValue(key, out var context) ? context.Referer : page;
             _pendingHlsManifests[key] = new PendingHlsManifest(hls, referer);
-            DiagnosticHub.Log.Write("browser.hls", "observed", hls.SafeDisplay, jobId: "browser-" + generation);
+            DiagnosticHub.Log.Write("browser.hls", "observed", hls.SafeDisplay, jobId: "browser-" + lease.Generation);
             return;
         }
 
         if (DevToolsMediaEventParser.TryParseResponse(json, page, out var candidate) && candidate is not null && candidate.Kind is not ("GetCourse" or "HLS"))
         {
-            QueueMediaCandidate(candidate, generation);
+            QueueMediaCandidate(candidate, lease, core);
             return;
         }
         if (DevToolsMediaEventParser.TrySummarizeResponse(json, out var summary) && summary is { IsMediaLike: true })
             DiagnosticHub.Log.Write("browser.devtools.observe", "event", summary.SafeDisplay);
     }
 
-    private void OnDevToolsRequest(string json, string? sessionId)
+    private void OnDevToolsRequest(CoreWebView2 core, string json, string? sessionId)
     {
+        if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) return;
         var page = _browserPageUri;
         if (page is null) return;
-        var generation = Volatile.Read(ref _browserDiscoveryGeneration);
+        var lease = _browserPages.Capture();
         if (DevToolsHlsSnifferParser.TryParseRequest(json, page, out var context) && context is not null)
         {
             if (_networkRequestContexts.Count > 5000) _networkRequestContexts.Clear();
@@ -104,24 +117,27 @@ public sealed partial class MainWindow
         }
         if (!DevToolsMediaEventParser.TryParseRequest(json, page, out var candidate) || candidate is null) return;
         if (candidate.Kind is "GetCourse" or "HLS") return;
-        QueueMediaCandidate(candidate, generation);
+        QueueMediaCandidate(candidate, lease, core);
     }
 
     private async Task OnDevToolsLoadingFinishedAsync(CoreWebView2 core, string json, string? sessionId)
     {
+        if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) return;
         if (!DevToolsGetCourseResponseParser.TryParseLoadingFinished(json, out var requestId) || requestId is null) return;
         var key = RequestKey(sessionId, requestId);
-        var generation = Volatile.Read(ref _browserDiscoveryGeneration);
+        var lease = _browserPages.Capture();
+        if (!IsCurrentBrowserPage(lease, core)) return;
         try
         {
             if (_pendingGetCoursePlayers.TryRemove(key, out var player))
-                await ResolveGetCoursePlayerAsync(core, player, requestId, sessionId, generation);
+                await ResolveGetCoursePlayerAsync(core, player, requestId, sessionId, lease);
+            if (!IsCurrentBrowserPage(lease, core)) return;
             if (_pendingHlsManifests.TryRemove(key, out var pending))
-                await ResolveHlsManifestAsync(core, pending, requestId, sessionId, generation);
+                await ResolveHlsManifestAsync(core, pending, requestId, sessionId, lease);
         }
         finally
         {
-            _networkRequestContexts.TryRemove(key, out _);
+            if (IsCurrentBrowserPage(lease, core)) _networkRequestContexts.TryRemove(key, out _);
         }
     }
 
@@ -141,19 +157,19 @@ public sealed partial class MainWindow
         DiagnosticHub.Log.Write("browser.devtools", "observed", "Pending network state reset after safety limit");
     }
 
-    private async Task ResolveGetCoursePlayerAsync(CoreWebView2 core, DevToolsGetCourseResponse player, string requestId, string? sessionId, long generation)
+    private async Task ResolveGetCoursePlayerAsync(CoreWebView2 core, DevToolsGetCourseResponse player, string requestId, string? sessionId, BrowserPageLease lease)
     {
         try
         {
             var bodyJson = await GetResponseBodyAsync(core, requestId, sessionId);
-            if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
+            if (!IsCurrentBrowserPage(lease, core)) return;
             if (DevToolsGetCourseResponseParser.TryDecodeBody(bodyJson, out var body)
                 && body is not null
                 && GetCoursePlayerConfigParser.TryExtractMasterPlaylist(body, player.PlayerUri, out var playlist)
                 && playlist is not null)
             {
                 QueueMediaCandidate(new MediaCandidate(playlist, player.Referer, "HLS", "master [GetCourse fallback]",
-                    FrameId: player.FrameId), generation);
+                    FrameId: player.FrameId), lease, core);
                 DiagnosticHub.Log.Write("browser.player", "succeeded", "master HLS announced on " + playlist.IdnHost + "; waiting for HLS network response");
             }
             else
@@ -165,28 +181,28 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task ResolveHlsManifestAsync(CoreWebView2 core, PendingHlsManifest pending, string requestId, string? sessionId, long generation)
+    private async Task ResolveHlsManifestAsync(CoreWebView2 core, PendingHlsManifest pending, string requestId, string? sessionId, BrowserPageLease lease)
     {
         var fallback = new MediaCandidate(pending.Response.Source, pending.Referer, "HLS", FrameId: pending.Response.FrameId);
         try
         {
             var bodyJson = await GetResponseBodyAsync(core, requestId, sessionId);
-            if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
+            if (!IsCurrentBrowserPage(lease, core)) return;
             if (!DevToolsGetCourseResponseParser.TryDecodeBody(bodyJson, out var body) || body is null
                 || !HlsManifestParser.TryParse(body, pending.Response.Source, out var info) || info is null)
             {
                 HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, pending.Response.Source, null);
-                QueueMediaCandidate(fallback, generation);
+                QueueMediaCandidate(fallback, lease, core);
                 return;
             }
             if (!HlsDownloadPolicy.IsAllowed(info))
             {
                 _verifiedClearHls.TryRemove(pending.Response.Source.AbsoluteUri, out _);
-                RemoveMediaCandidatesReferencing(pending.Response.Source, generation);
+                RemoveMediaCandidatesReferencing(pending.Response.Source, lease, core);
                 DiagnosticHub.Log.Write("browser.hls", "blocked", pending.Response.SafeDisplay + " " + info.SafeSummary);
-                DispatcherQueue.TryEnqueue(() =>
+                EnqueueBrowserPage(lease, core, () =>
                 {
-                    if (generation == Volatile.Read(ref _browserDiscoveryGeneration))
+                    if (IsCurrentBrowserPage(lease, core))
                         _browserHint.Text = "Обнаружен зашифрованный HLS (EXT-X-KEY). Получение ключей не поддерживается.";
                 });
                 return;
@@ -195,14 +211,15 @@ public sealed partial class MainWindow
             var details = info.SafeSummary;
             QueueMediaCandidate(new MediaCandidate(
                 pending.Response.Source, pending.Referer, "HLS", details,
-                HlsManifest: info, FrameId: pending.Response.FrameId), generation);
+                HlsManifest: info, FrameId: pending.Response.FrameId), lease, core);
             DiagnosticHub.Log.Write("browser.hls", "succeeded", pending.Response.SafeDisplay + " " + details);
         }
         catch (Exception ex)
         {
+            if (!IsCurrentBrowserPage(lease, core)) return;
             _verifiedClearHls.TryRemove(pending.Response.Source.AbsoluteUri, out _);
             DiagnosticHub.Log.Write("browser.hls", "failed", pending.Response.SafeDisplay + " " + ex.GetType().Name);
-            if (generation == Volatile.Read(ref _browserDiscoveryGeneration)) QueueMediaCandidate(fallback, generation);
+            if (IsCurrentBrowserPage(lease, core)) QueueMediaCandidate(fallback, lease, core);
         }
     }
 
@@ -216,6 +233,9 @@ public sealed partial class MainWindow
 
     private async Task OnDevToolsTargetAttachedAsync(CoreWebView2 core, string json)
     {
+        if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) return;
+        var lease = _browserPages.Capture();
+        if (!IsCurrentBrowserPage(lease, core)) return;
         if (!DevToolsTargetEventParser.TryParseSessionId(json, out var sessionId) || sessionId is null) return;
         if (!_devToolsSessions.TryAdd(sessionId, 0))
         {
@@ -228,7 +248,9 @@ public sealed partial class MainWindow
             if (DevToolsTargetEventParser.TryParseAttached(json, out target) && target is not null)
             {
                 await core.CallDevToolsProtocolMethodForSessionAsync(sessionId, "Network.enable", "{}");
+                if (!IsCurrentBrowserPage(lease, core)) return;
                 await core.CallDevToolsProtocolMethodForSessionAsync(sessionId, "Target.setAutoAttach", AutoAttachJson);
+                if (!IsCurrentBrowserPage(lease, core)) return;
                 DiagnosticHub.Log.Write("browser.devtools.target", "succeeded", target.SafeDisplay);
             }
             else
@@ -242,7 +264,7 @@ public sealed partial class MainWindow
         {
             try { await core.CallDevToolsProtocolMethodForSessionAsync(sessionId, "Runtime.runIfWaitingForDebugger", "{}"); } catch { }
         }
-        ScheduleBrowserBindingRefresh(core);
+        if (IsCurrentBrowserPage(lease, core)) ScheduleBrowserBindingRefresh(core, lease);
     }
 
     private void OnDevToolsTargetDetached(string json)
@@ -264,13 +286,13 @@ public sealed partial class MainWindow
             _networkRequestContexts.TryRemove(key, out _);
     }
 
-    private void QueueMediaCandidate(MediaCandidate candidate, long? expectedGeneration = null)
+    private void QueueMediaCandidate(MediaCandidate candidate, BrowserPageLease lease, CoreWebView2 core)
     {
         if (!MediaCandidatePolicy.CanQueue(candidate)) return;
-        var generation = expectedGeneration ?? Volatile.Read(ref _browserDiscoveryGeneration);
-        DispatcherQueue.TryEnqueue(() =>
+        if (!IsCurrentBrowserPage(lease, core)) return;
+        EnqueueBrowserPage(lease, core, () =>
         {
-            if (generation != Volatile.Read(ref _browserDiscoveryGeneration)
+            if (!IsCurrentBrowserPage(lease, core)
                 || _mediaBrowser?.CoreWebView2 is null || _browserPageUri is null || _seenMedia.Count >= 200) return;
 
             var key = candidate.Source.AbsoluteUri;
@@ -307,8 +329,8 @@ public sealed partial class MainWindow
                 existing.Content = MediaCandidatePresentation.DisplayName(candidate, index, _browserMetadata);
                 existing.Tag = candidate;
                 SyncQueuedCandidate(candidate);
-                RebindAndReorderMediaCandidates();
-                _ = EnrichMediaDurationAsync(candidate, generation);
+                RebindAndReorderMediaCandidates(lease, core);
+                _ = EnrichMediaDurationAsync(candidate, lease, core);
                 return;
             }
             if (!_seenMedia.Add(key)) return;
@@ -323,15 +345,15 @@ public sealed partial class MainWindow
             if (_mediaCandidatesBox.SelectedIndex < 0) _mediaCandidatesBox.SelectedIndex = 0;
             _browserHint.Text = "Найдено видео: " + _mediaCandidatesBox.Items.Count + ". Выберите видео и качество; запускать его вручную не требуется.";
             DiagnosticHub.Log.Write("browser.discovery", "succeeded", displayName);
-            _ = EnrichMediaDurationAsync(candidate, generation);
+            _ = EnrichMediaDurationAsync(candidate, lease, core);
         });
     }
 
-    private void RemoveMediaCandidatesReferencing(Uri source, long generation)
+    private void RemoveMediaCandidatesReferencing(Uri source, BrowserPageLease lease, CoreWebView2 core)
     {
-        DispatcherQueue.TryEnqueue(() =>
+        EnqueueBrowserPage(lease, core, () =>
         {
-            if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
+            if (!IsCurrentBrowserPage(lease, core)) return;
             var remove = _mediaCandidateItems
                 .Where(pair => pair.Value.Tag is MediaCandidate candidate
                     && (candidate.Source == source
@@ -348,14 +370,18 @@ public sealed partial class MainWindow
         });
     }
 
-    private async Task RefreshBrowserFrameTreeAsync(CoreWebView2 core)
+    private async Task RefreshBrowserFrameTreeAsync(CoreWebView2 core, BrowserPageLease lease)
     {
         try
         {
-            var json = await core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}");
-            if (DevToolsFrameTreeParser.TryParse(json, out var frames) && frames is not null)
-                _browserFrames = frames;
-            RebindAndReorderMediaCandidates();
+            await _browserPages.ReadAndApplyAsync(lease,
+                () => core.CallDevToolsProtocolMethodAsync("Page.getFrameTree", "{}").AsTask(),
+                () => ReferenceEquals(_mediaBrowser?.CoreWebView2, core), json =>
+                {
+                    if (DevToolsFrameTreeParser.TryParse(json, out var frames) && frames is not null)
+                        _browserFrames = frames;
+                    RebindAndReorderMediaCandidates(lease, core);
+                });
         }
         catch (Exception ex)
         {
@@ -363,12 +389,12 @@ public sealed partial class MainWindow
         }
     }
 
-    private void RebindAndReorderMediaCandidates()
+    private void RebindAndReorderMediaCandidates(BrowserPageLease lease, CoreWebView2 core)
     {
-        var generation = Volatile.Read(ref _browserDiscoveryGeneration);
-        DispatcherQueue.TryEnqueue(() =>
+        if (!IsCurrentBrowserPage(lease, core)) return;
+        EnqueueBrowserPage(lease, core, () =>
         {
-            if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
+            if (!IsCurrentBrowserPage(lease, core)) return;
             var rawEntries = _mediaCandidatesBox.Items.OfType<Microsoft.UI.Xaml.Controls.ComboBoxItem>()
                 .Select((item, index) => (Item: item, Index: index, Candidate: item.Tag as MediaCandidate))
                 .Where(entry => entry.Candidate is not null)
@@ -409,7 +435,10 @@ public sealed partial class MainWindow
 
     private void ResetDevToolsDiscoveryForNavigation(bool clearUi = true)
     {
-        Interlocked.Increment(ref _browserDiscoveryGeneration);
+        _browserPages.Reset();
+        Interlocked.Exchange(ref _browserDiscoveryGeneration, _browserPages.CurrentGeneration);
+        Interlocked.Increment(ref _bindingRefreshVersion);
+        _durationProbeInFlight.Clear();
         _pendingGetCoursePlayers.Clear();
         _pendingHlsManifests.Clear();
         _networkRequestContexts.Clear();

@@ -12,7 +12,7 @@ public sealed partial class MainWindow
     private sealed record BrowserMetadataPayload(string? pageTitle, string[]? sections, BrowserPlayerPayload[]? playerSlots);
     private BrowserPageMetadata _browserMetadata = BrowserPageMetadata.Empty;
 
-    private async Task CaptureBrowserMetadataAsync(CoreWebView2 core)
+    private async Task CaptureBrowserMetadataAsync(CoreWebView2 core, BrowserPageLease lease)
     {
         const string script = """
             (() => {
@@ -65,19 +65,22 @@ public sealed partial class MainWindow
             """;
         try
         {
-            var json = await core.ExecuteScriptAsync(script);
-            var payload = JsonSerializer.Deserialize<BrowserMetadataPayload>(json);
-            if (payload is null) return;
-            var sections = (payload.sections ?? []).Where(value => !string.IsNullOrWhiteSpace(value)).Take(40).ToArray();
-            var slots = (payload.playerSlots ?? [])
-                .Where(slot => slot.ordinal > 0 && slot.ordinal <= 200)
-                .Select(slot => new BrowserPlayerSlot(slot.ordinal, slot.title, SafePlayerUri(slot.source)))
-                .ToArray();
-            _browserMetadata = new BrowserPageMetadata(payload.pageTitle, sections, slots);
-            foreach (var slot in slots)
-                DiagnosticHub.Log.Write("browser.binding.slot", "observed",
-                    $"ordinal={slot.Ordinal} source={BrowserBindingFingerprint.Describe(slot.Source)}");
-            RebindAndReorderMediaCandidates();
+            await _browserPages.ReadAndApplyAsync(lease, () => core.ExecuteScriptAsync(script).AsTask(),
+                () => ReferenceEquals(_mediaBrowser?.CoreWebView2, core), json =>
+            {
+                var payload = JsonSerializer.Deserialize<BrowserMetadataPayload>(json);
+                if (payload is null) return;
+                var sections = (payload.sections ?? []).Where(value => !string.IsNullOrWhiteSpace(value)).Take(40).ToArray();
+                var slots = (payload.playerSlots ?? [])
+                    .Where(slot => slot.ordinal > 0 && slot.ordinal <= 200)
+                    .Select(slot => new BrowserPlayerSlot(slot.ordinal, slot.title, SafePlayerUri(slot.source)))
+                    .ToArray();
+                _browserMetadata = new BrowserPageMetadata(payload.pageTitle, sections, slots);
+                foreach (var slot in slots)
+                    DiagnosticHub.Log.Write("browser.binding.slot", "observed",
+                        $"ordinal={slot.Ordinal} source={BrowserBindingFingerprint.Describe(slot.Source)}");
+                RebindAndReorderMediaCandidates(lease, core);
+            });
         }
         catch (Exception ex)
         {
@@ -93,28 +96,47 @@ public sealed partial class MainWindow
     }
     private int _bindingRefreshVersion;
 
-    private void ScheduleBrowserBindingRefresh(CoreWebView2 core)
+    private bool IsCurrentBrowserPage(BrowserPageLease lease, CoreWebView2? core)
+        => core is not null && _browserPages.IsCurrent(lease)
+            && ReferenceEquals(_mediaBrowser?.CoreWebView2, core);
+
+    private void EnqueueBrowserPage(BrowserPageLease lease, CoreWebView2 core, Action apply)
+        => DispatcherQueue.TryEnqueue(() => _browserPages.TryApply(lease,
+            () => ReferenceEquals(_mediaBrowser?.CoreWebView2, core), apply));
+
+    private void ScheduleBrowserBindingRefresh(CoreWebView2 core, BrowserPageLease lease)
     {
+        if (!IsCurrentBrowserPage(lease, core)) return;
         var version = Interlocked.Increment(ref _bindingRefreshVersion);
-        _ = RefreshBrowserBindingsAfterDelayAsync(core, version);
+        _ = RefreshBrowserBindingsAfterDelayAsync(core, lease, version);
     }
 
-    private async Task RefreshBrowserBindingsAfterDelayAsync(CoreWebView2 core, int version)
+    private async Task RefreshBrowserBindingsAfterDelayAsync(CoreWebView2 core, BrowserPageLease lease, int version)
     {
-        await Task.Delay(350);
-        if (version != Volatile.Read(ref _bindingRefreshVersion) || _mediaBrowser?.CoreWebView2 != core) return;
-        await RefreshBrowserBindingsAsync(core);
+        try
+        {
+            await Task.Delay(350, lease.Token);
+            if (version != Volatile.Read(ref _bindingRefreshVersion) || !IsCurrentBrowserPage(lease, core)) return;
+            await RefreshBrowserBindingsAsync(core, lease);
+        }
+        catch (OperationCanceledException) { }
     }
 
-    private async Task RefreshBrowserBindingsAsync(CoreWebView2 core)
+    private async Task RefreshBrowserBindingsAsync(CoreWebView2 core, BrowserPageLease lease)
     {
-        await RefreshBrowserFrameTreeAsync(core);
-        await CaptureBrowserMetadataAsync(core);
+        if (!IsCurrentBrowserPage(lease, core)) return;
+        await RefreshBrowserFrameTreeAsync(core, lease);
+        if (!IsCurrentBrowserPage(lease, core)) return;
+        await CaptureBrowserMetadataAsync(core, lease);
     }
 
     private async Task<MediaCandidate> RefreshCandidateBindingAsync(MediaCandidate candidate)
     {
-        if (_mediaBrowser?.CoreWebView2 is { } core) await RefreshBrowserBindingsAsync(core);
+        var lease = _browserPages.Capture();
+        var core = _mediaBrowser?.CoreWebView2;
+        if (!IsCurrentBrowserPage(lease, core)) throw new OperationCanceledException("Browser page unavailable.");
+        await RefreshBrowserBindingsAsync(core!, lease);
+        if (!IsCurrentBrowserPage(lease, core)) throw new OperationCanceledException("Browser page changed.");
         var current = _mediaCandidateItems.TryGetValue(candidate.Source.AbsoluteUri, out var item)
             && item.Tag is MediaCandidate latest ? latest : candidate;
         var all = _mediaCandidatesBox.Items.OfType<ComboBoxItem>()
@@ -129,7 +151,9 @@ public sealed partial class MainWindow
     }
     private void RefreshMediaCandidateLabels()
     {
-        DispatcherQueue.TryEnqueue(() =>
+        var lease = _browserPages.Capture();
+        if (_mediaBrowser?.CoreWebView2 is not { } core) return;
+        EnqueueBrowserPage(lease, core, () =>
         {
             for (var i = 0; i < _mediaCandidatesBox.Items.Count; i++)
             {

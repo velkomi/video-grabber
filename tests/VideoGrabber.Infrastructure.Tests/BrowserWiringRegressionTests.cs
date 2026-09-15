@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using VideoGrabber.Infrastructure.Browser;
+
 namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed partial class BrowserWiringRegressionTests
@@ -216,5 +219,100 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("RebindAndReorderMediaCandidates", devtools);
         Assert.Contains("playerSlots", metadata);
         Assert.Contains("source: frame.src", metadata);
+    }
+}
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public async Task Delayed_page_reads_and_dispatched_merge_cannot_change_new_page_models()
+    {
+        using var pages = new BrowserPageLifetime();
+        var old = pages.Capture();
+        var browser = new object();
+        var capturedBrowser = browser;
+        var metadataRead = new TaskCompletionSource<BrowserPageMetadata>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var frameRead = new TaskCompletionSource<IReadOnlyList<DevToolsFrameInfo>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var probeRead = new TaskCompletionSource<HlsPreflightFetchResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var source = new Uri("https://fixture.invalid/master.m3u8");
+        var leaf = new Uri("https://fixture.invalid/video.m3u8");
+        var oldMetadata = new BrowserPageMetadata("A", ["Part A"]);
+        var metadata = oldMetadata;
+        IReadOnlyList<DevToolsFrameInfo> frames = [new("A", source, 1)];
+        var candidate = new MediaCandidate(source, new Uri("https://fixture.invalid/page-b"), "HLS",
+            PageOrdinal: 2, PageSectionTitle: "Part B");
+        var queue = new BrowserDownloadQueue();
+        var verified = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+        var selected = MediaCandidateSelectionReducer.Reduce([candidate], source,
+            new Dictionary<string, string> { [source.AbsoluteUri] = "720p" });
+        Action oldDispatch = () => pages.TryApply(old, () => ReferenceEquals(capturedBrowser, browser), () =>
+        {
+            var rebound = candidate with { PageOrdinal = 1, PageSectionTitle = "Part A" };
+            queue.AddOrUpdate(rebound, 1, "360p");
+            selected = MediaCandidateSelectionReducer.Reduce([rebound], source,
+                new Dictionary<string, string> { [source.AbsoluteUri] = "360p" });
+        });
+        var metadataTask = pages.ReadAndApplyAsync(old, () => metadataRead.Task,
+            () => ReferenceEquals(capturedBrowser, browser), value => metadata = value);
+        var frameTask = pages.ReadAndApplyAsync(old, () => frameRead.Task,
+            () => ReferenceEquals(capturedBrowser, browser), value => frames = value);
+        var probeTask = pages.ReadAndApplyAsync(old, () => probeRead.Task,
+            () => ReferenceEquals(capturedBrowser, browser), value => HlsDownloadPolicy.RecordDurationProbeResult(verified, leaf, value));
+        verified[leaf.AbsoluteUri] = 0;
+        pages.Reset();
+        verified.Clear();
+        var newMetadata = new BrowserPageMetadata("B", ["Part B"]);
+        metadata = newMetadata;
+        IReadOnlyList<DevToolsFrameInfo> newFrames = [new("B", source, 2)];
+        frames = newFrames;
+        queue.AddOrUpdate(candidate, 2, "720p");
+        Assert.True(HlsManifestParser.TryParse("#EXTM3U\n#EXTINF:12,\nsegment.ts\n#EXT-X-ENDLIST", leaf, out var info));
+        metadataRead.SetResult(oldMetadata);
+        frameRead.SetResult([new("A", source, 1)]);
+        probeRead.SetResult(new(true, false, info));
+        Assert.False(await metadataTask);
+        Assert.False(await frameTask);
+        Assert.False(await probeTask);
+        oldDispatch();
+        Assert.Same(newMetadata, metadata);
+        Assert.Same(newFrames, frames);
+        Assert.Equal(source, selected.SelectedSource);
+        Assert.Equal("720p", selected.SelectedQuality);
+        Assert.Equal("Part B", Assert.Single(selected.Candidates).PageSectionTitle);
+        var queued = Assert.Single(queue.Items);
+        Assert.Equal(candidate, queued.Candidate);
+        Assert.Equal(2, queued.Ordinal);
+        Assert.Equal("720p", queued.Quality);
+        Assert.Empty(verified);
+        Assert.True(pages.TryApply(pages.Capture(), () => true,
+            () => HlsDownloadPolicy.RecordDurationProbeResult(verified, leaf, new(true, false, info))));
+        Assert.Single(verified);
+    }
+
+    [Fact]
+    public void Browser_async_wiring_uses_tested_lifetime_seams_and_generation_scoped_probe_keys()
+    {
+        // Supplemental only: the lifetime, delayed reads and actual model behavior are tested above.
+        var root = FindRepoRoot();
+        var metadata = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Metadata.cs"));
+        var devtools = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
+        var preflight = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.HlsPreflight.cs"));
+        var browser = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
+        Assert.Contains("_browserPages.ReadAndApplyAsync(lease", metadata);
+        Assert.Contains("_browserPages.ReadAndApplyAsync(lease", devtools);
+        Assert.Contains("_browserPages.TryApply(lease", metadata);
+        Assert.Contains("Task.Delay(350, lease.Token)", metadata);
+        Assert.Contains("_browserPages.Reset();", devtools);
+        Assert.Contains("_verifiedClearHls.Clear();", devtools);
+        Assert.Contains("_browserPages.Dispose();", browser);
+        Assert.Contains("args.NavigationId != _browserNavigationId", browser);
+        Assert.Contains("_browserPages.RunProbeAsync(lease", preflight);
+        Assert.Contains("var probeKey = (lease.Generation, key);", preflight);
+        Assert.Contains("_durationProbeInFlight.TryRemove(probeKey", preflight);
+        Assert.Contains("CookieManager.GetCookiesAsync(source.AbsoluteUri)", preflight);
+        Assert.Contains("BuildBrowserCookieHeaderAsync(uri, lease, core", preflight);
+        Assert.Contains("ReferenceEquals(browser, _mediaBrowser?.CoreWebView2)", preflight);
+        Assert.Contains("CreateLinkedTokenSource(cancellationToken, lease.Token)", preflight);
+        Assert.DoesNotContain("RefreshBrowserFrameTreeAsync(core);", metadata);
     }
 }

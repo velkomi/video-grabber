@@ -10,6 +10,7 @@ namespace VideoGrabber.App;
 
 public sealed partial class MainWindow
 {
+    private ulong _browserNavigationId;
     private ComboBox _mediaCandidatesBox = null!;
     private ComboBox _mediaQualityBox = null!;
     private ListView _downloadQueueList = null!;
@@ -88,10 +89,12 @@ public sealed partial class MainWindow
         }
         _browserCard.Visibility = Visibility.Visible;
         _browserInitializing = true;
+        BrowserPageLease? initializationLease = null;
         try
         {
             var shouldUseSiteRoutes = DownloadRouteResolver.RequiresProxy(_routes, uri, null);
             if (_mediaBrowser is not null && _browserUsesSiteRoutes != shouldUseSiteRoutes) DestroyBrowser();
+            initializationLease = _browserPages.Capture();
             var routeProxy = EnsureRoutingProxy(uri);
             if (_mediaBrowser is null)
             {
@@ -106,11 +109,14 @@ public sealed partial class MainWindow
                     data = Path.Combine(data, "routed-" + Environment.ProcessId + "-" + routeProxy.Port);
                     environmentOptions.AdditionalBrowserArguments = "--proxy-server=" + routeProxy.ProxyUrl + " --proxy-bypass-list=<-loopback>";
                 }
+                var lease = initializationLease;
                 var environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, data, environmentOptions);
+                if (!_browserPages.IsCurrent(lease) || !ReferenceEquals(_mediaBrowser, browser)) return;
                 var options = environment.CreateCoreWebView2ControllerOptions();
                 options.ProfileName = "VideoGrabber";
                 options.IsInPrivateModeEnabled = true;
                 await browser.EnsureCoreWebView2Async(environment, options);
+                if (!_browserPages.IsCurrent(lease) || !ReferenceEquals(_mediaBrowser, browser)) return;
                 var core = browser.CoreWebView2;
                 if (!core.Profile.IsInPrivateModeEnabled) throw new InvalidOperationException("Изолированный режим браузера не включился.");
                 core.Settings.IsPasswordAutosaveEnabled = false;
@@ -129,6 +135,8 @@ public sealed partial class MainWindow
                         args.Cancel = true;
                         return;
                     }
+                    if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, core)) { args.Cancel = true; return; }
+                    _browserNavigationId = args.NavigationId;
                     _browserPageUri = target;
                     _browserAddress.Text = target.AbsoluteUri;
                     ResetDevToolsDiscoveryForNavigation();
@@ -136,6 +144,7 @@ public sealed partial class MainWindow
                 };
                 core.NavigationCompleted += async (_, args) =>
                 {
+                    if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, core) || args.NavigationId != _browserNavigationId) return;
                     DiagnosticHub.Log.Write("browser.navigation", args.IsSuccess ? "succeeded" : "failed",
                         args.IsSuccess ? "Page loaded" : args.WebErrorStatus.ToString());
                     if (!args.IsSuccess)
@@ -143,10 +152,13 @@ public sealed partial class MainWindow
                         _browserHint.Text = "Страница не загрузилась: " + args.WebErrorStatus;
                         return;
                     }
-                    await RefreshBrowserBindingsAsync(core);
+                    var completedLease = _browserPages.Capture();
+                    if (!IsCurrentBrowserPage(completedLease, core)) return;
+                    await RefreshBrowserBindingsAsync(core, completedLease);
                 };
                 core.WebResourceResponseReceived += Browser_WebResourceResponseReceived;
                 await EnableDevToolsMediaDiscoveryAsync(core);
+                if (!IsCurrentBrowserPage(lease, core)) return;
                 DiagnosticHub.Log.Write("browser.session", "succeeded", "InPrivate enabled; password saving disabled");
             }
             _browserPageUri = uri;
@@ -154,6 +166,7 @@ public sealed partial class MainWindow
         }
         catch (Exception ex)
         {
+            if (initializationLease is not null && !_browserPages.IsCurrent(initializationLease)) return;
             DiagnosticHub.Log.Write("browser.session", "failed", ex.Message);
             _browserHint.Text = "Браузер недоступен: " + SensitiveDataRedactor.Redact(ex.Message);
             DestroyBrowser();
@@ -165,7 +178,9 @@ public sealed partial class MainWindow
     {
         try
         {
-            var generation = Volatile.Read(ref _browserDiscoveryGeneration);
+            if (!ReferenceEquals(_mediaBrowser?.CoreWebView2, sender)) return;
+            var lease = _browserPages.Capture();
+            if (!IsCurrentBrowserPage(lease, sender)) return;
             if (_browserPageUri is null || args.Response.StatusCode < 200 || args.Response.StatusCode >= 300) return;
             var mime = args.Response.Headers.Contains("Content-Type") ? args.Response.Headers.GetHeader("Content-Type") : "";
             var referer = _browserPageUri;
@@ -181,10 +196,11 @@ public sealed partial class MainWindow
             {
                 if (contentLength > 4_000_000) return;
                 using var content = await args.Response.GetContentAsync();
+                if (!IsCurrentBrowserPage(lease, sender)) return;
                 if (content is null) return;
                 using var contentStream = content.AsStreamForRead();
-                var html = await ReadLimitedTextAsync(contentStream, 4_000_000);
-                if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
+                var html = await ReadLimitedTextAsync(contentStream, 4_000_000, lease.Token);
+                if (!IsCurrentBrowserPage(lease, sender)) return;
                 if (!GetCoursePlayerConfigParser.TryExtractMasterPlaylist(html, candidate.Source, out var playlist) || playlist is null)
                 {
                     DiagnosticHub.Log.Write("browser.player", "observed", "GetCourse player " + candidate.Source.IdnHost + " without master playlist");
@@ -202,11 +218,12 @@ public sealed partial class MainWindow
             if (inspectHlsBody && responseUri is not null)
             {
                 using var content = await args.Response.GetContentAsync();
+                if (!IsCurrentBrowserPage(lease, sender)) return;
                 if (content is not null)
                 {
                     using var contentStream = content.AsStreamForRead();
-                    var body = await ReadLimitedTextAsync(contentStream, 4_000_000);
-                    if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
+                    var body = await ReadLimitedTextAsync(contentStream, 4_000_000, lease.Token);
+                    if (!IsCurrentBrowserPage(lease, sender)) return;
                     var bindingReferer = _playerMasterBindings.TryResolve(responseUri, out var playerUri) && playerUri is not null
                         ? playerUri : referer;
                     if (playerUri is not null)
@@ -217,7 +234,7 @@ public sealed partial class MainWindow
                         if (blocked)
                         {
                             _verifiedClearHls.TryRemove(responseUri.AbsoluteUri, out _);
-                            RemoveMediaCandidatesReferencing(responseUri, generation);
+                            RemoveMediaCandidatesReferencing(responseUri, lease, sender);
                             _browserHint.Text = "Обнаружен зашифрованный HLS (EXT-X-KEY). Получение ключей не поддерживается.";
                             DiagnosticHub.Log.Write("browser.hls", "blocked", "HLS " + responseUri.IdnHost + " via WebResourceResponseReceived");
                             return;
@@ -225,7 +242,7 @@ public sealed partial class MainWindow
                         if (verified is not null)
                         {
                             HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, responseUri, verified.HlsManifest);
-                            QueueMediaCandidate(verified, generation);
+                            QueueMediaCandidate(verified, lease, sender);
                             DiagnosticHub.Log.Write("browser.hls", "succeeded", "HLS " + responseUri.IdnHost + " via WebResourceResponseReceived " + verified.HlsManifest!.SafeSummary);
                             return;
                         }
@@ -236,19 +253,20 @@ public sealed partial class MainWindow
                 DiagnosticHub.Log.Write("browser.webresource.observe", "event", responseUri.IdnHost + " " + mime.Split(';')[0] + " HTTP=" + args.Response.StatusCode);
             }
 
-            if (candidate is not null) QueueMediaCandidate(candidate, generation);
+            if (candidate is not null) QueueMediaCandidate(candidate, lease, sender);
         }
         catch (Exception ex) { DiagnosticHub.Log.Write("browser.discovery", "failed", ex.GetType().Name); }
     }
 
-    private static async Task<string> ReadLimitedTextAsync(Stream input, int maxChars)
+    private static async Task<string> ReadLimitedTextAsync(Stream input, int maxChars, CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(input);
         var buffer = new char[8192];
         var text = new System.Text.StringBuilder(Math.Min(maxChars, 65536));
         while (text.Length <= maxChars)
         {
-            var read = await reader.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, maxChars + 1 - text.Length)));
+            var read = await reader.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, maxChars + 1 - text.Length)), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (read == 0) return text.ToString();
             text.Append(buffer, 0, read);
         }
@@ -272,6 +290,7 @@ public sealed partial class MainWindow
         try
         {
             DisableDevToolsMediaDiscovery(clearUi: !forWindowClose);
+            if (forWindowClose) _browserPages.Dispose();
             if (!forWindowClose) _mediaBrowser?.CoreWebView2?.CookieManager.DeleteAllCookies();
             _mediaBrowser?.Close();
         }
