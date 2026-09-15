@@ -5,13 +5,68 @@ namespace VideoGrabber.Infrastructure.Tests;
 public sealed class BrowserPageLifetimeTests
 {
     [Fact]
-    public void Request_registry_is_bounded_rejects_stale_starts_and_clears_on_close()
+    public void Unmatched_fallback_overflow_evicts_oldest_without_consuming_devtools_capacity()
     {
         using var pages = new BrowserPageLifetime();
         var lease = pages.Capture();
-        for (var i = 0; i < 4096; i++) Assert.True(pages.RememberRequest(i, "document", lease));
-        Assert.False(pages.RememberRequest(4096, "document", lease));
+        var wrappers = Enumerable.Range(0, 5000).Select(_ => new object()).ToArray();
+        foreach (var wrapper in wrappers) pages.RememberRequest(wrapper, string.Empty, lease);
+
+        Assert.True(pages.RememberRequest("session|request", "loader", lease));
+        Assert.True(pages.TryGetRequestLease("session|request", "loader", out var responseLease));
+        var applied = false;
+        Assert.True(pages.TryApply(responseLease!, () => true, () => applied = true));
+        Assert.True(applied);
+        Assert.Equal(1, pages.PendingDevToolsRequestCount);
+        Assert.Equal(4096, pages.PendingWebResourceRequestCount);
+        Assert.False(pages.TryGetRequestLease(wrappers[0], string.Empty, out _));
+        Assert.False(pages.TryGetRequestLease(wrappers[903], string.Empty, out _));
+        Assert.True(pages.TryGetRequestLease(wrappers[904], string.Empty, out _));
+        Assert.True(pages.TryGetRequestLease(wrappers[^1], string.Empty, out _));
+
+        pages.Reset();
+        Assert.Equal(0, pages.PendingDevToolsRequestCount);
+        Assert.Equal(0, pages.PendingWebResourceRequestCount);
+        Assert.True(pages.RememberRequest("new-request", "new-loader", pages.Capture()));
+        Assert.True(pages.RememberRequest(new object(), string.Empty, pages.Capture()));
+        pages.Dispose();
+        Assert.Equal(0, pages.PendingDevToolsRequestCount);
+        Assert.Equal(0, pages.PendingWebResourceRequestCount);
+    }
+
+    [Fact]
+    public void Fallback_completion_and_duplicate_starts_do_not_leave_stale_eviction_entries()
+    {
+        using var pages = new BrowserPageLifetime();
+        var lease = pages.Capture();
+        var duplicate = new object();
+        for (var i = 0; i < 5000; i++) Assert.True(pages.RememberRequest(duplicate, string.Empty, lease));
+        Assert.Equal(1, pages.PendingWebResourceRequestCount);
+        Assert.True(pages.ForgetRequest(duplicate, lease));
+        Assert.Equal(0, pages.PendingWebResourceRequestCount);
+
+        var wrappers = Enumerable.Range(0, 4096).Select(_ => new object()).ToArray();
+        foreach (var wrapper in wrappers) Assert.True(pages.RememberRequest(wrapper, string.Empty, lease));
+        Assert.True(pages.ForgetRequest(wrappers[100], lease));
+        Assert.True(pages.RememberRequest(new object(), string.Empty, lease));
+        Assert.True(pages.TryGetRequestLease(wrappers[0], string.Empty, out _));
+        Assert.True(pages.RememberRequest(new object(), string.Empty, lease));
+        Assert.False(pages.TryGetRequestLease(wrappers[0], string.Empty, out _));
+        Assert.True(pages.TryGetRequestLease(wrappers[1], string.Empty, out _));
+        Assert.Equal(4096, pages.PendingWebResourceRequestCount);
+    }
+
+    [Fact]
+    public void Devtools_registry_is_bounded_rejects_stale_starts_and_clears_on_close()
+    {
+        using var pages = new BrowserPageLifetime();
+        var lease = pages.Capture();
+        for (var i = 0; i < 4096; i++) Assert.True(pages.RememberRequest("request-" + i, "document", lease));
+        Assert.False(pages.RememberRequest("overflow", "document", lease));
         Assert.Equal(4096, pages.PendingRequestCount);
+        Assert.True(pages.RememberRequest(new object(), string.Empty, lease));
+        Assert.Equal(4096, pages.PendingDevToolsRequestCount);
+        Assert.Equal(1, pages.PendingWebResourceRequestCount);
         pages.Reset();
         Assert.Equal(0, pages.PendingRequestCount);
         Assert.False(pages.RememberRequest("late-start", "document", lease));

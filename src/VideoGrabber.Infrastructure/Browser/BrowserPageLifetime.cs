@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
 
 namespace VideoGrabber.Infrastructure.Browser;
 
@@ -13,24 +12,44 @@ public sealed class BrowserPageLifetime : IDisposable
     private long _generation;
     private bool _disposed;
     private readonly SemaphoreSlim _probes;
-    private sealed class RequestIdentityComparer : IEqualityComparer<object>
-    {
-        public new bool Equals(object? x, object? y) => x is string a && y is string b
-            ? StringComparer.Ordinal.Equals(a, b) : ReferenceEquals(x, y);
-        public int GetHashCode(object value) => value is string text
-            ? StringComparer.Ordinal.GetHashCode(text) : RuntimeHelpers.GetHashCode(value);
-    }
+    private const int MaxDevToolsRequests = 4096;
+    private const int MaxWebResourceRequests = 4096;
+    private sealed record RequestRegistration(BrowserPageLease Lease, string DocumentId);
+    private sealed record WebResourceRegistration(object Request, RequestRegistration Origin);
+    private readonly Dictionary<string, RequestRegistration> _devToolsRequests = new(StringComparer.Ordinal);
+    private readonly Dictionary<object, LinkedListNode<WebResourceRegistration>> _webResourceRequests = new(ReferenceEqualityComparer.Instance);
+    private readonly LinkedList<WebResourceRegistration> _webResourceOrder = new();
 
-    private readonly Dictionary<object, (BrowserPageLease Lease, string DocumentId)> _requests = new(new RequestIdentityComparer());
-    public int PendingRequestCount { get { lock (_gate) return _requests.Count; } }
+    public int PendingRequestCount { get { lock (_gate) return _devToolsRequests.Count + _webResourceRequests.Count; } }
+    public int PendingDevToolsRequestCount { get { lock (_gate) return _devToolsRequests.Count; } }
+    public int PendingWebResourceRequestCount { get { lock (_gate) return _webResourceRequests.Count; } }
 
     public bool RememberRequest(object request, string documentId, BrowserPageLease lease)
     {
         lock (_gate)
         {
             if (!IsCurrent(lease)) return false;
-            if (_requests.Count >= 4096 && !_requests.ContainsKey(request)) return false;
-            _requests[request] = (lease, documentId);
+            var origin = new RequestRegistration(lease, documentId);
+            if (request is string requestId)
+            {
+                if (_devToolsRequests.Count >= MaxDevToolsRequests && !_devToolsRequests.ContainsKey(requestId)) return false;
+                _devToolsRequests[requestId] = origin;
+            }
+            else if (_webResourceRequests.TryGetValue(request, out var existing))
+            {
+                existing.Value = new(request, origin);
+            }
+            else
+            {
+                // Unmatched fallback wrappers cannot use CDP capacity or grow indefinitely.
+                if (_webResourceRequests.Count >= MaxWebResourceRequests)
+                {
+                    var oldest = _webResourceOrder.First!;
+                    _webResourceRequests.Remove(oldest.Value.Request);
+                    _webResourceOrder.RemoveFirst();
+                }
+                _webResourceRequests.Add(request, _webResourceOrder.AddLast(new WebResourceRegistration(request, origin)));
+            }
             return true;
         }
     }
@@ -40,8 +59,10 @@ public sealed class BrowserPageLifetime : IDisposable
         lock (_gate)
         {
             lease = null;
-            if (!_requests.TryGetValue(request, out var pending)
-                || !IsCurrent(pending.Lease)
+            var pending = request is string requestId
+                ? _devToolsRequests.GetValueOrDefault(requestId)
+                : _webResourceRequests.GetValueOrDefault(request)?.Value.Origin;
+            if (pending is null || !IsCurrent(pending.Lease)
                 || (documentId is not null && !string.Equals(documentId, pending.DocumentId, StringComparison.Ordinal))) return false;
             lease = pending.Lease;
             return true;
@@ -51,8 +72,22 @@ public sealed class BrowserPageLifetime : IDisposable
     public bool ForgetRequest(object request, BrowserPageLease lease)
     {
         lock (_gate)
-            return _requests.TryGetValue(request, out var pending) && pending.Lease == lease
-                && _requests.Remove(request);
+        {
+            if (request is string requestId)
+                return _devToolsRequests.TryGetValue(requestId, out var pending) && pending.Lease == lease
+                    && _devToolsRequests.Remove(requestId);
+            if (!_webResourceRequests.TryGetValue(request, out var node) || node.Value.Origin.Lease != lease) return false;
+            _webResourceRequests.Remove(request);
+            _webResourceOrder.Remove(node);
+            return true;
+        }
+    }
+
+    private void ClearRequests()
+    {
+        _devToolsRequests.Clear();
+        _webResourceRequests.Clear();
+        _webResourceOrder.Clear();
     }
 
     public BrowserPageLifetime(int maxConcurrentProbes = 3)
@@ -84,7 +119,7 @@ public sealed class BrowserPageLifetime : IDisposable
             previous = _page;
             _page = new();
             _generation++;
-            _requests.Clear();
+            ClearRequests();
         }
         previous.Cancel();
         previous.Dispose();
@@ -127,7 +162,7 @@ public sealed class BrowserPageLifetime : IDisposable
         {
             if (_disposed) return;
             _disposed = true;
-            _requests.Clear();
+            ClearRequests();
         }
         _page.Cancel();
         _page.Dispose();
