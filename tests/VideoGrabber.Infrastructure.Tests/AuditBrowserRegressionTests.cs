@@ -194,6 +194,8 @@ public sealed class AuditBrowserRegressionTests
         Assert.Equal(candidate.Source, plan.Source);
         Assert.Null(plan.HlsVideoSource);
         Assert.Null(plan.HlsAudioSource);
+        Assert.False(plan.IsResolved);
+        Assert.False(string.IsNullOrWhiteSpace(plan.Error));
 
         var verified = HlsDownloadPolicy.AreSelectedTracksVerified(candidate, plan,
             new HashSet<string>(StringComparer.Ordinal));

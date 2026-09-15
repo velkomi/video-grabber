@@ -9,6 +9,99 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class DirectManifestHardeningTests
 {
+    [Theory]
+    [InlineData("devtools", "master", false)]
+    [InlineData("webresource", "master", false)]
+    [InlineData("devtools", "malformed", false)]
+    [InlineData("webresource", "malformed", false)]
+    [InlineData("devtools", "encrypted", false)]
+    [InlineData("webresource", "encrypted", false)]
+    [InlineData("devtools", "unknown-key", false)]
+    [InlineData("webresource", "unknown-key", false)]
+    [InlineData("devtools", "clear", true)]
+    [InlineData("webresource", "clear", true)]
+    public async Task Discovery_cache_requires_clear_leaf_and_revokes_nested_master(string discovery, string fixture, bool expected)
+    {
+        var body = fixture switch
+        {
+            "master" => "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchild.m3u8\n",
+            "malformed" => "not a playlist",
+            "encrypted" => "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n#EXTINF:2,\nsegment.ts\n",
+            "unknown-key" => "#EXTM3U\n#EXT-X-KEY:URI=\"key\"\n#EXTINF:2,\nsegment.ts\n",
+            _ => "#EXTM3U\n#EXTINF:2,\nsegment.ts\n"
+        };
+        var source = new Uri("https://audit.test/video.m3u8");
+        var referer = new Uri("https://school.example/lesson");
+        HlsManifestInfo? info;
+        if (discovery == "devtools")
+        {
+            var response = System.Text.Json.JsonSerializer.Serialize(new { body, base64Encoded = false });
+            Assert.True(DevToolsGetCourseResponseParser.TryDecodeBody(response, out var decoded));
+            HlsManifestParser.TryParse(decoded!, source, out info);
+        }
+        else
+        {
+            HlsResponseCandidateResolver.TryResolve(body, source, referer, out var discovered, out _);
+            info = discovered?.HlsManifest;
+        }
+        var cache = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
+        cache[source.AbsoluteUri] = 0; // A prior clear response cannot validate a refreshed master.
+        HlsDownloadPolicy.UpdateVerifiedClearLeafCache(cache, source, info);
+        Assert.Equal(expected, cache.ContainsKey(source.AbsoluteUri));
+        var candidate = new MediaCandidate(new("https://audit.test/master.m3u8"), referer, "HLS",
+            HlsManifest: new(true, [new HlsVariant(source, 1280, 720, 1, 30, null)], [], false, null, false));
+        var plan = MediaDownloadPlanResolver.Resolve(candidate, "720p", false);
+        var downloaderCalls = 0;
+        var result = await HlsDownloadPolicy.RunVerifiedAsync(candidate, plan,
+            () => Task.FromResult(HlsDownloadPolicy.AreSelectedTracksVerified(candidate, plan, new HashSet<string>(cache.Keys))),
+            () => { downloaderCalls++; return Task.FromResult(true); }, _ => false);
+        Assert.Equal(expected, result);
+        Assert.Equal(expected ? 1 : 0, downloaderCalls);
+    }
+
+    [Theory]
+    [InlineData("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchild.m3u8\n", false)]
+    [InlineData("not a playlist", false)]
+    [InlineData("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n#EXTINF:2,\nsegment.ts\n", false)]
+    [InlineData("#EXTM3U\n#EXT-X-KEY:URI=\"key\"\n#EXTINF:2,\nsegment.ts\n", false)]
+    [InlineData("#EXTM3U\n#EXT-X-KEY:METHOD=UNKNOWN,URI=\"key\"\n#EXTINF:2,\nsegment.ts\n", false)]
+    [InlineData("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts\n#EXT-X-ENDLIST\n", true)]
+    public async Task Only_parsed_clear_media_leaf_is_verified(string body, bool expected)
+    {
+        var client = new HlsPreflightClient(_ => new PreflightHandler((_, _) => Task.FromResult(Manifest(body))));
+        var result = await client.FetchAsync(new("https://audit.test/video.m3u8"), new(), CancellationToken.None);
+        Assert.Equal(expected, HlsDownloadPolicy.IsVerifiedClearLeaf(result));
+    }
+
+    [Theory]
+    [InlineData("#EXTM3U\n#EXTINF:2,\nsegment.ts\n", true)]
+    [InlineData("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n#EXTINF:2,\nsegment.ts\n", false)]
+    [InlineData("#EXTM3U\n#EXT-X-KEY:URI=\"key\"\n#EXTINF:2,\nsegment.ts\n", false)]
+    [InlineData("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchild.m3u8\n", false)]
+    public async Task Split_download_runs_only_after_both_selected_leaves_are_clear(string audioBody, bool expected)
+    {
+        var candidate = new MediaCandidate(new("https://audit.test/master.m3u8"), new("https://school.example/lesson"), "HLS",
+            HlsManifest: new(true, [new HlsVariant(new("https://audit.test/video.m3u8"), 1280, 720, 1, 30, "aud")],
+                [new HlsAudioRendition(new("https://audit.test/audio.m3u8"), "ru", "Russian", "aud", true)], false, null, false));
+        var plan = MediaDownloadPlanResolver.Resolve(candidate, "720p", false);
+        Assert.Equal("https://audit.test/video.m3u8", plan.HlsVideoSource!.AbsoluteUri);
+        Assert.Equal("https://audit.test/audio.m3u8", plan.HlsAudioSource!.AbsoluteUri);
+        var verified = new HashSet<string>();
+        var client = new HlsPreflightClient(_ => new PreflightHandler((request, _) => Task.FromResult(Manifest(
+            request.RequestUri!.AbsolutePath == "/audio.m3u8" ? audioBody : "#EXTM3U\n#EXTINF:2,\nsegment.ts\n"))));
+        var video = await client.FetchAsync(plan.HlsVideoSource, new(), CancellationToken.None);
+        if (HlsDownloadPolicy.IsVerifiedClearLeaf(video)) verified.Add(plan.HlsVideoSource.AbsoluteUri);
+        Assert.False(HlsDownloadPolicy.AreSelectedTracksVerified(candidate, plan, verified));
+        var audio = await client.FetchAsync(plan.HlsAudioSource, new(), CancellationToken.None);
+        if (HlsDownloadPolicy.IsVerifiedClearLeaf(audio)) verified.Add(plan.HlsAudioSource.AbsoluteUri);
+        var downloaderCalls = 0;
+        var result = await HlsDownloadPolicy.RunVerifiedAsync(candidate, plan,
+            () => Task.FromResult(HlsDownloadPolicy.AreSelectedTracksVerified(candidate, plan, verified)),
+            () => { downloaderCalls++; return Task.FromResult(true); }, _ => false);
+        Assert.Equal(expected, result);
+        Assert.Equal(expected ? 1 : 0, downloaderCalls);
+    }
+
     [Fact]
     public async Task Hls_relative_tracks_resolve_against_final_response_uri()
     {

@@ -175,6 +175,7 @@ public sealed partial class MainWindow
             if (!DevToolsGetCourseResponseParser.TryDecodeBody(bodyJson, out var body) || body is null
                 || !HlsManifestParser.TryParse(body, pending.Response.Source, out var info) || info is null)
             {
+                HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, pending.Response.Source, null);
                 QueueMediaCandidate(fallback, generation);
                 return;
             }
@@ -190,7 +191,7 @@ public sealed partial class MainWindow
                 });
                 return;
             }
-            _verifiedClearHls[pending.Response.Source.AbsoluteUri] = 0;
+            HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, pending.Response.Source, info);
             var details = info.SafeSummary;
             QueueMediaCandidate(new MediaCandidate(
                 pending.Response.Source, pending.Referer, "HLS", details,

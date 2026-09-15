@@ -224,12 +224,13 @@ public sealed partial class MainWindow
                         }
                         if (verified is not null)
                         {
-                            _verifiedClearHls[responseUri.AbsoluteUri] = 0;
+                            HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, responseUri, verified.HlsManifest);
                             QueueMediaCandidate(verified, generation);
                             DiagnosticHub.Log.Write("browser.hls", "succeeded", "HLS " + responseUri.IdnHost + " via WebResourceResponseReceived " + verified.HlsManifest!.SafeSummary);
                             return;
                         }
                     }
+                    HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, responseUri, null);
                 }
                 if (candidate?.Kind == "HLS") return;
                 DiagnosticHub.Log.Write("browser.webresource.observe", "event", responseUri.IdnHost + " " + mime.Split(';')[0] + " HTTP=" + args.Response.StatusCode);

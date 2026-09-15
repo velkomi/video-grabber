@@ -21,14 +21,22 @@ public sealed partial class MainWindow
         var audioOnly = _audioOnlyBox.IsChecked == true;
         var plan = MediaDownloadPlanResolver.Resolve(candidate, quality, audioOnly);
         using var preflight = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        if (!await EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token))
-            return DownloadAttemptOutcome.Failed;
-        var suggested = MediaCandidatePresentation.SuggestedBaseName(candidate, ordinal, quality, _browserMetadata);
-        var duration = candidate.HlsManifest?.DurationSeconds;
-        var expectedDuration = duration is > 0 && double.IsFinite(duration.Value) ? duration : null;
-        bool? expectedAudio = audioOnly || plan.HlsAudioSource is not null ? true : null;
-        return await DownloadSourceAsync(plan.Source, candidate.Referer, plan.HlsVideoSource, plan.HlsAudioSource,
-            plan.DirectManifest, suggested, resetCookieSelectionAfterUse, expectedDuration, expectedAudio);
+        return await HlsDownloadPolicy.RunVerifiedAsync(candidate, plan,
+            () => EnsureSelectedHlsVerifiedAsync(candidate, plan, preflight.Token),
+            () =>
+            {
+                var suggested = MediaCandidatePresentation.SuggestedBaseName(candidate, ordinal, quality, _browserMetadata);
+                var duration = candidate.HlsManifest?.DurationSeconds;
+                var expectedDuration = duration is > 0 && double.IsFinite(duration.Value) ? duration : null;
+                bool? expectedAudio = audioOnly || plan.HlsAudioSource is not null ? true : null;
+                return DownloadSourceAsync(plan.Source, candidate.Referer, plan.HlsVideoSource, plan.HlsAudioSource,
+                    plan.DirectManifest, suggested, resetCookieSelectionAfterUse, expectedDuration, expectedAudio);
+            },
+            error =>
+            {
+                if (error is not null) _browserHint.Text = error;
+                return DownloadAttemptOutcome.Failed;
+            });
     }
 
     private string SelectedBrowserQuality(MediaCandidate candidate)

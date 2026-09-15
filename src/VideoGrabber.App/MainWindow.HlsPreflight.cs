@@ -10,6 +10,7 @@ public sealed partial class MainWindow
         MediaDownloadPlan plan,
         CancellationToken cancellationToken)
     {
+        if (!plan.IsResolved) return false;
         var verified = new HashSet<string>(_verifiedClearHls.Keys, StringComparer.Ordinal);
         if (HlsDownloadPolicy.AreSelectedTracksVerified(candidate, plan, verified)) return true;
         if (candidate.HlsManifest is not { IsMaster: true }) return false;
@@ -17,7 +18,7 @@ public sealed partial class MainWindow
         var selected = new List<Uri>();
         if (plan.HlsVideoSource is not null) selected.Add(plan.HlsVideoSource);
         if (plan.HlsAudioSource is not null) selected.Add(plan.HlsAudioSource);
-        if (selected.Count == 0 && plan.Source != candidate.Source) selected.Add(plan.Source);
+        if (selected.Count == 0 && plan.ResolvedHlsLeaf && plan.Source != candidate.Source) selected.Add(plan.Source);
         if (selected.Count == 0) return false;
 
         _browserHint.Text = "Проверяю выбранное качество HLS…";
@@ -32,7 +33,7 @@ public sealed partial class MainWindow
                 new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl,
                     CookieProvider: (uri, token) => BuildBrowserCookieHeaderAsync(uri, generation, token)),
                 cancellationToken);
-            if (!result.Success)
+            if (!HlsDownloadPolicy.IsVerifiedClearLeaf(result))
             {
                 DiagnosticHub.Log.Write("browser.hls.preflight", result.Blocked ? "blocked" : "failed",
                     "host=" + source.IdnHost + " " + (result.Blocked ? "encrypted" : "manifest unavailable"));
@@ -41,7 +42,7 @@ public sealed partial class MainWindow
                     : "Не удалось проверить выбранное качество. Повторите попытку или запустите видео для резервного обнаружения.";
                 return false;
             }
-            _verifiedClearHls[source.AbsoluteUri] = 0;
+            HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, source, result.Info);
             DiagnosticHub.Log.Write("browser.hls.preflight", "succeeded", "host=" + source.IdnHost + " clear HLS");
         }
 
@@ -67,9 +68,9 @@ public sealed partial class MainWindow
             var result = await new HlsPreflightClient().FetchAsync(variant.Uri,
                 new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl,
                     CookieProvider: (uri, token) => BuildBrowserCookieHeaderAsync(uri, generation, token)), timeout.Token);
-            if (!result.Success || result.Info?.DurationSeconds is not > 0
+            if (!HlsDownloadPolicy.IsVerifiedClearLeaf(result) || result.Info?.DurationSeconds is not > 0
                 || !double.IsFinite(result.Info.DurationSeconds.Value)) return;
-            _verifiedClearHls[variant.Uri.AbsoluteUri] = 0;
+            HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, variant.Uri, result.Info);
             var duration = result.Info.DurationSeconds.Value;
             DispatcherQueue.TryEnqueue(() =>
             {
