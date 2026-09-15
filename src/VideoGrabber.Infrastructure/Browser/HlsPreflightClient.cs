@@ -8,7 +8,8 @@ public sealed record HlsPreflightFetchOptions(
     Uri? Referer = null,
     string? UserAgent = null,
     string? LocalProxy = null,
-    string? CookieHeader = null);
+    string? CookieHeader = null,
+    Func<Uri, CancellationToken, Task<string?>>? CookieProvider = null);
 
 public sealed record HlsPreflightFetchResult(
     bool Success,
@@ -23,27 +24,55 @@ public sealed class HlsPreflightClient(Func<HlsPreflightFetchOptions, HttpMessag
     public async Task<HlsPreflightFetchResult> FetchAsync(Uri source, HlsPreflightFetchOptions options, CancellationToken cancellationToken)
     {
         if (!IsSafeHttp(source)) return new(false, false, null, "Некорректная HLS-ссылка.");
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(25));
+        var token = deadline.Token;
         using var handler = _handlerFactory(options);
-        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(25) };
-        using var request = new HttpRequestMessage(HttpMethod.Get, source);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.apple.mpegurl"));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", 0.5));
-        if (options.Referer is { } referer && IsSafeHttp(referer)) request.Headers.Referrer = referer;
-        if (!string.IsNullOrWhiteSpace(options.UserAgent) && options.UserAgent.Length <= 1024 && options.UserAgent.IndexOfAny(['\r', '\n']) < 0)
-            request.Headers.TryAddWithoutValidation("User-Agent", options.UserAgent);
-        if (!string.IsNullOrWhiteSpace(options.CookieHeader) && options.CookieHeader.Length <= 65536 && options.CookieHeader.IndexOfAny(['\r', '\n']) < 0)
-            request.Headers.TryAddWithoutValidation("Cookie", options.CookieHeader);
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode) return new(false, false, null, "HTTP " + (int)response.StatusCode);
-        if (response.Content.Headers.ContentLength is > 4_000_000) return new(false, false, null, "HLS manifest слишком большой.");
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var body = await ReadLimitedTextAsync(stream, 4_000_000, cancellationToken).ConfigureAwait(false);
-        if (!HlsManifestParser.TryParse(body, source, out var info) || info is null)
-            return new(false, false, null, "Ответ не является HLS manifest.");
-        if (!HlsDownloadPolicy.IsAllowed(info))
-            return new(false, true, info, "Зашифрованный HLS не поддерживается.");
-        return new(true, false, info);
+        using var http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        var current = source;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        for (var redirects = 0; ; redirects++)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!visited.Add(current.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped)))
+                return new(false, false, null, "Циклическое перенаправление HLS.");
+            var cookie = options.CookieProvider is not null
+                ? await options.CookieProvider(current, token).WaitAsync(token).ConfigureAwait(false)
+                : HasSameCookieScope(source, current) ? options.CookieHeader : null;
+            using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.apple.mpegurl"));
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", 0.5));
+            if (options.Referer is { } referer && IsSafeHttp(referer)) request.Headers.Referrer = referer;
+            if (!string.IsNullOrWhiteSpace(options.UserAgent) && options.UserAgent.Length <= 1024 && options.UserAgent.IndexOfAny(['\r', '\n']) < 0)
+                request.Headers.TryAddWithoutValidation("User-Agent", options.UserAgent);
+            if (!string.IsNullOrWhiteSpace(cookie) && cookie.Length <= 65536 && cookie.IndexOfAny(['\r', '\n']) < 0)
+                request.Headers.TryAddWithoutValidation("Cookie", cookie);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+            if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308)
+            {
+                if (redirects >= 5) return new(false, false, null, "Слишком много перенаправлений HLS.");
+                if (response.Headers.Location is not { } location
+                    || !Uri.TryCreate(current, location, out var next) || !IsSafeHttp(next)
+                    || current.Scheme == "https" && next.Scheme != "https")
+                    return new(false, false, null, "Недопустимое перенаправление HLS.");
+                current = next;
+                continue;
+            }
+            if (!response.IsSuccessStatusCode) return new(false, false, null, "HTTP " + (int)response.StatusCode);
+            if (response.Content.Headers.ContentLength is > 4_000_000) return new(false, false, null, "HLS manifest слишком большой.");
+            await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
+            var body = await ReadLimitedTextAsync(stream, 4_000_000, token).ConfigureAwait(false);
+            if (!HlsManifestParser.TryParse(body, current, out var info) || info is null)
+                return new(false, false, null, "Ответ не является HLS manifest.");
+            if (!HlsDownloadPolicy.IsAllowed(info))
+                return new(false, true, info, "Зашифрованный HLS не поддерживается.");
+            return new(true, false, info);
+        }
     }
+
+    private static bool HasSameCookieScope(Uri source, Uri target)
+        => source.Scheme == target.Scheme && source.IdnHost == target.IdnHost && source.Port == target.Port
+            && string.Equals(source.AbsolutePath, target.AbsolutePath, StringComparison.Ordinal);
 
     private static HttpMessageHandler CreateHandler(HlsPreflightFetchOptions options)
     {
@@ -51,7 +80,7 @@ public sealed class HlsPreflightClient(Func<HlsPreflightFetchOptions, HttpMessag
         {
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
             UseCookies = false,
-            AllowAutoRedirect = true,
+            AllowAutoRedirect = false,
             ConnectTimeout = TimeSpan.FromSeconds(15)
         };
         if (string.IsNullOrWhiteSpace(options.LocalProxy)) return handler;
@@ -79,5 +108,5 @@ public sealed class HlsPreflightClient(Func<HlsPreflightFetchOptions, HttpMessag
     }
 
     private static bool IsSafeHttp(Uri uri)
-        => uri.Scheme is "http" or "https" && string.IsNullOrEmpty(uri.UserInfo);
+        => uri.IsAbsoluteUri && uri.Scheme is "http" or "https" && string.IsNullOrEmpty(uri.UserInfo);
 }

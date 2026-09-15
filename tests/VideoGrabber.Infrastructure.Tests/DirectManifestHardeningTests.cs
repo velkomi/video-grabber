@@ -10,6 +10,109 @@ namespace VideoGrabber.Infrastructure.Tests;
 public sealed class DirectManifestHardeningTests
 {
     [Fact]
+    public async Task Hls_relative_tracks_resolve_against_final_response_uri()
+    {
+        var requests = new List<Uri>();
+        var client = new HlsPreflightClient(_ => new PreflightHandler((request, _) =>
+        {
+            requests.Add(request.RequestUri!);
+            return Task.FromResult(requests.Count == 1
+                ? Redirect("../final/master.m3u8")
+                : Manifest("#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",NAME=\"main\",URI=\"audio.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=100000,AUDIO=\"audio\"\nvideo.m3u8\n"));
+        }));
+        var result = await client.FetchAsync(new("https://audit.test/source/master.m3u8"), new(), CancellationToken.None);
+        Assert.True(result.Success, result.Error);
+        Assert.Equal(new Uri("https://audit.test/final/video.m3u8"), Assert.Single(result.Info!.Variants).Uri);
+        Assert.Equal(new Uri("https://audit.test/final/audio.m3u8"), Assert.Single(result.Info.AudioRenditions).Uri);
+        Assert.Equal(2, requests.Count);
+    }
+
+    [Theory]
+    [InlineData("http://audit.test/master.m3u8")]
+    [InlineData("https://user:pass@audit.test/master.m3u8")]
+    [InlineData("file:///tmp/master.m3u8")]
+    [InlineData("ftp://audit.test/master.m3u8")]
+    public async Task Hls_unsafe_redirect_never_reaches_provider_or_transport(string location)
+    {
+        var providerCalls = 0;
+        var requests = 0;
+        var client = new HlsPreflightClient(_ => new PreflightHandler((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(Redirect(location));
+        }));
+        var options = AuditNetworkRegressionTests.WithCookieProvider((_, _) =>
+        {
+            providerCalls++;
+            return Task.FromResult<string?>("audit_cookie=synthetic_only");
+        });
+        var result = await client.FetchAsync(new("https://audit.test/source/master.m3u8"), options, CancellationToken.None);
+        Assert.False(result.Success);
+        Assert.Equal(1, requests);
+        Assert.Equal(1, providerCalls);
+    }
+
+    [Theory]
+    [InlineData(5, true)]
+    [InlineData(6, false)]
+    public async Task Hls_allows_at_most_five_redirects(int redirects, bool success)
+    {
+        var requests = 0;
+        var client = new HlsPreflightClient(_ => new PreflightHandler((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(requests <= redirects
+                ? Redirect("/hop/" + requests)
+                : Manifest("#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nsegment.ts\n#EXT-X-ENDLIST\n"));
+        }));
+        var result = await client.FetchAsync(new("https://audit.test/master.m3u8"), new(), CancellationToken.None);
+        Assert.Equal(success, result.Success);
+        Assert.Equal(6, requests);
+    }
+
+    [Fact]
+    public async Task Hls_deadline_cancels_cookie_provider_even_when_provider_ignores_token()
+    {
+        var requests = 0;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var providerResult = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        var client = new HlsPreflightClient(_ => new PreflightHandler((_, _) =>
+        {
+            requests++;
+            return Task.FromResult(Manifest("invalid"));
+        }));
+        var options = AuditNetworkRegressionTests.WithCookieProvider((_, token) =>
+        {
+            Assert.True(token.CanBeCanceled);
+            started.SetResult();
+            return providerResult.Task;
+        });
+        var fetch = client.FetchAsync(new("https://audit.test/master.m3u8"), options, cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fetch.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.Equal(0, requests);
+        providerResult.TrySetResult(null);
+    }
+
+    private static HttpResponseMessage Redirect(string location)
+    {
+        var response = new HttpResponseMessage(System.Net.HttpStatusCode.Found);
+        response.Headers.Location = new Uri(location, UriKind.RelativeOrAbsolute);
+        return response;
+    }
+
+    private static HttpResponseMessage Manifest(string body)
+        => new(System.Net.HttpStatusCode.OK) { Content = new StringContent(body) };
+
+    private sealed class PreflightHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => send(request, cancellationToken);
+    }
+
+    [Fact]
     public void Browser_discovered_extensionless_HLS_is_marked_direct_manifest()
     {
         var candidate = new MediaCandidate(

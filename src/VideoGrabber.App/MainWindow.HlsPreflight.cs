@@ -21,15 +21,16 @@ public sealed partial class MainWindow
         if (selected.Count == 0) return false;
 
         _browserHint.Text = "Проверяю выбранное качество HLS…";
+        var generation = Volatile.Read(ref _browserDiscoveryGeneration);
         foreach (var source in selected.Distinct())
         {
             if (_verifiedClearHls.ContainsKey(source.AbsoluteUri)) continue;
             var routeProxy = EnsureRoutingProxy(source, candidate.Referer);
-            var cookieHeader = await BuildBrowserCookieHeaderAsync(source);
             var userAgent = _mediaBrowser?.CoreWebView2?.Settings.UserAgent;
             var result = await new HlsPreflightClient().FetchAsync(
                 source,
-                new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl, cookieHeader),
+                new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl,
+                    CookieProvider: (uri, token) => BuildBrowserCookieHeaderAsync(uri, generation, token)),
                 cancellationToken);
             if (!result.Success)
             {
@@ -62,10 +63,10 @@ public sealed partial class MainWindow
                 .First();
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
             var routeProxy = EnsureRoutingProxy(variant.Uri, candidate.Referer);
-            var cookieHeader = await BuildBrowserCookieHeaderAsync(variant.Uri);
             var userAgent = _mediaBrowser?.CoreWebView2?.Settings.UserAgent;
             var result = await new HlsPreflightClient().FetchAsync(variant.Uri,
-                new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl, cookieHeader), timeout.Token);
+                new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl,
+                    CookieProvider: (uri, token) => BuildBrowserCookieHeaderAsync(uri, generation, token)), timeout.Token);
             if (!result.Success || result.Info?.DurationSeconds is not > 0) return;
             _verifiedClearHls[variant.Uri.AbsoluteUri] = 0;
             var duration = result.Info.DurationSeconds.Value;
@@ -91,15 +92,38 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task<string?> BuildBrowserCookieHeaderAsync(Uri source)
+    private async Task<string?> BuildBrowserCookieHeaderAsync(Uri source, long generation, CancellationToken cancellationToken)
     {
-        if (_mediaBrowser?.CoreWebView2 is null) return null;
-        var cookies = await _mediaBrowser.CoreWebView2.CookieManager.GetCookiesAsync(source.AbsoluteUri);
-        var safe = cookies
-            .Where(cookie => cookie.Name.IndexOfAny(['\r', '\n', ';']) < 0
-                && cookie.Value.IndexOfAny(['\r', '\n']) < 0)
-            .Select(cookie => cookie.Name + "=" + cookie.Value)
-            .ToArray();
-        return safe.Length == 0 ? null : string.Join("; ", safe);
+        cancellationToken.ThrowIfCancellationRequested();
+        var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!DispatcherQueue.TryEnqueue(async () =>
+        {
+            try
+            {
+                EnsureCurrentPage();
+                var browser = _mediaBrowser?.CoreWebView2;
+                if (browser is null) { completion.TrySetResult(null); return; }
+                var cookies = await browser.CookieManager.GetCookiesAsync(source.AbsoluteUri);
+                EnsureCurrentPage();
+                if (!ReferenceEquals(browser, _mediaBrowser?.CoreWebView2))
+                    throw new OperationCanceledException("Browser instance changed.");
+                var safe = cookies
+                    .Where(cookie => cookie.Name.IndexOfAny(['\r', '\n', ';']) < 0
+                        && cookie.Value.IndexOfAny(['\r', '\n']) < 0)
+                    .Select(cookie => cookie.Name + "=" + cookie.Value)
+                    .ToArray();
+                completion.TrySetResult(safe.Length == 0 ? null : string.Join("; ", safe));
+            }
+            catch (OperationCanceledException) { completion.TrySetCanceled(); }
+            catch (Exception ex) { completion.TrySetException(ex); }
+        })) throw new OperationCanceledException("Browser dispatcher unavailable.");
+        return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        void EnsureCurrentPage()
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (generation != Volatile.Read(ref _browserDiscoveryGeneration))
+                throw new OperationCanceledException("Browser page changed.");
+        }
     }
 }
