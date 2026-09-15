@@ -36,7 +36,7 @@ public sealed partial class MainWindow
         => RunDownloadOperationAsync(intent, new BrowserDownloadPreparation(this));
 
     private async Task<OperationOutcome> RunDownloadOperationAsync(UserDownloadIntent intent,
-        IBrowserDownloadPreparation preparation, bool resetCookieSelectionAfterUse = true)
+        IBrowserDownloadPreparation preparation, bool resetCookieSelectionAfterUse = true, BrowserDownloadQueueItem? queuedEntry = null)
     {
         if (_operations.IsBusy || _isInstallingComponents)
         {
@@ -53,6 +53,7 @@ public sealed partial class MainWindow
         _progressOwner = owner;
         var dispatcher = DispatcherQueue;
         var lease = _browserPages.Capture();
+        var navigationVersion = _queueNavigationVersion;
         var service = new BrowserDownloadOperation(preparation, _downloader, _operations)
         {
             Progress = new DispatchedProgress<DownloadProgress>(
@@ -68,8 +69,11 @@ public sealed partial class MainWindow
         try
         {
             // No await occurs between capture and the production service's ownership claim.
-            var result = await service.RunAsync(intent, lease, _windowLifetime.Token);
-            completion = result.Completion;
+            var result = queuedEntry is null
+                ? await service.RunAsync(intent, lease, _windowLifetime.Token)
+                : await service.RunQueuedAsync(queuedEntry, intent, lease, _browserSessionEpoch, _windowLifetime.Token);
+            completion = result.Completion == OperationCompletion.StartQueue && navigationVersion != _queueNavigationVersion
+                ? OperationCompletion.None : result.Completion;
             job.Complete(result.Outcome == OperationOutcome.Succeeded);
             if (result.Outcome == OperationOutcome.Cancelled)
             {
@@ -123,7 +127,11 @@ public sealed partial class MainWindow
                 DispatcherQueue.TryEnqueue(Close);
                 break;
             case OperationCompletion.StartQueue:
-                if (!_queueRunnerActive) DispatcherQueue.TryEnqueue(async () => await DownloadQueuedCandidatesAsync());
+                var navigationVersion = _queueNavigationVersion;
+                if (!_queueRunnerActive) DispatcherQueue.TryEnqueue(async () =>
+                {
+                    if (navigationVersion == _queueNavigationVersion) await DownloadQueuedCandidatesAsync();
+                });
                 break;
         }
     }

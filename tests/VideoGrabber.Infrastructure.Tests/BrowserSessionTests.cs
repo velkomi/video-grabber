@@ -4,6 +4,28 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class BrowserSessionTests
 {
+    [Fact]
+    public void App_navigation_and_session_handlers_use_production_queue_lifetime_and_saved_preparation_context()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !Directory.Exists(Path.Combine(root.FullName, "src", "VideoGrabber.App"))) root = root.Parent;
+        Assert.NotNull(root);
+        string Read(string file) => File.ReadAllText(Path.Combine(root.FullName, "src", "VideoGrabber.App", file));
+        var discovery = Read("MainWindow.DevTools.cs");
+        var browser = Read("MainWindow.Browser.cs");
+        var batch = Read("MainWindow.BatchDownload.cs");
+        var preparation = Read("BrowserDownloadPreparation.cs");
+        Assert.DoesNotContain("_browserDownloadQueue.Clear()", discovery);
+        Assert.Contains("OnNavigation(_browserSessionEpoch)", discovery);
+        Assert.Contains("OnSessionChanged(_browserSessionEpoch)", browser);
+        Assert.Contains("_cookiesBox.SelectionChanged", browser);
+        Assert.Contains("entry.Context?.Metadata", batch);
+        Assert.Contains("service.RunQueuedAsync", Read("MainWindow.Download.cs"));
+        Assert.Contains("queueContext is null", preparation);
+        Assert.Contains("queueContext?.Metadata ?? window._browserMetadata", preparation);
+        Assert.Contains("queueContext?.Page ?? _browserPageUri", preparation);
+    }
+
     [Theory]
     [InlineData("https://cdn.example.test/video.mp4?sig=private", "", "MP4")]
     [InlineData("https://cdn.example.test/stream?id=1", "application/vnd.apple.mpegurl", "HLS")]

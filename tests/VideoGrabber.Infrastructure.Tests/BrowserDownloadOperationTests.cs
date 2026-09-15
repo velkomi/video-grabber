@@ -6,6 +6,127 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class BrowserDownloadOperationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Lifecycle_callback_alone_cancels_late_preparation_without_resetting_page(bool sessionChanged)
+    {
+        using var pages = new BrowserPageLifetime();
+        var queue = new BrowserDownloadQueue();
+        var candidate = new MediaCandidate(Intent.SelectedSource, new("https://school.example/a"), "HLS");
+        queue.AddOrUpdate(candidate, 4, "720p", new(candidate.Referer, 7, BrowserPageMetadata.Empty));
+        var preparation = new BlockedPreparation();
+        var downloader = new RecordingDownloader();
+        var coordinator = new OperationCoordinator();
+        var service = new BrowserDownloadOperation(preparation, downloader, coordinator);
+        var entry = Assert.Single(queue.Items);
+        var pending = service.RunQueuedAsync(entry, Intent with { SessionEpoch = 7 }, pages.Capture(), 7, default);
+        await preparation.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        service.RequestQueue();
+        if (sessionChanged) service.OnSessionChanged(8); else service.OnNavigation(7);
+        Assert.False(pages.Capture().Token.IsCancellationRequested);
+        preparation.Release.TrySetResult();
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(OperationOutcome.Cancelled, result.Outcome);
+        Assert.Equal(OperationCompletion.None, result.Completion);
+        Assert.Equal(0, downloader.Calls);
+        Assert.Same(entry, Assert.Single(queue.Items));
+        Assert.Equal(!sessionChanged, service.CanContinue(entry.Context!, sessionChanged ? 8 : 7));
+        if (sessionChanged)
+        {
+            var staleCaller = await service.RunQueuedAsync(entry, Intent with { SessionEpoch = 7 }, pages.Capture(), 7, default);
+            Assert.Equal(OperationOutcome.Failed, staleCaller.Outcome);
+            Assert.Equal(1, preparation.Calls);
+        }
+    }
+
+    [Fact]
+    public async Task Navigation_preserves_queue_cancels_active_work_and_clears_pending_run_intent()
+    {
+        using var pages = new BrowserPageLifetime();
+        var queue = new BrowserDownloadQueue();
+        var candidate = new MediaCandidate(Intent.SelectedSource, new("https://school.example/a"), "HLS");
+        queue.AddOrUpdate(candidate, 4, "720p", new(candidate.Referer, 7, new("Lesson A", ["Part A"])));
+        var saved = Assert.Single(queue.Items);
+        var preparation = new BlockedPreparation();
+        var downloader = new RecordingDownloader();
+        var coordinator = new OperationCoordinator();
+        var service = new BrowserDownloadOperation(preparation, downloader, coordinator);
+        var pending = service.RunQueuedAsync(saved, Intent with { SessionEpoch = 7 }, pages.Capture(), 7, default);
+        await preparation.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        service.RequestQueue();
+        service.OnNavigation(7);
+        pages.Reset();
+        preparation.Release.TrySetResult();
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(OperationOutcome.Cancelled, result.Outcome);
+        Assert.Equal(OperationCompletion.None, result.Completion);
+        Assert.Same(saved, Assert.Single(queue.Items));
+        Assert.True(service.CanContinue(saved.Context!, 7));
+        Assert.Equal(0, downloader.Calls);
+        Assert.Equal(OperationCompletion.None, coordinator.Complete(OperationOutcome.Succeeded));
+
+        service.OnSessionChanged(8);
+        Assert.False(service.CanContinue(saved.Context!, 8));
+        var rejected = await service.RunQueuedAsync(saved, Intent with { SessionEpoch = 7 }, pages.Capture(), 8, default);
+        Assert.Equal(OperationOutcome.Failed, rejected.Outcome);
+        Assert.Equal(1, preparation.Calls);
+        Assert.Equal(0, downloader.Calls);
+        Assert.Same(saved, Assert.Single(queue.Items));
+    }
+
+    [Fact]
+    public async Task Explicit_resume_uses_saved_source_and_quality_after_navigation_while_direct_uses_current_page_generation()
+    {
+        using var pages = new BrowserPageLifetime();
+        var candidate = new MediaCandidate(Intent.SelectedSource, new("https://school.example/a"), "HLS");
+        var queue = new BrowserDownloadQueue();
+        queue.AddOrUpdate(candidate, 4, "720p", new(candidate.Referer, 7, BrowserPageMetadata.Empty));
+        var preparation = new Preparation((captured, _, _) => Task.FromResult(new PreparedBrowserDownload(Values with { Source = captured.SelectedSource })));
+        var downloader = new RecordingDownloader();
+        var service = new BrowserDownloadOperation(preparation, downloader, new());
+        service.OnNavigation(7);
+        pages.Reset();
+        Assert.Equal(0, preparation.Calls);
+        var saved = Assert.Single(queue.Items);
+        var resumed = await service.RunQueuedAsync(saved, Intent with { SessionEpoch = 7 }, pages.Capture(), 7, default);
+        Assert.Equal(OperationOutcome.Succeeded, resumed.Outcome);
+        Assert.Equal(candidate.Source, downloader.Request!.Source);
+        Assert.Equal("720p", downloader.Request.Quality);
+        var direct = await service.RunAsync(Intent with { SelectedSource = new("https://cdn.example/b.mp4"), SessionEpoch = pages.CurrentGeneration }, pages.Capture(), default);
+        Assert.Equal(OperationOutcome.Succeeded, direct.Outcome);
+        Assert.Equal(new Uri("https://cdn.example/b.mp4"), downloader.Request.Source);
+    }
+
+    [Theory]
+    [InlineData("source")]
+    [InlineData("quality")]
+    [InlineData("intent-session")]
+    [InlineData("current-session")]
+    [InlineData("missing-context")]
+    public async Task Queued_mismatch_rejects_before_any_preparation_or_downloader(string mismatch)
+    {
+        using var pages = new BrowserPageLifetime();
+        var candidate = new MediaCandidate(Intent.SelectedSource, new("https://school.example/a"), "HLS");
+        var queue = new BrowserDownloadQueue();
+        queue.AddOrUpdate(candidate, 4, "720p", mismatch == "missing-context" ? null : new(candidate.Referer, 7, BrowserPageMetadata.Empty));
+        var preparation = new BlockedPreparation();
+        var downloader = new RecordingDownloader();
+        var service = new BrowserDownloadOperation(preparation, downloader, new());
+        var intent = Intent with { SessionEpoch = 7 };
+        intent = mismatch switch
+        {
+            "source" => intent with { SelectedSource = new("https://cdn.example/b.m3u8") },
+            "quality" => intent with { Quality = "360p" },
+            "intent-session" => intent with { SessionEpoch = 8 },
+            _ => intent
+        };
+        var result = await service.RunQueuedAsync(Assert.Single(queue.Items), intent, pages.Capture(), mismatch == "current-session" ? 8 : 7, default);
+        Assert.Equal(OperationOutcome.Failed, result.Outcome);
+        Assert.Equal(0, preparation.Calls);
+        Assert.Equal(0, downloader.Calls);
+    }
+
     private static readonly UserDownloadIntent Intent = new(new("https://cdn.example/master.m3u8"), "720p", false, "output", null, 0);
     private static PreparedDownload Values => new(new("https://cdn.example/720.m3u8"), null, null, null, null,
         null, null, true, true, "part-2", 12, true);

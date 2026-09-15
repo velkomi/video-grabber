@@ -335,7 +335,6 @@ public sealed partial class MainWindow
                 var index = Math.Max(1, _mediaCandidatesBox.Items.IndexOf(existing) + 1);
                 existing.Content = MediaCandidatePresentation.DisplayName(candidate, index, _browserMetadata);
                 existing.Tag = candidate;
-                SyncQueuedCandidate(candidate);
                 RebindAndReorderMediaCandidates(lease, core);
                 _ = EnrichMediaDurationAsync(candidate, lease, core);
                 return;
@@ -428,7 +427,6 @@ public sealed partial class MainWindow
                     item.Tag = candidate;
                     item.Content = MediaCandidatePresentation.DisplayName(candidate, _mediaCandidatesBox.Items.Count + 1, _browserMetadata);
                     _mediaCandidatesBox.Items.Add(item);
-                    SyncQueuedCandidate(candidate);
                 }
                 _mediaCandidatesBox.SelectedItem = _mediaCandidatesBox.Items.OfType<Microsoft.UI.Xaml.Controls.ComboBoxItem>()
                     .FirstOrDefault(item => item.Tag is MediaCandidate value
@@ -442,6 +440,9 @@ public sealed partial class MainWindow
 
     private void ResetDevToolsDiscoveryForNavigation(bool clearUi = true)
     {
+        _browserOperation?.OnNavigation(_browserSessionEpoch);
+        _operations.Cancel();
+        _queueNavigationVersion++;
         _browserPages.Reset();
         Interlocked.Exchange(ref _browserDiscoveryGeneration, _browserPages.CurrentGeneration);
         Interlocked.Increment(ref _bindingRefreshVersion);
@@ -454,7 +455,6 @@ public sealed partial class MainWindow
         _seenMedia.Clear();
         _mediaCandidateItems.Clear();
         _mediaQualitySelections.Clear();
-        _browserDownloadQueue.Clear();
         _playerMasterBindings.Clear();
         _browserMetadata = BrowserPageMetadata.Empty;
         if (clearUi) _mediaCandidatesBox.Items.Clear();

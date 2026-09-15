@@ -63,7 +63,7 @@ public sealed partial class MainWindow
             return;
         }
         var ordinal = candidate.PageOrdinal ?? Math.Max(1, _mediaCandidatesBox.SelectedIndex + 1);
-        _browserDownloadQueue.AddOrUpdate(candidate, ordinal, SelectedBrowserQuality(candidate));
+        _browserDownloadQueue.AddOrUpdate(candidate, ordinal, SelectedBrowserQuality(candidate), CaptureQueueContext(candidate));
         RefreshDownloadQueueList();
     }
 
@@ -73,7 +73,7 @@ public sealed partial class MainWindow
         {
             if (item.Tag is not MediaCandidate candidate) continue;
             var ordinal = candidate.PageOrdinal ?? index + 1;
-            _browserDownloadQueue.AddOrUpdate(candidate, ordinal, SelectedBrowserQuality(candidate));
+            _browserDownloadQueue.AddOrUpdate(candidate, ordinal, SelectedBrowserQuality(candidate), CaptureQueueContext(candidate));
         }
         RefreshDownloadQueueList();
     }
@@ -98,10 +98,11 @@ public sealed partial class MainWindow
         _downloadQueueList.Items.Clear();
         foreach (var entry in _browserDownloadQueue.Items)
         {
-            var label = MediaCandidatePresentation.DisplayName(entry.Candidate, entry.Ordinal, _browserMetadata);
+            var label = MediaCandidatePresentation.DisplayName(entry.Candidate, entry.Ordinal, entry.Context?.Metadata ?? BrowserPageMetadata.Empty);
+            var status = entry.Context?.SessionEpoch == _browserSessionEpoch ? "" : "  •  Требуется повторный выбор сессии";
             _downloadQueueList.Items.Add(new ListViewItem
             {
-                Content = $"{label}  •  {entry.Quality}",
+                Content = $"{label}  •  {entry.Quality}{status}",
                 Tag = entry
             });
         }
@@ -111,14 +112,8 @@ public sealed partial class MainWindow
                 : 0;
     }
 
-    private void SyncQueuedCandidate(MediaCandidate candidate)
-    {
-        var queued = _browserDownloadQueue.Items.FirstOrDefault(item =>
-            string.Equals(item.Candidate.Source.AbsoluteUri, candidate.Source.AbsoluteUri, StringComparison.Ordinal));
-        if (queued is null) return;
-        _browserDownloadQueue.AddOrUpdate(candidate, candidate.PageOrdinal ?? queued.Ordinal, queued.Quality);
-        RefreshDownloadQueueList();
-    }
+    private BrowserQueueContext CaptureQueueContext(MediaCandidate candidate)
+        => new(_browserPageUri ?? candidate.Referer, _browserSessionEpoch, _browserMetadata);
 
     private async Task DownloadQueuedCandidatesAsync()
     {
@@ -136,16 +131,27 @@ public sealed partial class MainWindow
             return;
         }
         var selectedCookies = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        var navigationVersion = _queueNavigationVersion;
         _queueRunnerActive = true;
         try
         {
             var completed = 0;
             while (_browserDownloadQueue.Items.Count > 0)
             {
+                if (navigationVersion != _queueNavigationVersion) return;
                 var entry = _browserDownloadQueue.Items[0];
+                if (entry.Context?.SessionEpoch != _browserSessionEpoch)
+                {
+                    _browserHint.Text = "Требуется повторный выбор сессии. Пункт сохранён; выберите сессию и явно добавьте видео заново.";
+                    RefreshDownloadQueueList();
+                    return;
+                }
                 _browserHint.Text = $"\u041E\u0447\u0435\u0440\u0435\u0434\u044C: \u0441\u043A\u0430\u0447\u0430\u043D\u043E {completed}. \u041E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {_browserDownloadQueue.Items.Count}.";
-                var outcome = await DownloadCandidateAsync(entry.Candidate, entry.Ordinal,
-                    resetCookieSelectionAfterUse: false, qualityOverride: entry.Quality);
+                var intent = CaptureDownloadIntent(entry.Candidate.Source, entry.Quality) with { SessionEpoch = entry.Context.SessionEpoch };
+                var outcome = await RunDownloadOperationAsync(intent,
+                    new BrowserDownloadPreparation(this, entry.Candidate, entry.Ordinal, entry.Context),
+                    resetCookieSelectionAfterUse: false, queuedEntry: entry);
+                if (navigationVersion != _queueNavigationVersion) return;
                 if (outcome == OperationOutcome.Succeeded)
                 {
                     completed++;
@@ -168,7 +174,7 @@ public sealed partial class MainWindow
         finally
         {
             _queueRunnerActive = false;
-            if (BrowserDownloadSessionPolicy.ShouldResetAfterUse(selectedCookies)) _cookiesBox.SelectedIndex = 0;
+            if (_browserDownloadQueue.Items.Count == 0 && BrowserDownloadSessionPolicy.ShouldResetAfterUse(selectedCookies)) _cookiesBox.SelectedIndex = 0;
         }
     }
 

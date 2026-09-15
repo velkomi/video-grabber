@@ -11,6 +11,8 @@ namespace VideoGrabber.App;
 public sealed partial class MainWindow
 {
     private ulong _browserNavigationId;
+    private long _browserSessionEpoch;
+    private long _queueNavigationVersion;
     private ComboBox _mediaCandidatesBox = null!;
     private ComboBox _mediaQualityBox = null!;
     private ListView _downloadQueueList = null!;
@@ -33,6 +35,7 @@ public sealed partial class MainWindow
             SyncMediaQualityChoices();
         };
         _mediaQualityBox.SelectionChanged += (_, _) => StoreSelectedMediaQuality();
+        _cookiesBox.SelectionChanged += (_, _) => InvalidateQueuedSession();
 
         var download = PrimaryButton("Скачать выбранное видео");
         download.Click += async (_, _) =>
@@ -140,7 +143,9 @@ public sealed partial class MainWindow
                     _browserPageUri = target;
                     _browserAddress.Text = target.AbsoluteUri;
                     ResetDevToolsDiscoveryForNavigation();
-                    _browserHint.Text = "Войдите на сайте при необходимости и нажмите воспроизведение видео.";
+                    _browserHint.Text = _browserDownloadQueue.Items.Count > 0
+                        ? "Очередь приостановлена. Для запуска сохранённых пунктов нажмите «Скачать очередь / продолжить»."
+                        : "Войдите на сайте при необходимости и нажмите воспроизведение видео.";
                 };
                 core.NavigationCompleted += async (_, args) =>
                 {
@@ -288,9 +293,9 @@ public sealed partial class MainWindow
 
     private void CloseBrowser_Click(object sender, RoutedEventArgs e)
     {
-        if (_browserInitializing || _operations.IsBusy)
+        if (_browserInitializing)
         {
-            _browserHint.Text = "Сначала завершите или отмените текущую операцию.";
+            _browserHint.Text = "Дождитесь завершения открытия браузера.";
             return;
         }
         DestroyBrowser();
@@ -300,6 +305,7 @@ public sealed partial class MainWindow
 
     private void DestroyBrowser(bool forWindowClose = false)
     {
+        InvalidateQueuedSession();
         try
         {
             DisableDevToolsMediaDiscovery(clearUi: !forWindowClose);
@@ -321,5 +327,14 @@ public sealed partial class MainWindow
             _browserUsesSiteRoutes = false;
             _routePolicy.ClearSession();
         }
+    }
+
+    private void InvalidateQueuedSession()
+    {
+        _browserSessionEpoch++;
+        _queueNavigationVersion++;
+        _browserOperation?.OnSessionChanged(_browserSessionEpoch);
+        _operations.Cancel();
+        RefreshDownloadQueueList();
     }
 }

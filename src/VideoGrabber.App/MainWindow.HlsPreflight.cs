@@ -94,7 +94,6 @@ public sealed partial class MainWindow
                     item.Tag = updated;
                     var ordinal = updated.PageOrdinal ?? Math.Max(1, _mediaCandidatesBox.Items.IndexOf(item) + 1);
                     item.Content = MediaCandidatePresentation.DisplayName(updated, ordinal, _browserMetadata);
-                    SyncQueuedCandidate(updated);
                 });
             });
         }

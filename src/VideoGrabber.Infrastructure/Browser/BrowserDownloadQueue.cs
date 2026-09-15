@@ -2,21 +2,36 @@ using VideoGrabber.Core.Downloads;
 
 namespace VideoGrabber.Infrastructure.Browser;
 
+public sealed record BrowserQueueContext(Uri Page, long SessionEpoch, BrowserPageMetadata Metadata)
+{
+    public BrowserPageMetadata Metadata { get; } = new(Metadata.PageTitle,
+        Array.AsReadOnly(Metadata.SectionTitles.ToArray()), Array.AsReadOnly(Metadata.PlayerSlots.ToArray()));
+}
+
 public sealed record BrowserDownloadQueueItem(
     MediaCandidate Candidate,
     int Ordinal,
-    string Quality);
+    string Quality,
+    BrowserQueueContext? Context = null);
 
 public sealed class BrowserDownloadQueue
 {
     private readonly List<BrowserDownloadQueueItem> _items = [];
-    public IReadOnlyList<BrowserDownloadQueueItem> Items => _items;
+    public IReadOnlyList<BrowserDownloadQueueItem> Items => _items.AsReadOnly();
 
-    public void AddOrUpdate(MediaCandidate candidate, int ordinal, string quality)
+    public void AddOrUpdate(MediaCandidate candidate, int ordinal, string quality, BrowserQueueContext? context = null)
     {
         var index = _items.FindIndex(item =>
             string.Equals(item.Candidate.Source.AbsoluteUri, candidate.Source.AbsoluteUri, StringComparison.Ordinal));
-        var value = new BrowserDownloadQueueItem(candidate, Math.Max(1, ordinal), NormalizeQuality(quality));
+        var snapshot = candidate with
+        {
+            HlsManifest = candidate.HlsManifest is { } manifest ? manifest with
+            {
+                Variants = Array.AsReadOnly(manifest.Variants.ToArray()),
+                AudioRenditions = Array.AsReadOnly(manifest.AudioRenditions.ToArray())
+            } : null
+        };
+        var value = new BrowserDownloadQueueItem(snapshot, Math.Max(1, ordinal), NormalizeQuality(quality), context);
         if (index >= 0) _items[index] = value;
         else _items.Add(value);
     }
