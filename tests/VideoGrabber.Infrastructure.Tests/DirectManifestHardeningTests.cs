@@ -9,6 +9,45 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class DirectManifestHardeningTests
 {
+    [Fact]
+    public async Task Duration_probe_records_clear_leaf_and_returns_confirmed_duration()
+    {
+        var source = new Uri("https://audit.test/video.m3u8");
+        var cache = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
+        var client = new HlsPreflightClient(_ => new PreflightHandler((_, _) => Task.FromResult(
+            Manifest("#EXTM3U\n#EXTINF:2,\nsegment.ts\n#EXT-X-ENDLIST\n"))));
+        var response = await client.FetchAsync(source, new(), CancellationToken.None);
+        Assert.Equal(2d, HlsDownloadPolicy.RecordDurationProbeResult(cache, source, response));
+        Assert.True(cache.ContainsKey(source.AbsoluteUri));
+    }
+
+    [Theory]
+    [InlineData("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nchild.m3u8\n")]
+    [InlineData("not a playlist")]
+    [InlineData("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key\"\n#EXTINF:2,\nsegment.ts\n")]
+    [InlineData("#EXTM3U\n#EXT-X-KEY:URI=\"key\"\n#EXTINF:2,\nsegment.ts\n")]
+    public async Task Duration_probe_revokes_prior_leaf_before_returning_without_duration(string body)
+    {
+        var source = new Uri("https://audit.test/video.m3u8");
+        var cache = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>();
+        cache[source.AbsoluteUri] = 0;
+        var candidate = new MediaCandidate(new("https://audit.test/master.m3u8"), new("https://school.example/lesson"), "HLS",
+            HlsManifest: new(true, [new HlsVariant(source, 1280, 720, 1, 30, null)], [], false, null, false));
+        var plan = MediaDownloadPlanResolver.Resolve(candidate, "720p", false);
+        Assert.True(HlsDownloadPolicy.AreSelectedTracksVerified(candidate, plan, new HashSet<string>(cache.Keys)));
+        var client = new HlsPreflightClient(_ => new PreflightHandler((_, _) => Task.FromResult(Manifest(body))));
+        var response = await client.FetchAsync(source, new(), CancellationToken.None);
+        var duration = HlsDownloadPolicy.RecordDurationProbeResult(cache, source, response);
+        Assert.Null(duration);
+        Assert.False(cache.ContainsKey(source.AbsoluteUri));
+        var downloaderCalls = 0;
+        var result = await HlsDownloadPolicy.RunVerifiedAsync(candidate, plan,
+            () => Task.FromResult(HlsDownloadPolicy.AreSelectedTracksVerified(candidate, plan, new HashSet<string>(cache.Keys))),
+            () => { downloaderCalls++; return Task.FromResult(true); }, _ => false);
+        Assert.False(result);
+        Assert.Equal(0, downloaderCalls);
+    }
+
     [Theory]
     [InlineData("devtools", "master", false)]
     [InlineData("webresource", "master", false)]

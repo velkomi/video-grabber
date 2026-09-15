@@ -49,10 +49,9 @@ public static class MediaCandidateMerge
     {
         if (previous is null) return incoming;
         if (incoming is null) return previous;
+        // A supplied manifest is a track snapshot; only a missing manifest is sparse discovery.
         return incoming with
         {
-            Variants = incoming.Variants.Count > 0 ? incoming.Variants : previous.Variants,
-            AudioRenditions = incoming.AudioRenditions.Count > 0 ? incoming.AudioRenditions : previous.AudioRenditions,
             DurationSeconds = incoming.DurationSeconds ?? previous.DurationSeconds
         };
     }

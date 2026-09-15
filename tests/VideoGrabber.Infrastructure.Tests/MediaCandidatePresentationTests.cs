@@ -77,7 +77,7 @@ public sealed class MediaCandidatePresentationTests
     }
 
     [Fact]
-    public void Refreshed_manifest_preserves_duration_and_absent_tracks()
+    public void Refreshed_manifest_preserves_duration_and_sparse_discovery_preserves_tracks()
     {
         var previous = Master() with { HlsManifest = Master().HlsManifest! with { DurationSeconds = 42 } };
         var incoming = previous with
@@ -92,8 +92,43 @@ public sealed class MediaCandidatePresentationTests
         Assert.Equal(42d, merged.HlsManifest!.DurationSeconds);
         Assert.Equal(new Uri("https://cdn.example/new720.m3u8"), Assert.Single(merged.HlsManifest.Variants).Uri);
 
-        var sparseManifest = incoming with { HlsManifest = incoming.HlsManifest! with { Variants = [] } };
-        Assert.Equal(merged.HlsManifest, MediaCandidateMerge.Merge(merged, sparseManifest).HlsManifest);
+        var sparseDiscovery = incoming with { HlsManifest = null };
+        Assert.Equal(merged.HlsManifest, MediaCandidateMerge.Merge(merged, sparseDiscovery).HlsManifest);
+    }
+
+    [Theory]
+    [InlineData("best")]
+    [InlineData("720p")]
+    public async Task Explicit_empty_master_replaces_tracks_and_cannot_download_previous_selection(string quality)
+    {
+        var previous = Master() with
+        {
+            HlsManifest = Master().HlsManifest! with
+            {
+                DurationSeconds = 42,
+                AudioRenditions = [new(new("https://cdn.example/audio.m3u8"), "ru", "Russian", "audio", true)]
+            }
+        };
+        Assert.True(HlsManifestParser.TryParse("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n", previous.Source, out var emptyMaster));
+        Assert.True(emptyMaster!.IsMaster);
+        var incoming = new MediaCandidate(previous.Source, previous.Referer, "HLS", HlsManifest: emptyMaster);
+        var merged = MediaCandidateMerge.Merge(previous, incoming);
+        Assert.Empty(merged.HlsManifest!.Variants);
+        Assert.Empty(merged.HlsManifest.AudioRenditions);
+        Assert.Equal(42d, merged.HlsManifest.DurationSeconds);
+        var sparseDuplicate = new MediaCandidate(previous.Source, previous.Referer, "HLS");
+        merged = MediaCandidateMerge.Merge(merged, sparseDuplicate);
+        Assert.Empty(merged.HlsManifest!.Variants);
+        var plan = MediaDownloadPlanResolver.Resolve(merged, quality, false);
+        Assert.False(plan.IsResolved);
+        var verificationCalls = 0;
+        var downloaderCalls = 0;
+        var result = await HlsDownloadPolicy.RunVerifiedAsync(merged, plan,
+            () => { verificationCalls++; return Task.FromResult(true); },
+            () => { downloaderCalls++; return Task.FromResult(true); }, _ => false);
+        Assert.False(result);
+        Assert.Equal(0, verificationCalls);
+        Assert.Equal(0, downloaderCalls);
     }
 
     [Fact]

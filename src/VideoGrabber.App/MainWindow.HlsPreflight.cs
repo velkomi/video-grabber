@@ -68,16 +68,14 @@ public sealed partial class MainWindow
             var result = await new HlsPreflightClient().FetchAsync(variant.Uri,
                 new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl,
                     CookieProvider: (uri, token) => BuildBrowserCookieHeaderAsync(uri, generation, token)), timeout.Token);
-            if (!HlsDownloadPolicy.IsVerifiedClearLeaf(result) || result.Info?.DurationSeconds is not > 0
-                || !double.IsFinite(result.Info.DurationSeconds.Value)) return;
-            HlsDownloadPolicy.UpdateVerifiedClearLeafCache(_verifiedClearHls, variant.Uri, result.Info);
-            var duration = result.Info.DurationSeconds.Value;
+            var duration = HlsDownloadPolicy.RecordDurationProbeResult(_verifiedClearHls, variant.Uri, result);
+            if (duration is null) return;
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (generation != Volatile.Read(ref _browserDiscoveryGeneration)) return;
                 if (!_mediaCandidateItems.TryGetValue(key, out var item) || item.Tag is not MediaCandidate current
                     || current.HlsManifest is not { IsMaster: true } currentManifest) return;
-                var updated = MediaCandidateMerge.ConfirmDuration(current, duration);
+                var updated = MediaCandidateMerge.ConfirmDuration(current, duration.Value);
                 item.Tag = updated;
                 var ordinal = updated.PageOrdinal ?? Math.Max(1, _mediaCandidatesBox.Items.IndexOf(item) + 1);
                 item.Content = MediaCandidatePresentation.DisplayName(updated, ordinal, _browserMetadata);

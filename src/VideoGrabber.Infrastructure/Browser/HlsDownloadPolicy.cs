@@ -16,6 +16,15 @@ public static class HlsDownloadPolicy
 
     public static bool IsClearMediaLeaf(HlsManifestInfo? info) => info is { IsMaster: false } && IsAllowed(info);
 
+    public static double? RecordDurationProbeResult(System.Collections.Concurrent.ConcurrentDictionary<string, byte> cache,
+        Uri source, HlsPreflightFetchResult result)
+    {
+        UpdateVerifiedClearLeafCache(cache, source, IsVerifiedClearLeaf(result) ? result.Info : null);
+        if (!IsVerifiedClearLeaf(result) || result.Info?.DurationSeconds is not > 0
+            || !double.IsFinite(result.Info.DurationSeconds.Value)) return null;
+        return result.Info.DurationSeconds.Value;
+    }
+
     public static void UpdateVerifiedClearLeafCache(System.Collections.Concurrent.ConcurrentDictionary<string, byte> cache,
         Uri source, HlsManifestInfo? info)
     {
