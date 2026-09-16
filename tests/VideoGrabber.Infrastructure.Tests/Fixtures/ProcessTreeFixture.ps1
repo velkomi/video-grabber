@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $true)][string]$StatePath,
     [Parameter(Mandatory = $true)][string]$ReadyPath,
     [Parameter(Mandatory = $true)][string]$GoPath
@@ -132,6 +132,14 @@ try {
         [IO.File]::WriteAllText($StatePath, ($child.Id.ToString() + '|' + $childStartTicks.ToString()))
     }
     finally { $child.Dispose() }
+
+    $readyDeadline = [DateTime]::UtcNow.AddSeconds(8)
+    while (-not [IO.File]::Exists($ReadyPath) -and [DateTime]::UtcNow -lt $readyDeadline) {
+        Start-Sleep -Milliseconds 25
+    }
+    if (-not [IO.File]::Exists($ReadyPath)) {
+        throw 'Synthetic child did not publish readiness before parent exit.'
+    }
 
     [Console]::Out.WriteLine('AUDIT_PARENT_PID:' + $PID)
     [Console]::Out.WriteLine('AUDIT_CHILD_PID_FROM_PARENT:' + $pi.dwProcessId)
