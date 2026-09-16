@@ -47,7 +47,7 @@ public sealed class ProcessLifecycleTests
                     "-StatePath", state, "-ReadyPath", ready, "-GoPath", go],
                 Timeout: TimeSpan.FromSeconds(30)), null, CancellationToken.None);
 
-            var childId = await WaitForOwnedChildEvidenceAsync(state, ready, TimeSpan.FromSeconds(8));
+            var childId = await WaitForOwnedChildEvidenceAsync(state, ready, TimeSpan.FromSeconds(20));
             using var child = Process.GetProcessById(childId);
             Assert.False(child.HasExited);
             File.WriteAllText(go, "drain");

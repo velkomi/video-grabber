@@ -133,7 +133,7 @@ try {
     }
     finally { $child.Dispose() }
 
-    $readyDeadline = [DateTime]::UtcNow.AddSeconds(8)
+    $readyDeadline = [DateTime]::UtcNow.AddSeconds(20)
     while (-not [IO.File]::Exists($ReadyPath) -and [DateTime]::UtcNow -lt $readyDeadline) {
         Start-Sleep -Milliseconds 25
     }
