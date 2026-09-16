@@ -39,6 +39,7 @@ public sealed class BrowserDownloadOperation(IBrowserDownloadPreparation prepara
             if (entry.Context is not { } context || !CanContinue(context, currentSessionEpoch)
                 || intent.SessionEpoch != context.SessionEpoch
                 || !string.Equals(intent.SelectedSource.AbsoluteUri, entry.Candidate.Source.AbsoluteUri, StringComparison.Ordinal)
+                || !string.Equals(intent.CookieSelection, context.CookieSelection, StringComparison.Ordinal)
                 || !string.Equals(intent.Quality, entry.Quality, StringComparison.Ordinal))
                 return Task.FromResult(new BrowserOperationResult(OperationOutcome.Failed, OperationCompletion.None,
                     new(false, "Требуется повторный выбор сессии", Details: "Пункт сохранён. Выберите сессию и явно добавьте видео в очередь заново.")));

@@ -4,6 +4,7 @@ namespace VideoGrabber.Infrastructure.Browser;
 
 public sealed record BrowserQueueContext(Uri Page, long SessionEpoch, BrowserPageMetadata Metadata)
 {
+    public string? CookieSelection { get; init; }
     public BrowserPageMetadata Metadata { get; } = new(Metadata.PageTitle,
         Array.AsReadOnly(Metadata.SectionTitles.ToArray()), Array.AsReadOnly(Metadata.PlayerSlots.ToArray()));
 }

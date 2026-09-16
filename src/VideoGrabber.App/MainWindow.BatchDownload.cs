@@ -113,7 +113,10 @@ public sealed partial class MainWindow
     }
 
     private BrowserQueueContext CaptureQueueContext(MediaCandidate candidate)
-        => new(_browserPageUri ?? candidate.Referer, _browserSessionEpoch, _browserMetadata);
+        => new(_browserPageUri ?? candidate.Referer, _browserSessionEpoch, _browserMetadata)
+        {
+            CookieSelection = (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()
+        };
 
     private async Task DownloadQueuedCandidatesAsync()
     {
@@ -147,7 +150,11 @@ public sealed partial class MainWindow
                     return;
                 }
                 _browserHint.Text = $"\u041E\u0447\u0435\u0440\u0435\u0434\u044C: \u0441\u043A\u0430\u0447\u0430\u043D\u043E {completed}. \u041E\u0441\u0442\u0430\u043B\u043E\u0441\u044C: {_browserDownloadQueue.Items.Count}.";
-                var intent = CaptureDownloadIntent(entry.Candidate.Source, entry.Quality) with { SessionEpoch = entry.Context.SessionEpoch };
+                var intent = CaptureDownloadIntent(entry.Candidate.Source, entry.Quality) with
+                {
+                    SessionEpoch = entry.Context.SessionEpoch,
+                    CookieSelection = entry.Context.CookieSelection
+                };
                 var outcome = await RunDownloadOperationAsync(intent,
                     new BrowserDownloadPreparation(this, entry.Candidate, entry.Ordinal, entry.Context),
                     resetCookieSelectionAfterUse: false, queuedEntry: entry);
@@ -174,7 +181,8 @@ public sealed partial class MainWindow
         finally
         {
             _queueRunnerActive = false;
-            if (_browserDownloadQueue.Items.Count == 0 && BrowserDownloadSessionPolicy.ShouldResetAfterUse(selectedCookies)) _cookiesBox.SelectedIndex = 0;
+            if (_browserDownloadQueue.Items.Count == 0 && BrowserDownloadSessionPolicy.ShouldResetAfterUse(selectedCookies))
+                _browserSession.RunProgrammaticSelectionCleanup(() => _cookiesBox.SelectedIndex = 0);
         }
     }
 

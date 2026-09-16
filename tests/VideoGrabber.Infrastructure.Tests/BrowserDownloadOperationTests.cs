@@ -9,6 +9,61 @@ public sealed class BrowserDownloadOperationTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task Programmatic_cleanup_after_direct_completion_preserves_queued_session_and_captured_cookie_selection(bool cancel)
+    {
+        using var pages = new BrowserPageLifetime();
+        var session = new BrowserSessionLifetime();
+        var queue = new BrowserDownloadQueue();
+        var candidate = new MediaCandidate(Intent.SelectedSource, new("https://school.example/a"), "HLS");
+        queue.AddOrUpdate(candidate, 4, "720p", new(candidate.Referer, session.Epoch, BrowserPageMetadata.Empty) { CookieSelection = "embedded" });
+        var saved = Assert.Single(queue.Items);
+        var directPreparation = new BlockedPreparation();
+        var directDownloader = new RecordingDownloader();
+        var direct = new BrowserDownloadOperation(directPreparation, directDownloader, new());
+        var pending = direct.RunAsync(Intent with { CookieSelection = "embedded" }, pages.Capture(), default);
+        await directPreparation.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (cancel) direct.Cancel();
+        directPreparation.Release.TrySetResult();
+        var finished = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(cancel ? OperationOutcome.Cancelled : OperationOutcome.Succeeded, finished.Outcome);
+
+        var visibleSelector = "embedded";
+        session.RunProgrammaticSelectionCleanup(() =>
+        {
+            visibleSelector = "";
+            Assert.False(session.OnSelectionChanged());
+        });
+        Assert.Equal("", visibleSelector);
+        Assert.Equal(saved.Context!.SessionEpoch, session.Epoch);
+        Assert.Same(saved, Assert.Single(queue.Items));
+        Assert.Equal("embedded", saved.Context.CookieSelection);
+        UserDownloadIntent? captured = null;
+        var preparation = new Preparation((intent, _, _) =>
+        {
+            captured = intent;
+            return Task.FromResult(new PreparedBrowserDownload(Values));
+        });
+        var downloader = new RecordingDownloader();
+        var service = new BrowserDownloadOperation(preparation, downloader, new());
+        var queuedIntent = Intent with { SessionEpoch = saved.Context.SessionEpoch, CookieSelection = saved.Context.CookieSelection };
+        var result = await service.RunQueuedAsync(saved, queuedIntent, pages.Capture(), session.Epoch, default);
+        Assert.Equal(OperationOutcome.Succeeded, result.Outcome);
+        Assert.Equal("embedded", captured!.CookieSelection);
+        Assert.Equal(1, downloader.Calls);
+
+        Assert.True(session.OnSelectionChanged());
+        service.OnSessionChanged(session.Epoch);
+        Assert.False(service.CanContinue(saved.Context, session.Epoch));
+        var rejected = await service.RunQueuedAsync(saved, queuedIntent, pages.Capture(), session.Epoch, default);
+        Assert.Equal(OperationOutcome.Failed, rejected.Outcome);
+        Assert.Equal(1, preparation.Calls);
+        Assert.Equal(1, downloader.Calls);
+        Assert.Same(saved, Assert.Single(queue.Items));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task Lifecycle_callback_alone_cancels_late_preparation_without_resetting_page(bool sessionChanged)
     {
         using var pages = new BrowserPageLifetime();
@@ -104,6 +159,7 @@ public sealed class BrowserDownloadOperationTests
     [InlineData("intent-session")]
     [InlineData("current-session")]
     [InlineData("missing-context")]
+    [InlineData("cookie-selection")]
     public async Task Queued_mismatch_rejects_before_any_preparation_or_downloader(string mismatch)
     {
         using var pages = new BrowserPageLifetime();
@@ -111,6 +167,7 @@ public sealed class BrowserDownloadOperationTests
         var queue = new BrowserDownloadQueue();
         queue.AddOrUpdate(candidate, 4, "720p", mismatch == "missing-context" ? null : new(candidate.Referer, 7, BrowserPageMetadata.Empty));
         var preparation = new BlockedPreparation();
+        preparation.Release.TrySetResult();
         var downloader = new RecordingDownloader();
         var service = new BrowserDownloadOperation(preparation, downloader, new());
         var intent = Intent with { SessionEpoch = 7 };
@@ -119,6 +176,7 @@ public sealed class BrowserDownloadOperationTests
             "source" => intent with { SelectedSource = new("https://cdn.example/b.m3u8") },
             "quality" => intent with { Quality = "360p" },
             "intent-session" => intent with { SessionEpoch = 8 },
+            "cookie-selection" => intent with { CookieSelection = "embedded" },
             _ => intent
         };
         var result = await service.RunQueuedAsync(Assert.Single(queue.Items), intent, pages.Capture(), mismatch == "current-session" ? 8 : 7, default);

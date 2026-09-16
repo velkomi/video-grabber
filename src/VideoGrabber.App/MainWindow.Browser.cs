@@ -11,7 +11,8 @@ namespace VideoGrabber.App;
 public sealed partial class MainWindow
 {
     private ulong _browserNavigationId;
-    private long _browserSessionEpoch;
+    private readonly BrowserSessionLifetime _browserSession = new();
+    private long _browserSessionEpoch => _browserSession.Epoch;
     private long _queueNavigationVersion;
     private ComboBox _mediaCandidatesBox = null!;
     private ComboBox _mediaQualityBox = null!;
@@ -35,7 +36,10 @@ public sealed partial class MainWindow
             SyncMediaQualityChoices();
         };
         _mediaQualityBox.SelectionChanged += (_, _) => StoreSelectedMediaQuality();
-        _cookiesBox.SelectionChanged += (_, _) => InvalidateQueuedSession();
+        _cookiesBox.SelectionChanged += (_, _) =>
+        {
+            if (_browserSession.OnSelectionChanged()) NotifyQueuedSessionChanged();
+        };
 
         var download = PrimaryButton("Скачать выбранное видео");
         download.Click += async (_, _) =>
@@ -331,7 +335,12 @@ public sealed partial class MainWindow
 
     private void InvalidateQueuedSession()
     {
-        _browserSessionEpoch++;
+        _browserSession.Invalidate();
+        NotifyQueuedSessionChanged();
+    }
+
+    private void NotifyQueuedSessionChanged()
+    {
         _queueNavigationVersion++;
         _browserOperation?.OnSessionChanged(_browserSessionEpoch);
         _operations.Cancel();

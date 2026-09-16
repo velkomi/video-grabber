@@ -5,6 +5,27 @@ namespace VideoGrabber.Infrastructure.Tests;
 public sealed class BrowserSessionTests
 {
     [Fact]
+    public void Nested_programmatic_cleanup_only_suppresses_selector_events_not_explicit_invalidation()
+    {
+        var session = new BrowserSessionLifetime();
+        session.RunProgrammaticSelectionCleanup(() =>
+        {
+            Assert.False(session.OnSelectionChanged());
+            session.RunProgrammaticSelectionCleanup(() => Assert.False(session.OnSelectionChanged()));
+            Assert.False(session.OnSelectionChanged());
+            Assert.Equal(0, session.Epoch);
+            session.Invalidate();
+            Assert.Equal(1, session.Epoch);
+            Assert.False(session.OnSelectionChanged());
+        });
+        Assert.True(session.OnSelectionChanged());
+        Assert.Equal(2, session.Epoch);
+        Assert.Throws<IOException>(() => { session.RunProgrammaticSelectionCleanup(() => throw new IOException("cleanup failed")); });
+        Assert.True(session.OnSelectionChanged());
+        Assert.Equal(3, session.Epoch);
+    }
+
+    [Fact]
     public void App_navigation_and_session_handlers_use_production_queue_lifetime_and_saved_preparation_context()
     {
         var root = new DirectoryInfo(AppContext.BaseDirectory);
@@ -19,6 +40,10 @@ public sealed class BrowserSessionTests
         Assert.Contains("OnNavigation(_browserSessionEpoch)", discovery);
         Assert.Contains("OnSessionChanged(_browserSessionEpoch)", browser);
         Assert.Contains("_cookiesBox.SelectionChanged", browser);
+        Assert.Contains("_browserSession.OnSelectionChanged()", browser);
+        Assert.Contains("_browserSession.Invalidate()", browser);
+        Assert.Contains("RunProgrammaticSelectionCleanup", Read("MainWindow.Download.cs"));
+        Assert.Contains("CookieSelection = entry.Context.CookieSelection", batch);
         Assert.Contains("entry.Context?.Metadata", batch);
         Assert.Contains("service.RunQueuedAsync", Read("MainWindow.Download.cs"));
         Assert.Contains("queueContext is null", preparation);

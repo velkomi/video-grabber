@@ -96,7 +96,8 @@ public sealed partial class MainWindow
         {
             _browserOperation = null;
             _progressOwner = null;
-            if (resetCookieSelectionAfterUse && BrowserDownloadSessionPolicy.ShouldResetAfterUse(intent.CookieSelection)) _cookiesBox.SelectedIndex = 0;
+            if (resetCookieSelectionAfterUse && BrowserDownloadSessionPolicy.ShouldResetAfterUse(intent.CookieSelection))
+                _browserSession.RunProgrammaticSelectionCleanup(() => _cookiesBox.SelectedIndex = 0);
             CompleteOperation(completion);
         }
     }
