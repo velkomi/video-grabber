@@ -48,6 +48,41 @@ public sealed partial class MainWindow
             SetDownloadState("Выберите папку сохранения.", null, true);
             return OperationOutcome.Failed;
         }
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
+        _operation = operation;
+        if (!RequiredComponentsAvailable())
+        {
+            if (!_operations.TryBegin())
+            {
+                _operation = null;
+                SetDownloadState("Другая операция уже выполняется.", null, true);
+                return OperationOutcome.Failed;
+            }
+            SetOperationControls(true);
+            var installOutcome = OperationOutcome.Failed;
+            var installed = false;
+            try
+            {
+                installed = await InstallComponentsAsync(forceUpdate: false, operation.Token);
+                installOutcome = installed ? OperationOutcome.Succeeded : OperationOutcome.Failed;
+            }
+            catch (OperationCanceledException)
+            {
+                installOutcome = OperationOutcome.Cancelled;
+            }
+            var installCompletion = _operations.Complete(installOutcome);
+            if (!installed || installCompletion != OperationCompletion.None)
+            {
+                CompleteOperation(installCompletion);
+                SetDownloadState(installOutcome == OperationOutcome.Cancelled
+                    ? "Подготовка компонентов отменена."
+                    : "Компоненты не готовы. Установка не изменяла активный набор инструментов.", null,
+                    installOutcome != OperationOutcome.Cancelled);
+                return installOutcome;
+            }
+            _operation = operation;
+        }
+
         using var job = DiagnosticHub.Begin("ui.download", intent.SelectedSource.Host);
         var owner = new object();
         _progressOwner = owner;
@@ -70,8 +105,8 @@ public sealed partial class MainWindow
         {
             // No await occurs between capture and the production service's ownership claim.
             var result = queuedEntry is null
-                ? await service.RunAsync(intent, lease, _windowLifetime.Token)
-                : await service.RunQueuedAsync(queuedEntry, intent, lease, _browserSessionEpoch, _windowLifetime.Token);
+                ? await service.RunAsync(intent, lease, operation.Token)
+                : await service.RunQueuedAsync(queuedEntry, intent, lease, _browserSessionEpoch, operation.Token);
             completion = result.Completion == OperationCompletion.StartQueue && navigationVersion != _queueNavigationVersion
                 ? OperationCompletion.None : result.Completion;
             job.Complete(result.Outcome == OperationOutcome.Succeeded);

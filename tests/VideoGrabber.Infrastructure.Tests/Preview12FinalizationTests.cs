@@ -139,7 +139,8 @@ public sealed class Preview12QueueAndShutdownWiringTests
         var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
         Assert.Contains("_operations.RequestQueue();", batch);
         Assert.Contains("case OperationCompletion.StartQueue:", download);
-        Assert.DoesNotContain("_operations.Complete(", download);
+        Assert.Contains("installCompletion = _operations.Complete(installOutcome)", download);
+        Assert.DoesNotContain("CompleteOperation(_operations.Complete(", download);
     }
 
     [Fact]

@@ -22,8 +22,9 @@ public sealed class BatchDownloadWiringTests
         var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
         Assert.Contains("OperationOutcome.Cancelled", batch);
         Assert.Contains("return;", batch);
-        Assert.Contains("service.RunAsync(intent, lease, _windowLifetime.Token)", download);
-        Assert.DoesNotContain("_operations.Complete(", download);
+        Assert.Contains("service.RunAsync(intent, lease, operation.Token)", download);
+        Assert.Contains("installCompletion = _operations.Complete(installOutcome)", download);
+        Assert.DoesNotContain("CompleteOperation(_operations.Complete(", download);
     }
 
     [Fact]

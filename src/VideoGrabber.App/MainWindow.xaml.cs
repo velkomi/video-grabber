@@ -107,7 +107,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += (_, args) =>
         {
             if (_allowWindowClose) return;
-            if (_operations.IsBusy)
+            if (_operations.IsBusy || _isInstallingComponents)
             {
                 args.Cancel = true;
                 _operations.RequestClose();
@@ -546,20 +546,37 @@ public sealed partial class MainWindow : Window
 
     private async void InstallComponents_Click(object sender, RoutedEventArgs e)
     {
-        if (_operations.IsBusy) { _ytDlpStatus.Text = "Сначала завершите текущую операцию."; return; }
-        await InstallComponentsAsync(forceUpdate: true);
+        if (_operations.IsBusy || _isInstallingComponents)
+        {
+            _ytDlpStatus.Text = "Сначала завершите текущую операцию.";
+            return;
+        }
+        if (!_operations.TryBegin()) return;
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
+        _operation = operation;
+        SetOperationControls(true);
+        var outcome = OperationOutcome.Failed;
+        try
+        {
+            var installed = await InstallComponentsAsync(forceUpdate: true, operation.Token);
+            outcome = installed ? OperationOutcome.Succeeded : OperationOutcome.Failed;
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = OperationOutcome.Cancelled;
+            _ytDlpStatus.Text = "Установка компонентов отменена.";
+        }
+        finally
+        {
+            CompleteOperation(_operations.Complete(outcome));
+        }
     }
 
-    private async Task<bool> InstallComponentsAsync(bool forceUpdate)
+    private async Task<bool> InstallComponentsAsync(bool forceUpdate, CancellationToken cancellationToken)
     {
-        if (!forceUpdate && RequiredComponentsAvailable())
-        {
-            return true;
-        }
-        if (_isInstallingComponents)
-        {
-            return false;
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!forceUpdate && RequiredComponentsAvailable()) return true;
+        if (_isInstallingComponents) return false;
 
         var script = FindInstallationScript();
         if (script is null)
@@ -569,75 +586,64 @@ public sealed partial class MainWindow : Window
             return false;
         }
 
+        var stagingDirectory = Path.Combine(Path.GetTempPath(),
+            "VideoGrabber-component-stage-" + Guid.NewGuid().ToString("N"));
         _isInstallingComponents = true;
-        _ytDlpStatus.Text = "Устанавливаю компоненты…";
-        _ffmpegStatus.Text = "Загрузка из официальных GitHub Releases";
-        _ffprobeStatus.Text = "Проверяю контрольные суммы SHA-256";
-        _denoStatus.Text = "Пожалуйста, не закрывайте приложение";
-        AppDiagnostics.Write("Component installation started");
+        _ytDlpStatus.Text = "Подготавливаю компоненты…";
+        _ffmpegStatus.Text = "Загрузка и проверка во временный staging";
+        _ffprobeStatus.Text = "Live-набор не изменяется до безопасной активации";
+        _denoStatus.Text = "Операцию можно отменить";
+        AppDiagnostics.Write("Component preparation started");
 
         try
         {
-            var startInfo = new ProcessStartInfo
+            var installer = new ComponentInstaller(new ProcessRunner(), new DeferredComponentInstallTransaction());
+            var result = await installer.InstallAsync(script, stagingDirectory, cancellationToken);
+            if (!result.IsSuccess)
             {
-                FileName = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
-                "System32",
-                "WindowsPowerShell",
-                "v1.0",
-                "powershell.exe"),
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-            foreach (var argument in new[]
-            {
-                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
-                "-Destination", _tools.LocalToolsDirectory
-            })
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            using var process = new Process { StartInfo = startInfo };
-            if (!process.Start())
-            {
-                throw new InvalidOperationException("Не удалось запустить установщик компонентов.");
-            }
-
-            var standardOutput = process.StandardOutput.ReadToEndAsync();
-            var standardError = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-            var output = await standardOutput;
-            var error = await standardError;
-            AppDiagnostics.Write($"Component installation finished exit={process.ExitCode}");
-            if (process.ExitCode != 0)
-            {
-                var details = LastNonEmptyLine(error) ?? LastNonEmptyLine(output) ?? "Неизвестная ошибка установщика.";
-                AppDiagnostics.Write($"Component installation failed error={details}");
-                _ytDlpStatus.Text = $"Ошибка установки: {details}";
+                var details = LastNonEmptyLine(result.StandardError) ?? LastNonEmptyLine(result.StandardOutput)
+                    ?? "Неизвестная ошибка подготовки компонентов.";
+                _ytDlpStatus.Text = $"Ошибка подготовки: {details}";
+                AppDiagnostics.Write("Component preparation failed");
                 return false;
             }
 
             RefreshComponentStatus();
-            var ready = RequiredComponentsAvailable();
-            if (!ready)
-            {
-                AppDiagnostics.Write("Component installation ended but required files are missing");
-            }
-            return ready;
+            return RequiredComponentsAvailable();
+        }
+        catch (OperationCanceledException)
+        {
+            AppDiagnostics.Write("Component preparation cancelled after recovery");
+            throw;
         }
         catch (Exception exception)
         {
-            AppDiagnostics.Write($"Component installation exception={exception.Message}");
-            _ytDlpStatus.Text = $"Ошибка установки: {exception.Message}";
+            var message = SensitiveDataRedactor.Redact(exception.Message);
+            AppDiagnostics.Write("Component installation exception=" + message);
+            _ytDlpStatus.Text = $"Ошибка установки: {message}";
             return false;
         }
         finally
         {
             _isInstallingComponents = false;
+            TryDeleteOwnedComponentStage(stagingDirectory);
         }
+    }
+
+    private static void TryDeleteOwnedComponentStage(string destination)
+    {
+        try
+        {
+            var full = Path.GetFullPath(destination);
+            var temp = Path.GetFullPath(Path.GetTempPath());
+            var leaf = Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (full.StartsWith(temp, StringComparison.OrdinalIgnoreCase)
+                && leaf.StartsWith("VideoGrabber-component-stage-", StringComparison.OrdinalIgnoreCase)
+                && Directory.Exists(full))
+                Directory.Delete(full, recursive: true);
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     private bool RequiredComponentsAvailable() =>

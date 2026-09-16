@@ -155,7 +155,7 @@ public sealed partial class BrowserWiringRegressionTests
         var service = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.Infrastructure", "Browser", "BrowserDownloadOperation.cs"));
         Assert.Contains("DownloadRequestFactory.Create(intent, prepared.Values)", service);
         var ui = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
-        Assert.Contains("service.RunAsync(intent, lease, _windowLifetime.Token)", ui);
+        Assert.Contains("service.RunAsync(intent, lease, operation.Token)", ui);
         Assert.Contains("_browserUsesSiteRoutes", preparation);
     }
 
