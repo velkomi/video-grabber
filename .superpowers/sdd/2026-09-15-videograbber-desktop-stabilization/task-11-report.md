@@ -65,3 +65,20 @@ Run-VgTests 't11-broad-core' 'FullyQualifiedName~VideoGrabber' 'tests/VideoGrabb
 The inherited Tee pipeline may return shell zero after test failure; TRX results and `test-summary.json` are authoritative. The final App build process returned zero. Whitespace/allowlist checks precede the exact-file commit.
 
 Real-window A→B, session-selector/logout rendering and explicit Continue behavior still require the later GUI acceptance gate. No source test, unit test or build result is presented as actual WebView2/UI execution. The three broad-suite failures are unchanged and remain for their assigned tasks.
+
+## Fix round 1 - 2026-09-16
+
+Reviewer P2 root cause was confirmed: automatic one-use cookie selector cleanup fired SelectionChanged and incorrectly advanced the local session epoch, invalidating preserved queue entries even though the user had not changed identity/session.
+
+Fix commit: `7d9f6ab` (`fix: preserve queued session during cookie cleanup`). The fix introduces `BrowserSessionLifetime`, suppresses only synchronous programmatic selector cleanup, keeps explicit invalidation for real user/session changes, captures `CookieSelection` into queued context, and validates queued intent against the captured cookie mode.
+
+Fresh verification after the fix:
+- focused queue/session/operation/coordinator: 51 passed, 0 failed;
+- Core: 12 passed, 0 failed;
+- Infrastructure with integration tools: 529 passed, 3 failed, 1 skipped; the three failures are the same assigned future REDs (two SRT validation cases and pipe-holding descendant cancellation), and the skip is Whisper integration;
+- Release App build: 0 warnings, 0 errors;
+- `git diff --check`: clean (line-ending conversion warnings only).
+
+An earlier broad invocation on 2026-09-16 omitted `VIDEOGRABBER_EVIDENCE` and failed audit-isolation initialization; it is an invalid verification invocation and is not product evidence. The corrected runs above are authoritative.
+
+A fresh `gpt-6-astra/high` Codex re-review was attempted from session `01a0a985-6949-7822-baea-7328e6516624`, but Codex returned the account usage-limit gate until 2026-09-19 11:30. Therefore Task 11 is locally verified and committed, while the independent Astra re-review gate remains externally blocked rather than silently substituted.
