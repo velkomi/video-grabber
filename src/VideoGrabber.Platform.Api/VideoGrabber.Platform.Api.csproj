@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup><PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../VideoGrabber.Platform.Contracts/VideoGrabber.Platform.Contracts.csproj" />
+    <ProjectReference Include="../VideoGrabber.Platform.Core/VideoGrabber.Platform.Core.csproj" />
+    <ProjectReference Include="../VideoGrabber.Platform.Persistence/VideoGrabber.Platform.Persistence.csproj" />
+  </ItemGroup>
+</Project>

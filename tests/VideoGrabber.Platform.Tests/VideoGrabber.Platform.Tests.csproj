@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable><IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets><IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets></PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/VideoGrabber.Platform.Api/VideoGrabber.Platform.Api.csproj" />
+    <ProjectReference Include="../../src/VideoGrabber.Platform.Persistence/VideoGrabber.Platform.Persistence.csproj" />
+    <ProjectReference Include="../../src/VideoGrabber.Platform.Contracts/VideoGrabber.Platform.Contracts.csproj" />
+  </ItemGroup>
+</Project>

@@ -3,10 +3,15 @@
     <Project Path="src/VideoGrabber.App/VideoGrabber.App.csproj" />
     <Project Path="src/VideoGrabber.Core/VideoGrabber.Core.csproj" />
     <Project Path="src/VideoGrabber.Infrastructure/VideoGrabber.Infrastructure.csproj" />
+    <Project Path="src/VideoGrabber.Platform.Api/VideoGrabber.Platform.Api.csproj" />
+    <Project Path="src/VideoGrabber.Platform.Contracts/VideoGrabber.Platform.Contracts.csproj" />
+    <Project Path="src/VideoGrabber.Platform.Core/VideoGrabber.Platform.Core.csproj" />
+    <Project Path="src/VideoGrabber.Platform.Persistence/VideoGrabber.Platform.Persistence.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/VideoGrabber.Core.Tests/VideoGrabber.Core.Tests.csproj" />
     <Project Path="tests/VideoGrabber.Infrastructure.Tests/VideoGrabber.Infrastructure.Tests.csproj" />
+    <Project Path="tests/VideoGrabber.Platform.Tests/VideoGrabber.Platform.Tests.csproj" />
   </Folder>
 </Solution>
 

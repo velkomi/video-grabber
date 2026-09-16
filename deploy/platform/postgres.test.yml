@@ -1,0 +1,16 @@
+﻿services:
+  postgres:
+    image: postgres:17.11
+    environment:
+      POSTGRES_DB: vg_test_platform
+      POSTGRES_USER: vg_test
+      POSTGRES_PASSWORD: vg_test_only_password
+    ports:
+      - "127.0.0.1:55439:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vg_test -d vg_test_platform"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

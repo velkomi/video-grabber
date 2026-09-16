@@ -1,0 +1,4 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../VideoGrabber.Platform.Contracts/VideoGrabber.Platform.Contracts.csproj" /></ItemGroup>
+</Project>
