@@ -89,7 +89,7 @@ public sealed partial class MainWindow
         var dispatcher = DispatcherQueue;
         var lease = _browserPages.Capture();
         var navigationVersion = _queueNavigationVersion;
-        var service = new BrowserDownloadOperation(preparation, _downloader, _operations)
+        var service = new BrowserDownloadOperation(preparation, () => Volatile.Read(ref _componentServices).Downloader, _operations)
         {
             Progress = new DispatchedProgress<DownloadProgress>(
                 action => dispatcher.TryEnqueue(() => action()),

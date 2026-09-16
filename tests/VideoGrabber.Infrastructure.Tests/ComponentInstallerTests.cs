@@ -1,5 +1,6 @@
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Components;
+using VideoGrabber.Infrastructure.Processes;
 
 namespace VideoGrabber.Infrastructure.Tests;
 
@@ -22,6 +23,8 @@ public sealed class ComponentInstallerTests
         Assert.Contains("-NonInteractive", spec.Arguments);
         Assert.Contains(script, spec.Arguments);
         Assert.Contains(destination, spec.Arguments);
+        Assert.Contains("-Phase", spec.Arguments);
+        Assert.Contains("Prepare", spec.Arguments);
         Assert.Equal(destination, Assert.Single(transaction.Commits));
         Assert.Empty(transaction.Aborts);
     }
@@ -64,21 +67,6 @@ public sealed class ComponentInstallerTests
         Assert.Equal("destination", Assert.Single(transaction.Aborts));
     }
 
-    [Fact]
-    public async Task Deferred_transaction_never_activates_live_tools_and_cleans_owned_stage()
-    {
-        var stage = Path.Combine(Path.GetTempPath(), "VideoGrabber-component-stage-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(stage);
-        await File.WriteAllTextAsync(Path.Combine(stage, "sentinel.txt"), "staged");
-        var transaction = new DeferredComponentInstallTransaction();
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => transaction.CommitAsync(stage, CancellationToken.None));
-        Assert.True(Directory.Exists(stage));
-
-        await transaction.AbortRecoveryAsync(stage, CancellationToken.None);
-        Assert.False(Directory.Exists(stage));
-    }
 
     [Fact]
     public void App_wires_manual_and_auto_install_to_owned_cancellation_lifetime()
@@ -87,10 +75,17 @@ public sealed class ComponentInstallerTests
         var download = ReadApp("MainWindow.Download.cs");
         Assert.Contains("InstallComponentsAsync(bool forceUpdate, CancellationToken cancellationToken)", app);
         Assert.Contains("_operations.IsBusy || _isInstallingComponents", app);
-        Assert.Contains("new ComponentInstaller(new ProcessRunner(), new DeferredComponentInstallTransaction())", app);
+        Assert.Contains("new ComponentInstallTransaction(_componentRunner)", app);
+        Assert.Contains("Interlocked.Exchange(ref _componentServices, nextServices)", app);
         Assert.Contains("InstallComponentsAsync(forceUpdate: false, operation.Token)", download);
         Assert.Contains("service.RunAsync(intent, lease, operation.Token)", download);
         Assert.Contains("if (!installed || installCompletion != OperationCompletion.None)", download);
+        Assert.Contains("() => Volatile.Read(ref _componentServices).Downloader", download);
+        Assert.Contains("var components = Volatile.Read(ref _componentServices);", app);
+        var media = ReadApp("MainWindow.MediaActions.cs");
+        Assert.Contains("var components = Volatile.Read(ref _componentServices);", media);
+        Assert.Contains("components.Transcriber.TranscribeAsync", media);
+        Assert.Contains("components.Tools", media);
     }
 
     private static string ReadApp(string name)
@@ -129,6 +124,124 @@ public sealed class ComponentInstallerTests
         {
             RecoveryTokenWasUsable = !recoveryDeadline.IsCancellationRequested;
             Aborts.Add(destination);
+            return Task.CompletedTask;
+        }
+    }
+}
+public sealed class ComponentInstallerRecoveryTests
+{
+    [Fact]
+    public async Task Cancel_during_commit_waits_for_abort_recovery_before_returning()
+    {
+        var runner = new SuccessRunner();
+        var transaction = new BlockingTransaction();
+        var installer = new ComponentInstaller(runner, transaction);
+        using var cancellation = new CancellationTokenSource();
+
+        var pending = installer.InstallAsync("install.ps1", "destination", cancellation.Token);
+        await transaction.CommitEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+        await Task.Delay(100);
+        Assert.False(pending.IsCompleted, "Commit is shielded and cancellation must wait.");
+
+        transaction.CommitRelease.TrySetResult();
+        await transaction.AbortEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.False(pending.IsCompleted, "InstallAsync returned before rollback/recovery completed.");
+        transaction.AbortRelease.TrySetResult();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.True(transaction.RecoveryTokenWasUsable);
+    }
+
+    private sealed class SuccessRunner : IProcessRunner
+    {
+        public Task<ProcessResult> RunAsync(ProcessSpec spec, Action<string>? onOutput, CancellationToken cancellationToken)
+            => Task.FromResult(new ProcessResult(0, "ok", ""));
+    }
+
+    private sealed class BlockingTransaction : IComponentInstallTransaction
+    {
+        public TaskCompletionSource CommitEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource CommitRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AbortEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AbortRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool RecoveryTokenWasUsable { get; private set; }
+
+        public async Task CommitAsync(string destination, CancellationToken recoveryDeadline)
+        {
+            RecoveryTokenWasUsable = !recoveryDeadline.IsCancellationRequested;
+            CommitEntered.TrySetResult();
+            await CommitRelease.Task.WaitAsync(recoveryDeadline);
+        }
+
+        public async Task AbortRecoveryAsync(string destination, CancellationToken recoveryDeadline)
+        {
+            RecoveryTokenWasUsable &= !recoveryDeadline.IsCancellationRequested;
+            AbortEntered.TrySetResult();
+            await AbortRelease.Task.WaitAsync(recoveryDeadline);
+        }
+    }
+}
+
+public sealed class ComponentInstallerProcessTreeTests
+{
+    [Fact]
+    public async Task Cancelled_prepare_kills_real_descendant_and_waits_for_recovery()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var root = Path.Combine(Path.GetTempPath(), "VG-component-child-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var script = Path.Combine(root, "prepare.ps1");
+        var pidPath = Path.Combine(root, "child.pid");
+        File.WriteAllText(script, """
+            param([string]$Destination,[string]$Phase)
+            $child = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 60' -PassThru
+            [IO.File]::WriteAllText((Join-Path $Destination 'child.pid'), [string]$child.Id)
+            Start-Sleep -Seconds 60
+            """);
+        var transaction = new RecoveryRecordingTransaction();
+        using var cancellation = new CancellationTokenSource();
+        try
+        {
+            var pending = new ComponentInstaller(new ProcessRunner(), transaction)
+                .InstallAsync(script, root, cancellation.Token);
+            var deadline = DateTime.UtcNow.AddSeconds(8);
+            while (!File.Exists(pidPath) && DateTime.UtcNow < deadline) await Task.Delay(25);
+            Assert.True(File.Exists(pidPath), "Prepare fixture did not publish child PID.");
+            var childPid = int.Parse(File.ReadAllText(pidPath));
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending.WaitAsync(TimeSpan.FromSeconds(8)));
+            Assert.True(transaction.Aborted);
+
+            var exited = false;
+            for (var i = 0; i < 80 && !exited; i++)
+            {
+                try
+                {
+                    using var child = System.Diagnostics.Process.GetProcessById(childPid);
+                    child.Refresh();
+                    exited = child.HasExited;
+                }
+                catch (ArgumentException) { exited = true; }
+                if (!exited) await Task.Delay(25);
+            }
+            Assert.True(exited, "Cancelled Prepare left a descendant process alive.");
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (IOException) { }
+        }
+    }
+
+    private sealed class RecoveryRecordingTransaction : IComponentInstallTransaction
+    {
+        public bool Aborted { get; private set; }
+        public Task CommitAsync(string destination, CancellationToken recoveryDeadline)
+            => throw new InvalidOperationException("Commit must not run after cancelled Prepare.");
+        public Task AbortRecoveryAsync(string destination, CancellationToken recoveryDeadline)
+        {
+            recoveryDeadline.ThrowIfCancellationRequested();
+            Aborted = true;
             return Task.CompletedTask;
         }
     }

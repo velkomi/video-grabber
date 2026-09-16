@@ -185,6 +185,39 @@ public sealed class BrowserDownloadOperationTests
         Assert.Equal(0, downloader.Calls);
     }
 
+    [Fact]
+    public async Task Downloader_provider_resolves_after_preparation_once_per_operation_and_next_run_sees_swap()
+    {
+        using var pages = new BrowserPageLifetime();
+        var preparation = new BlockedPreparation();
+        var first = new RecordingDownloader();
+        var second = new RecordingDownloader();
+        IVideoDownloader current = first;
+        var providerCalls = 0;
+        var service = new BrowserDownloadOperation(preparation, () =>
+        {
+            Interlocked.Increment(ref providerCalls);
+            return current;
+        }, new OperationCoordinator());
+
+        var pending = service.RunAsync(Intent, pages.Capture(), default);
+        await preparation.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, providerCalls);
+        current = second;
+        preparation.Release.TrySetResult();
+        var firstRun = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(OperationOutcome.Succeeded, firstRun.Outcome);
+        Assert.Equal(0, first.Calls);
+        Assert.Equal(1, second.Calls);
+        Assert.Equal(1, providerCalls);
+
+        current = first;
+        var secondRun = await service.RunAsync(Intent, pages.Capture(), default).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(OperationOutcome.Succeeded, secondRun.Outcome);
+        Assert.Equal(1, first.Calls);
+        Assert.Equal(1, second.Calls);
+        Assert.Equal(2, providerCalls);
+    }
     private static readonly UserDownloadIntent Intent = new(new("https://cdn.example/master.m3u8"), "720p", false, "output", null, 0);
     private static PreparedDownload Values => new(new("https://cdn.example/720.m3u8"), null, null, null, null,
         null, null, true, true, "part-2", 12, true);

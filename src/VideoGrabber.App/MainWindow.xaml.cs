@@ -26,9 +26,11 @@ public sealed partial class MainWindow : Window
     private static readonly SolidColorBrush MutedBrush = new(ColorHelper.FromArgb(255, 81, 93, 111));
     private static readonly SolidColorBrush TextBrush = new(ColorHelper.FromArgb(255, 31, 41, 55));
 
-    private readonly ToolLocator _tools = new();
-    private readonly YtDlpDownloader _downloader;
-    private readonly FfmpegVideoEditor _editor;
+    private readonly IProcessRunner _componentRunner = new ProcessRunner();
+    private ComponentServices _componentServices = null!;
+    private ToolLocator _tools => Volatile.Read(ref _componentServices).Tools;
+    private YtDlpDownloader _downloader => Volatile.Read(ref _componentServices).Downloader;
+    private FfmpegVideoEditor _editor => Volatile.Read(ref _componentServices).Editor;
     private readonly List<string> _joinFiles = [];
 
     private Grid _titleBar = null!;
@@ -81,9 +83,13 @@ public sealed partial class MainWindow : Window
         Content = _rootHost;
         AppDiagnostics.Write("Code-only host initialized");
 
-        var runner = new ProcessRunner();
-        _downloader = new YtDlpDownloader(runner, _tools, egressRegistry: _egressRegistry);
-        _editor = new FfmpegVideoEditor(runner, _tools);
+        var componentRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VideoGrabber", "tools");
+        var transaction = new ComponentInstallTransaction(_componentRunner);
+        transaction.AbortRecoveryAsync(componentRoot, CancellationToken.None).GetAwaiter().GetResult();
+        var initialTools = new ToolLocator(AppContext.BaseDirectory, componentRoot);
+        _componentServices = ComponentServiceFactory.Create(initialTools, _componentRunner, _egressRegistry);
         _rootHost.Children.Add(BuildShell());
         InitializeTheme();
 
@@ -507,10 +513,11 @@ public sealed partial class MainWindow : Window
         var outcome = OperationOutcome.Failed;
         _operation = operation;
         SetOperationControls(true);
+        var components = Volatile.Read(ref _componentServices);
         ShowEditorMessage("FFmpeg обрабатывает видео…", InfoBarSeverity.Informational);
         try
         {
-            await _editor.EditAsync(request, operation.Token);
+            await components.Editor.EditAsync(request, operation.Token);
             operation.Token.ThrowIfCancellationRequested();
             outcome = OperationOutcome.Succeeded;
             ShowEditorMessage($"Проверено: {request.OutputPath}", InfoBarSeverity.Success);
@@ -586,34 +593,47 @@ public sealed partial class MainWindow : Window
             return false;
         }
 
-        var stagingDirectory = Path.Combine(Path.GetTempPath(),
-            "VideoGrabber-component-stage-" + Guid.NewGuid().ToString("N"));
+        var componentRoot = _tools.LocalToolsDirectory;
         _isInstallingComponents = true;
-        _ytDlpStatus.Text = "Подготавливаю компоненты…";
-        _ffmpegStatus.Text = "Загрузка и проверка во временный staging";
-        _ffprobeStatus.Text = "Live-набор не изменяется до безопасной активации";
-        _denoStatus.Text = "Операцию можно отменить";
-        AppDiagnostics.Write("Component preparation started");
+        _ytDlpStatus.Text = "Подготавливаю проверенный набор компонентов…";
+        _ffmpegStatus.Text = "Новый generation не влияет на текущие операции";
+        _ffprobeStatus.Text = "Активация выполняется одним pointer swap";
+        _denoStatus.Text = "Отмена ждёт rollback/recovery";
+        AppDiagnostics.Write("Component transactional preparation started");
 
         try
         {
-            var installer = new ComponentInstaller(new ProcessRunner(), new DeferredComponentInstallTransaction());
-            var result = await installer.InstallAsync(script, stagingDirectory, cancellationToken);
+            var transaction = new ComponentInstallTransaction(_componentRunner);
+            var installer = new ComponentInstaller(_componentRunner, transaction);
+            var result = await installer.InstallAsync(script, componentRoot, cancellationToken);
             if (!result.IsSuccess)
             {
                 var details = LastNonEmptyLine(result.StandardError) ?? LastNonEmptyLine(result.StandardOutput)
                     ?? "Неизвестная ошибка подготовки компонентов.";
                 _ytDlpStatus.Text = $"Ошибка подготовки: {details}";
-                AppDiagnostics.Write("Component preparation failed");
                 return false;
             }
 
+            ComponentServices nextServices;
+            try
+            {
+                var nextTools = new ToolLocator(AppContext.BaseDirectory, componentRoot);
+                nextServices = ComponentServiceFactory.Create(nextTools, _componentRunner, _egressRegistry);
+            }
+            catch
+            {
+                using var recovery = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                await transaction.AbortRecoveryAsync(componentRoot, recovery.Token);
+                throw;
+            }
+            Interlocked.Exchange(ref _componentServices, nextServices);
             RefreshComponentStatus();
+            AppDiagnostics.Write("Component generation activated in current window");
             return RequiredComponentsAvailable();
         }
         catch (OperationCanceledException)
         {
-            AppDiagnostics.Write("Component preparation cancelled after recovery");
+            AppDiagnostics.Write("Component installation cancelled after recovery");
             throw;
         }
         catch (Exception exception)
@@ -626,24 +646,7 @@ public sealed partial class MainWindow : Window
         finally
         {
             _isInstallingComponents = false;
-            TryDeleteOwnedComponentStage(stagingDirectory);
         }
-    }
-
-    private static void TryDeleteOwnedComponentStage(string destination)
-    {
-        try
-        {
-            var full = Path.GetFullPath(destination);
-            var temp = Path.GetFullPath(Path.GetTempPath());
-            var leaf = Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (full.StartsWith(temp, StringComparison.OrdinalIgnoreCase)
-                && leaf.StartsWith("VideoGrabber-component-stage-", StringComparison.OrdinalIgnoreCase)
-                && Directory.Exists(full))
-                Directory.Delete(full, recursive: true);
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
     }
 
     private bool RequiredComponentsAvailable() =>

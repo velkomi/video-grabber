@@ -5,9 +5,11 @@ namespace VideoGrabber.Infrastructure.Browser;
 
 public sealed record BrowserOperationResult(OperationOutcome Outcome, OperationCompletion Completion, DownloadResult? Download);
 
-public sealed class BrowserDownloadOperation(IBrowserDownloadPreparation preparation, IVideoDownloader downloader,
+public sealed class BrowserDownloadOperation(IBrowserDownloadPreparation preparation, Func<IVideoDownloader> downloaderProvider,
     OperationCoordinator coordinator)
 {
+    public BrowserDownloadOperation(IBrowserDownloadPreparation preparation, IVideoDownloader downloader, OperationCoordinator coordinator)
+        : this(preparation, () => downloader, coordinator) { }
     private readonly object _gate = new();
     private CancellationTokenSource? _operation;
     private long? _sessionEpoch;
@@ -71,6 +73,7 @@ public sealed class BrowserDownloadOperation(IBrowserDownloadPreparation prepara
             prepared = await preparation.PrepareAsync(intent, lease, operation.Token);
             EnsureCurrent();
             var request = DownloadRequestFactory.Create(intent, prepared.Values);
+            var downloader = downloaderProvider();
             result = await downloader.DownloadAsync(request, new CurrentProgress(this, operation), operation.Token);
             EnsureCurrent();
             outcome = result.Success ? OperationOutcome.Succeeded : OperationOutcome.Failed;

@@ -10,7 +10,7 @@ public sealed class ComponentInstaller(
     private static readonly TimeSpan RecoveryTimeout = TimeSpan.FromSeconds(30);
 
     public async Task<ProcessResult> InstallAsync(
-        string script, string destination, CancellationToken token)
+        string script, string destination, CancellationToken token, string? assetManifestPath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
         ArgumentException.ThrowIfNullOrWhiteSpace(destination);
@@ -19,8 +19,8 @@ public sealed class ComponentInstaller(
         ProcessResult prepared;
         try
         {
-            prepared = await runner.RunAsync(BuildPrepareSpec(script, destination), null, token)
-                .ConfigureAwait(false);
+            prepared = await runner.RunAsync(
+                BuildPrepareSpec(script, destination, assetManifestPath), null, token).ConfigureAwait(false);
         }
         catch
         {
@@ -38,7 +38,6 @@ public sealed class ComponentInstaller(
         try
         {
             await transaction.CommitAsync(destination, recovery.Token).ConfigureAwait(false);
-            return prepared;
         }
         catch (Exception commitError)
         {
@@ -54,6 +53,13 @@ public sealed class ComponentInstaller(
             }
             throw;
         }
+
+        if (token.IsCancellationRequested)
+        {
+            await transaction.AbortRecoveryAsync(destination, recovery.Token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+        }
+        return prepared;
     }
 
     private async Task AbortRecoveryAsync(string destination)
@@ -69,16 +75,22 @@ public sealed class ComponentInstaller(
         }
     }
 
-    private static ProcessSpec BuildPrepareSpec(string script, string destination)
+    private static ProcessSpec BuildPrepareSpec(string script, string destination, string? assetManifestPath)
     {
         var powershell = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-        return new ProcessSpec(
-            powershell,
-            ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                "-File", script, "-Destination", destination],
-            Timeout: PrepareTimeout,
-            SuppressOutputLogging: true);
+        var arguments = new List<string>
+        {
+            "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", script, "-Destination", destination, "-Phase", "Prepare"
+        };
+        if (!string.IsNullOrWhiteSpace(assetManifestPath))
+        {
+            arguments.Add("-AssetManifestPath");
+            arguments.Add(assetManifestPath);
+        }
+        return new ProcessSpec(powershell, arguments,
+            Timeout: PrepareTimeout, SuppressOutputLogging: true);
     }
 }

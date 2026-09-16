@@ -90,6 +90,7 @@ public sealed partial class MainWindow
         using var job = DiagnosticHub.Begin(text ? "ui.transcription" : "ui.audio");
         _operation = operation;
         SetOperationControls(true);
+        var components = Volatile.Read(ref _componentServices);
         _localMediaStatus.Text = text ? "Распознаю речь локально…" : "Извлекаю и проверяю MP3…";
         try
         {
@@ -97,7 +98,7 @@ public sealed partial class MainWindow
             if (text)
             {
                 var language = (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "auto";
-                var result = await new WhisperTranscriber(runner, _tools).TranscribeAsync(input, output,
+                var result = await components.Transcriber.TranscribeAsync(input, output,
                     _whisperExeBox.Text.Trim().Trim('"'), _whisperModelBox.Text.Trim().Trim('"'), language, operation.Token);
                 _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.TextPath + "\n" + result.SubtitlesPath : "");
                 operation.Token.ThrowIfCancellationRequested();
@@ -106,7 +107,7 @@ public sealed partial class MainWindow
             }
             else
             {
-                var result = await new FfmpegAudioExtractor(runner, _tools).ExtractAsync(input, output + ".mp3", operation.Token);
+                var result = await new FfmpegAudioExtractor(runner, components.Tools).ExtractAsync(input, output + ".mp3", operation.Token);
                 _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.OutputPath : "");
                 operation.Token.ThrowIfCancellationRequested();
                 outcome = result.Success ? OperationOutcome.Succeeded : OperationOutcome.Failed;
