@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
@@ -10,6 +10,7 @@ using VideoGrabber.Infrastructure.Processes;
 namespace VideoGrabber.Infrastructure.Tests;
 
 // Audit-only network fixtures. All sockets are pinned to this test's loopback listener.
+[Collection("ProcessTreeSerial")]
 public sealed class AuditNetworkRegressionTests
 {
     [Fact]
@@ -232,40 +233,119 @@ public sealed class AuditNetworkRegressionTests
     public async Task Cancellation_after_parent_exit_must_stop_pipe_holding_descendant_promptly()
     {
         Assert.True(OperatingSystem.IsWindows(), "This regression is intended for the audited Windows runtime.");
-        using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-        var startedChild = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var childScript = "[Console]::WriteLine('AUDIT_CHILD_STARTED:' + $PID); Start-Sleep -Seconds 5";
-        var encodedChild = Convert.ToBase64String(Encoding.Unicode.GetBytes(childScript));
-        var parentScript = "$p = [Diagnostics.ProcessStartInfo]::new(); "
-            + "$p.FileName = 'powershell.exe'; $p.UseShellExecute = $false; $p.CreateNoWindow = $true; "
-            + "$p.Arguments = '-NoProfile -NonInteractive -EncodedCommand " + encodedChild + "'; "
-            + "$child = [Diagnostics.Process]::Start($p); "
-            + "[Console]::WriteLine('AUDIT_PARENT_EXITING'); exit 0";
+        var root = Path.Combine(Path.GetTempPath(), "VG-process-tree-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var statePath = Path.Combine(root, "child-state.txt");
+        var readyPath = Path.Combine(root, "child-ready.txt");
+        var goPath = Path.Combine(root, "allow-child-stdout.signal");
+        var fixture = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Fixtures", "ProcessTreeFixture.ps1"));
+        Assert.True(File.Exists(fixture), $"Process-tree fixture not found: {fixture}");
+
+        using var cancel = new CancellationTokenSource();
+        var parentPid = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var childPidFromParent = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var inheritedPipeChildPid = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Process? ownedChild = null;
         var work = new ProcessRunner().RunAsync(new ProcessSpec("powershell.exe",
-            ["-NoProfile", "-NonInteractive", "-Command", parentScript], Timeout: TimeSpan.FromSeconds(12)), line =>
+            ["-NoProfile", "-NonInteractive", "-File", fixture,
+                "-StatePath", statePath, "-ReadyPath", readyPath, "-GoPath", goPath], Timeout: TimeSpan.FromSeconds(30)), line =>
             {
-                const string prefix = "AUDIT_CHILD_STARTED:";
-                if (line.StartsWith(prefix, StringComparison.Ordinal) && int.TryParse(line[prefix.Length..], out var pid))
-                    startedChild.TrySetResult(pid);
+                TryCapturePid(line, "AUDIT_PARENT_PID:", parentPid);
+                TryCapturePid(line, "AUDIT_CHILD_PID_FROM_PARENT:", childPidFromParent);
+                TryCapturePid(line, "AUDIT_CHILD_PIPE_HELD:", inheritedPipeChildPid);
             }, cancel.Token);
         try
         {
-            _ = await startedChild.Task.WaitAsync(TimeSpan.FromSeconds(8));
-            var watch = Stopwatch.StartNew();
-            cancel.CancelAfter(TimeSpan.FromSeconds(3));
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => work);
-            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(4.5),
-                "Cancel waited for descendant's independent 5-second sleep instead of reaping the owned tree.");
+            var parentId = await parentPid.Task.WaitAsync(TimeSpan.FromSeconds(8));
+            var evidence = await WaitForOwnedChildEvidenceAsync(statePath, readyPath, TimeSpan.FromSeconds(8));
+            Assert.Equal(evidence.Pid, await childPidFromParent.Task.WaitAsync(TimeSpan.FromSeconds(3)));
+
+            var parentExited = false;
+            try
+            {
+                using var parent = Process.GetProcessById(parentId);
+                await parent.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                parentExited = parent.HasExited;
+            }
+            catch (ArgumentException)
+            {
+                // The fixture parent may have already exited before its stdout marker is pumped.
+                parentExited = true;
+            }
+            Assert.True(parentExited, "Synthetic parent must actually exit before cancellation.");
+
+            ownedChild = Process.GetProcessById(evidence.Pid);
+            Assert.Equal(evidence.StartTicks, ownedChild.StartTime.ToUniversalTime().Ticks);
+            Assert.False(ownedChild.HasExited, "Synthetic owned child must still be alive after its parent exits.");
+
+            File.WriteAllText(goPath, "parent-exited");
+            Assert.Equal(evidence.Pid, await inheritedPipeChildPid.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.False(work.IsCompleted,
+                "Runner unexpectedly completed while the verified descendant still held the inherited output pipe.");
+
+            cancel.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => work.WaitAsync(TimeSpan.FromSeconds(6)));
+            ownedChild.Refresh();
+            Assert.True(ownedChild.HasExited, "Cancellation must reap the verified owned descendant.");
         }
         finally
         {
             cancel.Cancel();
-            try { await work.WaitAsync(TimeSpan.FromSeconds(12)); }
+            if (ownedChild is not null)
+            {
+                try
+                {
+                    ownedChild.Refresh();
+                    if (!ownedChild.HasExited) ownedChild.Kill(entireProcessTree: true);
+                    await ownedChild.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or TimeoutException) { }
+                ownedChild.Dispose();
+            }
+            try { await work.WaitAsync(TimeSpan.FromSeconds(6)); }
             catch (Exception ex) when (ex is OperationCanceledException or TimeoutException) { }
-            // The child independently exits after five seconds. Never kill an unverified foreign PID.
+            try { Directory.Delete(root, recursive: true); }
+            catch (IOException) { }
+        }
+
+        static void TryCapturePid(string line, string prefix, TaskCompletionSource<int> target)
+        {
+            if (line.StartsWith(prefix, StringComparison.Ordinal)
+                && int.TryParse(line[prefix.Length..], out var pid))
+                target.TrySetResult(pid);
+        }
+
+        static async Task<(int Pid, long StartTicks)> WaitForOwnedChildEvidenceAsync(
+            string statePath, string readyPath, TimeSpan timeout)
+        {
+            var deadline = Stopwatch.StartNew();
+            while (deadline.Elapsed < timeout)
+            {
+                if (TryReadEvidence(statePath, out var state) && TryReadEvidence(readyPath, out var ready))
+                {
+                    Assert.Equal(state.Pid, ready.Pid);
+                    Assert.Equal(state.StartTicks, ready.StartTicks);
+                    return state;
+                }
+                await Task.Delay(25);
+            }
+            throw new TimeoutException("Synthetic child did not publish PID/start-time readiness evidence.");
+        }
+
+        static bool TryReadEvidence(string path, out (int Pid, long StartTicks) evidence)
+        {
+            evidence = default;
+            if (!File.Exists(path)) return false;
+            try
+            {
+                var parts = File.ReadAllText(path).Trim().Split('|');
+                if (parts.Length != 2 || !int.TryParse(parts[0], out var pid) || !long.TryParse(parts[1], out var ticks)) return false;
+                evidence = (pid, ticks);
+                return true;
+            }
+            catch (IOException) { return false; }
         }
     }
-
     private static async Task<(string Source, string Target)> ServeRedirectAsync(
         TcpListener listener, Uri target, CancellationToken token)
     {
