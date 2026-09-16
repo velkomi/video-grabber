@@ -1,5 +1,6 @@
 using VideoGrabber.Infrastructure.Components;
 using VideoGrabber.Infrastructure.Processes;
+using VideoGrabber.Infrastructure.Media;
 using VideoGrabber.Infrastructure.Transcription;
 
 namespace VideoGrabber.Infrastructure.Tests;
@@ -24,6 +25,11 @@ public sealed class WhisperIntegrationTests
         var subtitles = await File.ReadAllTextAsync(result.SubtitlesPath!, timeout.Token);
         Assert.Contains(" --> ", subtitles);
         Assert.Matches(@"\d{2}:\d{2}:\d{2},\d{3}", subtitles);
+        Assert.False(string.IsNullOrWhiteSpace(subtitles));
+        var sampleProbe = await new FfprobeMediaProbe(new ProcessRunner(), tools)
+            .ProbeAsync(Environment.GetEnvironmentVariable("VIDEOGRABBER_WHISPER_SAMPLE")!, timeout.Token);
+        Assert.True(sampleProbe.IsValid && sampleProbe.DurationSeconds > 0, sampleProbe.Error);
+        Assert.True(SrtValidator.TryValidate(subtitles, sampleProbe.DurationSeconds, out var srtError), srtError);
         Assert.DoesNotContain(Directory.GetDirectories(root), d => Path.GetFileName(d).StartsWith(".vg-asr-", StringComparison.Ordinal));
         var again = await new WhisperTranscriber(new ProcessRunner(), tools).TranscribeAsync(
             Environment.GetEnvironmentVariable("VIDEOGRABBER_WHISPER_SAMPLE")!, outputBase,
