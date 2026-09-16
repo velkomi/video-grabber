@@ -14,12 +14,18 @@ $cutoff = $now.AddDays(-$days)
 [IO.Directory]::CreateDirectory($OutputDirectory) | Out-Null
 $events=0; $malformed=0; $skipped=0; $bytes=0L; $stages=@{}
 if (Test-Path -LiteralPath $LogDirectory -PathType Container) {
-    $files = @(Get-ChildItem -LiteralPath $LogDirectory -Filter 'vg-*.jsonl' -File | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 512)
-    foreach ($file in $files) {
+    $allFiles = @(Get-ChildItem -LiteralPath $LogDirectory -Filter 'vg-*.jsonl' -File | Sort-Object LastWriteTimeUtc -Descending)
+    $eligible = @()
+    foreach ($file in $allFiles) {
         if ($file.LastWriteTimeUtc -lt $now.UtcDateTime.AddDays(-30)) {
             Remove-Item -LiteralPath $file.FullName
             continue
         }
+        $eligible += $file
+    }
+    if ($eligible.Count -gt 512) { $skipped += ($eligible.Count - 512) }
+    $files = @($eligible | Select-Object -First 512)
+    foreach ($file in $files) {
         if ($file.Length -gt 4MB -or $bytes + $file.Length -gt 64MB) { $skipped++; continue }
         $bytes += $file.Length
         $stream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
@@ -53,7 +59,7 @@ $rows = @($stages.Keys | Sort-Object | ForEach-Object {
     [pscustomobject]@{stage=$_; events=$stages[$_].events; started=$stages[$_].started; succeeded=$stages[$_].succeeded; failed=$stages[$_].failed; cancelled=$stages[$_].cancelled}
 })
 $failed = 0; foreach($row in $rows){ $failed += $row.failed }
-$state = if($events -eq 0){'no_data'}elseif($malformed -gt 0 -or $skipped -gt 0){'incomplete'}elseif($failed -gt 0){'issues_found'}else{'no_errors_observed'}
+$state = if($malformed -gt 0 -or $skipped -gt 0){'incomplete'}elseif($events -eq 0){'no_data'}elseif($failed -gt 0){'issues_found'}else{'no_errors_observed'}
 $report = [ordered]@{schemaVersion=1; generatedUtc=$now.ToString('o'); period=$Period; days=$days; status=$state; eventCount=$events; failureEventCount=$failed; malformedLines=$malformed; skippedFiles=$skipped; stages=$rows}
 $stem = 'vg-report-' + (Get-Date -Format 'yyyyMMdd') + '-' + $Period
 $jsonPath=Join-Path $OutputDirectory ($stem+'.json')
