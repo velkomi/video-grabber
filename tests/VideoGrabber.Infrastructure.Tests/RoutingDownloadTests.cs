@@ -2,6 +2,8 @@ using VideoGrabber.Core.Downloads;
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Components;
 using VideoGrabber.Infrastructure.Downloads;
+using VideoGrabber.Infrastructure.Networking;
+using VideoGrabber.Core.Security;
 namespace VideoGrabber.Infrastructure.Tests;
 public sealed class RoutingDownloadTests
 {
@@ -12,11 +14,16 @@ public sealed class RoutingDownloadTests
         var runner = new Recorder();
         try
         {
-            await new YtDlpDownloader(runner, new ToolLocator(root, root)).DownloadAsync(
-                new DownloadRequest(new Uri("https://example.com/video"), root, "best", LocalProxy: "socks5://127.0.0.1:12345"), null, CancellationToken.None);
+            var registry = new ManagedEgressSessionRegistry();
+            using var session = new DownloadEgressSession(registry, (_, _, _) => Task.FromResult<Stream>(Stream.Null),
+                new EgressPolicy("routing-test", true));
+            await new YtDlpDownloader(runner, new ToolLocator(root, root), egressRegistry: registry).DownloadAsync(
+                new DownloadRequest(new Uri("https://example.com/video"), root, "best",
+                    LocalProxy: session.Lease.ProxyUri.AbsoluteUri, EgressCapabilityId: session.Lease.Id,
+                    EgressEndpoint: session.Lease.ProxyUri), null, CancellationToken.None);
             Assert.NotNull(runner.Spec);
             Assert.Contains("--proxy", runner.Spec.Arguments);
-            Assert.Contains("socks5h://127.0.0.1:12345", runner.Spec.Arguments);
+            Assert.Contains("socks5h://127.0.0.1:" + session.Lease.ProxyUri.Port, runner.Spec.Arguments);
             Assert.Contains("--progress", runner.Spec.Arguments);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }

@@ -64,6 +64,7 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
                 var part = Array.FindIndex(servers, s => s.Playlist == candidate.Source) + 1;
                 var height = part % 2 == 1 ? 360 : 720;
                 var server = servers[part - 1];
+                using var egress = ManagedEgressFixture.RegisterListener("six-part-" + part, server.Playlist);
                 var globalQuality = part % 2 == 1 ? "720p" : "360p";
                 var selectedQuality = part == 6 ? "best" : height + "p";
                 if (part == 6) globalQuality = "best";
@@ -89,7 +90,9 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
                     MediaCandidatePresentation.SuggestedBaseName(candidate, 99, captured.Quality, metadata),
                     candidate.HlsManifest!.DurationSeconds, true)), deadline.Token);
                 Assert.Equal(selectedQuality, request.Quality);
-                var result = await new YtDlpDownloader(runner, tools).DownloadAsync(request, null, deadline.Token);
+                request = egress.Apply(request);
+                var result = await new YtDlpDownloader(runner, tools, egressRegistry: egress.Registry)
+                    .DownloadAsync(request, null, deadline.Token);
                 Assert.True(result.Success, result.Message + result.Details);
                 Assert.Contains("PART " + part, Path.GetFileName(result.OutputPath!));
                 var probe = await new FfprobeMediaProbe(runner, tools).ProbeAsync(result.OutputPath!, deadline.Token);

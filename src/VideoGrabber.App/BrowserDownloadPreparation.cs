@@ -52,9 +52,15 @@ public sealed partial class MainWindow
                 EnsureSession();
                 lease.Token.ThrowIfCancellationRequested();
                 var agent = embedded ? window._mediaBrowser?.CoreWebView2.Settings.UserAgent : null;
-                var proxy = window.EnsureRoutingProxy(selected.Source, selected.Referer, routeScope);
-                return new PreparedBrowserDownload(selected with { CookiesFile = cookieFile?.Path, UserAgent = agent, LocalProxy = proxy?.ProxyUrl },
-                    cookieFile is null ? [routeScope] : [routeScope, cookieFile]);
+                var egress = window.EnsureDownloadEgress(selected.Source, selected.Referer, routeScope);
+                return new PreparedBrowserDownload(selected with
+                {
+                    CookiesFile = cookieFile?.Path,
+                    UserAgent = agent,
+                    LocalProxy = egress.ProxyUri.AbsoluteUri,
+                    EgressCapabilityId = egress.Id,
+                    EgressEndpoint = egress.ProxyUri
+                }, cookieFile is null ? [routeScope] : [routeScope, cookieFile]);
             }
             catch
             {

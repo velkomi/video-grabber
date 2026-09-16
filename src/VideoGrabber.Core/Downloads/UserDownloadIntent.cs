@@ -6,7 +6,8 @@ public sealed record UserDownloadIntent(Uri SelectedSource, string Quality, bool
 public sealed record PreparedDownload(Uri Source, Uri? Referer, string? CookiesFile,
     string? UserAgent, string? LocalProxy, Uri? HlsVideoSource, Uri? HlsAudioSource,
     bool DirectManifest, bool ResolvedHlsLeaf, string? SuggestedBaseName,
-    double? ExpectedDurationSeconds, bool? ExpectedAudio);
+    double? ExpectedDurationSeconds, bool? ExpectedAudio,
+    Guid? EgressCapabilityId = null, Uri? EgressEndpoint = null);
 
 public static class DownloadRequestFactory
 {
@@ -20,7 +21,10 @@ public static class DownloadRequestFactory
             prepared.LocalProxy, prepared.HlsVideoSource, prepared.HlsAudioSource,
             prepared.DirectManifest, prepared.SuggestedBaseName,
             ExpectedDurationSeconds: prepared.ExpectedDurationSeconds,
-            ExpectedAudio: intent.AudioOnly ? true : prepared.ExpectedAudio, ResolvedHlsLeaf: prepared.ResolvedHlsLeaf);
+            ExpectedAudio: intent.AudioOnly ? true : prepared.ExpectedAudio,
+            ResolvedHlsLeaf: prepared.ResolvedHlsLeaf,
+            EgressCapabilityId: prepared.EgressCapabilityId,
+            EgressEndpoint: prepared.EgressEndpoint);
     }
 
     public static async Task<DownloadRequest> PrepareAsync(UserDownloadIntent intent,

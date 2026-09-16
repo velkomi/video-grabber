@@ -5,16 +5,24 @@ using VideoGrabber.Core.Security;
 using VideoGrabber.Infrastructure.Media;
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Components;
+using VideoGrabber.Infrastructure.Networking;
 
 namespace VideoGrabber.Infrastructure.Downloads;
 
-public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IMediaProbe? probe = null) : IVideoDownloader
+public sealed class YtDlpDownloader(
+    IProcessRunner runner,
+    ToolLocator tools,
+    IMediaProbe? probe = null,
+    IManagedEgressSessionRegistry? egressRegistry = null) : IVideoDownloader
 {
+    private readonly IManagedEgressSessionRegistry _egressRegistry = egressRegistry ?? new ManagedEgressSessionRegistry();
+
     public async Task<DownloadResult> DownloadAsync(
         DownloadRequest request,
         IProgress<DownloadProgress>? progress,
         CancellationToken cancellationToken)
     {
+        using var defaultEgress = EnsureDefaultEgress(ref request);
         cancellationToken.ThrowIfCancellationRequested();
         using var job = DiagnosticHub.Begin("download", request.Source.Host);
         using var cancelLog = cancellationToken.Register(job.Cancel);
@@ -74,7 +82,8 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             "--progress-template", "download:videograbber:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.fragment_index)s|%(progress.fragment_count)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "--print", "after_move:filepath:%(filepath)s",
             "--progress",
-            "--remote-components", "ejs:github",
+            "--no-remote-components",
+            "--downloader", "native",
             "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg,
             "-f", SelectFormat(request, quality),
             "--merge-output-format", "mp4",
@@ -83,13 +92,14 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
 
         if (request.DirectManifest) arguments.AddRange(["--use-extractors", "generic"]);
 
-        if (request.LocalProxy is not null)
+        try
         {
-            if (!Uri.TryCreate(request.LocalProxy, UriKind.Absolute, out var proxy) || proxy.Scheme != "socks5"
-                || proxy.Host != "127.0.0.1" || proxy.Port is < 1024 or > 65535 || !string.IsNullOrEmpty(proxy.UserInfo)
-                || proxy.AbsolutePath != "/" || !string.IsNullOrEmpty(proxy.Query) || !string.IsNullOrEmpty(proxy.Fragment))
-                return Fail(new(false, "Invalid local routing endpoint."), workspace);
-            arguments.AddRange(["--proxy", "socks5h://127.0.0.1:" + proxy.Port]);
+            if (ResolveManagedProxy(request) is { } proxy)
+                arguments.AddRange(["--proxy", "socks5h://127.0.0.1:" + proxy.Port]);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Fail(new(false, "Managed egress validation failed.", Details: ex.Message), workspace);
         }
         if (File.Exists(tools.Deno))
         {
@@ -209,7 +219,8 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
                 throw new InvalidOperationException("HLS tracks are outside the owned job directory.");
             progress?.Report(new DownloadProgress(null, "Объединяю видео и аудио…"));
             var merge = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
-                ["-hide_banner", "-nostdin", "-n", "-i", video.OutputPath, "-i", audio.OutputPath,
+                ["-hide_banner", "-nostdin", "-n", "-protocol_whitelist", "file,pipe",
+                 "-i", video.OutputPath, "-i", audio.OutputPath,
                  "-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-movflags", "+faststart", mergedTemp],
                 tempRoot), null, cancellationToken).ConfigureAwait(false);
             workspace.DiscoverCreatedFiles();
@@ -271,7 +282,8 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
             "--ignore-config", "--no-overwrites", "--abort-on-unavailable-fragment", "--retries", "3", "--fragment-retries", "3", "--socket-timeout", "25",
             "--newline", "--no-playlist", "--progress", "--progress-delta", "0.25",
             "--progress-template", "download:videograbber:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.fragment_index)s|%(progress.fragment_count)s|%(progress._speed_str)s|%(progress._eta_str)s",
-            "--print", "after_move:filepath:%(filepath)s", "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg,
+            "--print", "after_move:filepath:%(filepath)s", "--no-remote-components",
+            "--downloader", "native", "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg,
             "-f", "best", "--merge-output-format", "mp4", "-o", outputTemplate
         };
         if (request.DirectManifest) args.AddRange(["--use-extractors", "generic"]);
@@ -282,18 +294,48 @@ public sealed class YtDlpDownloader(IProcessRunner runner, ToolLocator tools, IM
 
     private void AppendSessionArguments(List<string> arguments, DownloadRequest request)
     {
-        if (request.LocalProxy is not null)
-        {
-            if (!Uri.TryCreate(request.LocalProxy, UriKind.Absolute, out var proxy) || proxy.Scheme != "socks5"
-                || proxy.Host != "127.0.0.1" || proxy.Port is < 1024 or > 65535 || !string.IsNullOrEmpty(proxy.UserInfo))
-                throw new InvalidOperationException("Invalid local routing endpoint.");
+        if (ResolveManagedProxy(request) is { } proxy)
             arguments.AddRange(["--proxy", "socks5h://127.0.0.1:" + proxy.Port]);
-        }
         if (!string.IsNullOrWhiteSpace(request.CookiesFile)) arguments.AddRange(["--cookies", request.CookiesFile]);
         else if (!string.IsNullOrWhiteSpace(request.CookiesFromBrowser)) arguments.AddRange(["--cookies-from-browser", request.CookiesFromBrowser]);
         if (request.Referer is not null) arguments.AddRange(["--referer", request.Referer.AbsoluteUri]);
         if (!string.IsNullOrWhiteSpace(request.UserAgent) && request.UserAgent.Length <= 1024 && request.UserAgent.IndexOfAny(['\r', '\n']) < 0)
             arguments.AddRange(["--user-agent", request.UserAgent]);
+    }
+
+    private DownloadEgressSession? EnsureDefaultEgress(ref DownloadRequest request)
+    {
+        var hasAny = request.LocalProxy is not null
+            || request.EgressCapabilityId is not null || request.EgressEndpoint is not null;
+        if (hasAny) return null;
+        var session = new DownloadEgressSession(_egressRegistry,
+            new RouteConnector(new SiteRouteSettings([])).OpenAsync,
+            new EgressPolicy("default-public", PublicOnly: true));
+        var lease = session.Lease;
+        request = request with
+        {
+            LocalProxy = lease.ProxyUri.AbsoluteUri,
+            EgressCapabilityId = lease.Id,
+            EgressEndpoint = lease.ProxyUri
+        };
+        return session;
+    }
+
+    private Uri? ResolveManagedProxy(DownloadRequest request)
+    {
+        var hasAny = request.LocalProxy is not null
+            || request.EgressCapabilityId is not null || request.EgressEndpoint is not null;
+        if (!hasAny) return null;
+        if (request.LocalProxy is null || request.EgressCapabilityId is not Guid id
+            || request.EgressEndpoint is not Uri endpoint)
+            throw new InvalidOperationException("Managed egress capability is required for local proxy use.");
+        if (!Uri.TryCreate(request.LocalProxy, UriKind.Absolute, out var proxy)
+            || !string.Equals(proxy.AbsoluteUri, endpoint.AbsoluteUri, StringComparison.Ordinal))
+            throw new InvalidOperationException("Egress endpoint mismatch.");
+        var lease = _egressRegistry.Resolve(id, endpoint);
+        if (!string.Equals(lease.ProxyUri.AbsoluteUri, endpoint.AbsoluteUri, StringComparison.Ordinal))
+            throw new InvalidOperationException("Egress capability endpoint mismatch.");
+        return lease.ProxyUri;
     }
 
     private static bool IsMediaOutput(string path)

@@ -32,12 +32,13 @@ public sealed partial class MainWindow
         foreach (var source in selected.Distinct())
         {
             if (_verifiedClearHls.ContainsKey(source.AbsoluteUri)) continue;
-            var routeProxy = EnsureRoutingProxy(source, candidate.Referer, routeScope);
+            var egress = EnsureDownloadEgress(source, candidate.Referer, routeScope);
             var userAgent = core!.Settings.UserAgent;
-            var result = await new HlsPreflightClient().FetchAsync(
+            var result = await new HlsPreflightClient(egressResolver: _egressRegistry).FetchAsync(
                 source,
-                new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl,
-                    CookieProvider: (uri, token) => BuildBrowserCookieHeaderAsync(uri, lease, core!, token)),
+                new HlsPreflightFetchOptions(candidate.Referer, userAgent, egress.ProxyUri.AbsoluteUri,
+                    CookieProvider: (uri, token) => BuildBrowserCookieHeaderAsync(uri, lease, core!, token),
+                    EgressCapabilityId: egress.Id, EgressEndpoint: egress.ProxyUri),
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!IsCurrentBrowserPage(lease, core)) throw new OperationCanceledException("Browser page changed.");
@@ -77,11 +78,13 @@ public sealed partial class MainWindow
                     .OrderBy(item => item.Bandwidth ?? long.MaxValue)
                     .ThenBy(item => item.Height ?? int.MaxValue)
                     .First();
-                var routeProxy = EnsureRoutingProxy(variant.Uri, candidate.Referer);
+                using var durationRouteScope = new DownloadRouteScope(_routePolicy);
+                var egress = EnsureDownloadEgress(variant.Uri, candidate.Referer, durationRouteScope);
                 var userAgent = core.Settings.UserAgent;
-                var result = await new HlsPreflightClient().FetchAsync(variant.Uri,
-                    new HlsPreflightFetchOptions(candidate.Referer, userAgent, routeProxy?.ProxyUrl,
-                        CookieProvider: (uri, cookieToken) => BuildBrowserCookieHeaderAsync(uri, lease, core, cookieToken)), token);
+                var result = await new HlsPreflightClient(egressResolver: _egressRegistry).FetchAsync(variant.Uri,
+                    new HlsPreflightFetchOptions(candidate.Referer, userAgent, egress.ProxyUri.AbsoluteUri,
+                        CookieProvider: (uri, cookieToken) => BuildBrowserCookieHeaderAsync(uri, lease, core, cookieToken),
+                        EgressCapabilityId: egress.Id, EgressEndpoint: egress.ProxyUri), token);
                 token.ThrowIfCancellationRequested();
                 if (!IsCurrentBrowserPage(lease, core)) return;
                 var duration = HlsDownloadPolicy.RecordDurationProbeResult(_verifiedClearHls, variant.Uri, result);

@@ -10,6 +10,7 @@ public sealed partial class MainWindow
 {
     private SiteRouteSettings _routes = new([]);
     private readonly SiteRoutePolicy _routePolicy = new(new SiteRouteSettings([]));
+    private readonly ManagedEgressSessionRegistry _egressRegistry = new();
     private SiteRouteProxy? _routeProxy;
     private string? _routeReadError;
     private TextBox _routeHost = null!;
@@ -126,6 +127,13 @@ public sealed partial class MainWindow
         if (routeScope is not null) return routeScope.ResolveProxy(_routes, source, referer);
         if (DownloadRouteResolver.ResolveAdapterId(_routePolicy, _routes, source, referer) is null) return null;
         return _routeProxy ??= new SiteRouteProxy(new RouteConnector(_routePolicy).OpenAsync);
+    }
+
+    private EgressSessionLease EnsureDownloadEgress(Uri source, Uri? referer, DownloadRouteScope routeScope)
+    {
+        if (_routeReadError is not null)
+            throw new InvalidOperationException("Исправьте файл правил подключения в разделе «Компоненты»: " + _routeReadError);
+        return routeScope.ResolveEgress(_egressRegistry, _routes, source, referer);
     }
     private async Task CheckSiteRouteAsync()
     {

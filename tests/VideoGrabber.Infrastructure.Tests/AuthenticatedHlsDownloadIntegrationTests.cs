@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -34,6 +34,7 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         Assert.True(File.Exists(playlist));
 
         await using var server = new HlsFixture(mediaRoot);
+        using var egress = ManagedEgressFixture.RegisterListener("direct-hls", server.Playlist);
         using var anonymous = new HttpClient();
         using var denied = await anonymous.GetAsync(server.Playlist, deadline.Token);
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
@@ -44,10 +45,10 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
             [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]))
         {
             cookiePath = cookies.Path;
-            result = await new YtDlpDownloader(runner, tools).DownloadAsync(
-                new DownloadRequest(server.Playlist, Path.Combine(root, "output"), "best",
+            result = await new YtDlpDownloader(runner, tools, egressRegistry: egress.Registry).DownloadAsync(
+                egress.Apply(new DownloadRequest(server.Playlist, Path.Combine(root, "output"), "best",
                     CookiesFile: cookiePath, Referer: server.Lesson, UserAgent: "VideoGrabber-HLS-Test",
-                    ExpectedDurationSeconds: 3, ExpectedAudio: true),
+                    ExpectedDurationSeconds: 3, ExpectedAudio: true)),
                 null, deadline.Token);
         }
         Assert.False(File.Exists(cookiePath));
@@ -81,13 +82,14 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         var segments = File.ReadAllLines(playlist).Where(line => line.EndsWith(".ts", StringComparison.Ordinal)).ToArray();
         Assert.True(segments.Length >= 3);
         await using var server = new HlsFixture(mediaRoot, unavailableFile: segments[^1]);
+        using var egress = ManagedEgressFixture.RegisterListener("missing-tail", server.Playlist);
         using var cookies = ScopedCookieFile.Create([server.Playlist, server.Lesson],
             [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]);
         var recording = new RecordingRunner(runner, tools.YtDlp);
         var output = Path.Combine(root, "output");
-        var result = await new YtDlpDownloader(recording, tools).DownloadAsync(
-            new DownloadRequest(server.Playlist, output, "best", CookiesFile: cookies.Path, Referer: server.Lesson,
-                DirectManifest: true, SuggestedBaseName: "Missing tail", ExpectedDurationSeconds: 6, ExpectedAudio: true),
+        var result = await new YtDlpDownloader(recording, tools, egressRegistry: egress.Registry).DownloadAsync(
+            egress.Apply(new DownloadRequest(server.Playlist, output, "best", CookiesFile: cookies.Path, Referer: server.Lesson,
+                DirectManifest: true, SuggestedBaseName: "Missing tail", ExpectedDurationSeconds: 6, ExpectedAudio: true)),
             null, deadline.Token);
         Assert.False(result.Success);
         Assert.Null(result.OutputPath);
@@ -249,6 +251,7 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
             """, deadline.Token);
 
         await using var server = new HlsFixture(mediaRoot, "master-split.m3u8");
+        using var egress = ManagedEgressFixture.RegisterListener("split-hls", server.Playlist);
         var manifestText = await File.ReadAllTextAsync(master, deadline.Token);
         Assert.True(HlsManifestParser.TryParse(manifestText, new Uri("https://cdn.example/master-split.m3u8"), out var manifest));
         Assert.Single(manifest!.AudioRenditions);
@@ -261,10 +264,10 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         using (var cookies = ScopedCookieFile.Create([server.Playlist, server.Lesson, videoUri, audioUri],
             [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]))
         {
-            result = await new YtDlpDownloader(runner, tools).DownloadAsync(
-                new DownloadRequest(server.Playlist, Path.Combine(root, "output"), "best",
+            result = await new YtDlpDownloader(runner, tools, egressRegistry: egress.Registry).DownloadAsync(
+                egress.Apply(new DownloadRequest(server.Playlist, Path.Combine(root, "output"), "best",
                     CookiesFile: cookies.Path, Referer: server.Lesson, UserAgent: "VideoGrabber-Split-HLS-Test",
-                    HlsVideoSource: videoUri, HlsAudioSource: audioUri, ExpectedDurationSeconds: 3, ExpectedAudio: true),
+                    HlsVideoSource: videoUri, HlsAudioSource: audioUri, ExpectedDurationSeconds: 3, ExpectedAudio: true)),
                 null, deadline.Token);
         }
         Assert.True(result.Success, result.Message + "\n" + result.Details);
@@ -300,12 +303,13 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
              "-hls_segment_filename", Path.Combine(mediaRoot, "audio%03d.ts"), Path.Combine(mediaRoot, "audio.m3u8")]), null, deadline.Token);
         Assert.True(audio.IsSuccess, audio.StandardError);
         await using var server = new HlsFixture(mediaRoot, "audio.m3u8");
+        using var egress = ManagedEgressFixture.RegisterListener("audio-only-hls", server.Playlist);
         var missingVideo = new Uri(server.Playlist, "missing-video.m3u8");
         using var cookies = ScopedCookieFile.Create([server.Playlist, server.Lesson],
             [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]);
-        var result = await new YtDlpDownloader(runner, tools).DownloadAsync(
-            new DownloadRequest(server.Playlist, Path.Combine(root, "output"), "best", AudioOnly: true,
-                CookiesFile: cookies.Path, Referer: server.Lesson, HlsVideoSource: missingVideo, HlsAudioSource: server.Playlist),
+        var result = await new YtDlpDownloader(runner, tools, egressRegistry: egress.Registry).DownloadAsync(
+            egress.Apply(new DownloadRequest(server.Playlist, Path.Combine(root, "output"), "best", AudioOnly: true,
+                CookiesFile: cookies.Path, Referer: server.Lesson, HlsVideoSource: missingVideo, HlsAudioSource: server.Playlist)),
             null, deadline.Token);
         Assert.True(result.Success, result.Message + "\n" + result.Details);
         var probe = await new VideoGrabber.Infrastructure.Media.FfprobeMediaProbe(runner, tools).ProbeAsync(result.OutputPath!, deadline.Token);

@@ -95,10 +95,10 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("new DownloadRouteScope(window._routePolicy", preparation);
         Assert.Contains("routeScope.Dispose();", preparation);
         Assert.DoesNotContain("WouldConfigureSession", preparation);
-        Assert.Contains("EnsureRoutingProxy(selected.Source, selected.Referer, routeScope)", preparation);
+        Assert.Contains("EnsureDownloadEgress(selected.Source, selected.Referer, routeScope)", preparation);
         var preflight = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.HlsPreflight.cs"));
-        Assert.Contains("EnsureRoutingProxy(source, candidate.Referer, routeScope)", preflight);
-        Assert.Contains("EnsureRoutingProxy(variant.Uri, candidate.Referer)", preflight);
+        Assert.Contains("EnsureDownloadEgress(source, candidate.Referer, routeScope)", preflight);
+        Assert.Contains("EnsureDownloadEgress(variant.Uri, candidate.Referer, durationRouteScope)", preflight);
         Assert.DoesNotContain("_routePolicy.ClearSession();", preparation);
     }
 }

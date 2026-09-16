@@ -17,4 +17,6 @@ public sealed record DownloadRequest(
     string? JobDirectory = null,
     double? ExpectedDurationSeconds = null,
     bool? ExpectedAudio = null,
-    bool ResolvedHlsLeaf = false);
+    bool ResolvedHlsLeaf = false,
+    Guid? EgressCapabilityId = null,
+    Uri? EgressEndpoint = null);

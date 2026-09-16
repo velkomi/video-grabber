@@ -1,3 +1,5 @@
+using VideoGrabber.Core.Security;
+
 namespace VideoGrabber.Infrastructure.Networking;
 
 public static class DownloadRouteResolver
@@ -49,6 +51,7 @@ public sealed class DownloadRouteScope : IDisposable
     private readonly SiteRoutePolicy.SessionScope _sessionScope;
     private readonly SiteRouteProxy? _browserProxy;
     private SiteRouteProxy? _ownedProxy;
+    private DownloadEgressSession? _ownedEgress;
     private bool _disposed;
 
     public DownloadRouteScope(SiteRoutePolicy policy, SiteRouteProxy? browserProxy = null)
@@ -65,11 +68,25 @@ public sealed class DownloadRouteScope : IDisposable
         return _browserProxy ?? (_ownedProxy ??= new SiteRouteProxy(new RouteConnector(_policy).OpenAsync));
     }
 
+    public EgressSessionLease ResolveEgress(IManagedEgressSessionRegistry registry,
+        SiteRouteSettings saved, Uri source, Uri? referer)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _ = DownloadRouteResolver.ResolveAdapterId(_policy, saved, source, referer, _sessionScope);
+        _ownedEgress ??= new DownloadEgressSession(registry, new RouteConnector(_policy).OpenAsync,
+            new EgressPolicy("download", PublicOnly: true));
+        return _ownedEgress.Lease;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        try { _ownedProxy?.Dispose(); }
-        finally { _sessionScope.Dispose(); }
+        try { _ownedEgress?.Dispose(); }
+        finally
+        {
+            try { _ownedProxy?.Dispose(); }
+            finally { _sessionScope.Dispose(); }
+        }
     }
 }

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
@@ -23,6 +23,7 @@ public sealed class AuditNetworkRegressionTests
         var initial = new Uri($"http://127.0.0.1:{port}/source/master.m3u8");
         var redirected = new Uri($"http://localhost:{port}/target/master.m3u8");
         const string cookie = "audit_cookie=synthetic_only";
+        using var egress = ManagedEgressFixture.RegisterListener("cross-host-preflight", initial);
         var server = ServeRedirectAsync(listener, redirected, deadline.Token);
         try
         {
@@ -47,8 +48,10 @@ public sealed class AuditNetworkRegressionTests
                     catch { socket.Dispose(); throw; }
                 };
                 return handler;
-            });
-            var response = await client.FetchAsync(initial, new HlsPreflightFetchOptions(CookieHeader: cookie), deadline.Token);
+            }, egress.Registry);
+            var response = await client.FetchAsync(initial, new HlsPreflightFetchOptions(
+                LocalProxy: egress.Lease.ProxyUri.AbsoluteUri, CookieHeader: cookie,
+                EgressCapabilityId: egress.Lease.Id, EgressEndpoint: egress.Lease.ProxyUri), deadline.Token);
             var observed = await server;
             Assert.True(response.Success, response.Error);
             Assert.Contains("Cookie: audit_cookie=synthetic_only", observed.Source, StringComparison.OrdinalIgnoreCase);
@@ -153,14 +156,8 @@ public sealed class AuditNetworkRegressionTests
         Assert.Equal(expectedRequests, observed.RequestCount);
     }
 
-    // Resolve the new public contract at runtime so these tests build and fail against the old client.
     internal static HlsPreflightFetchOptions WithCookieProvider(Func<Uri, CancellationToken, Task<string?>> provider)
-    {
-        var constructor = typeof(HlsPreflightFetchOptions).GetConstructors()
-            .SingleOrDefault(item => item.GetParameters().Length == 5);
-        Assert.NotNull(constructor);
-        return (HlsPreflightFetchOptions)constructor.Invoke([null, null, null, "raw_cookie=must_not_win", provider]);
-    }
+        => new(CookieHeader: "raw_cookie=must_not_win", CookieProvider: provider);
 
     private static async Task<(HlsPreflightFetchResult Result, string Source, string Target, int RequestCount)> RunCookieRedirectAsync(
         string sourceHost, string sourcePath, string location, int status,

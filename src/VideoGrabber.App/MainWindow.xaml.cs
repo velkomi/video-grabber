@@ -82,7 +82,7 @@ public sealed partial class MainWindow : Window
         AppDiagnostics.Write("Code-only host initialized");
 
         var runner = new ProcessRunner();
-        _downloader = new YtDlpDownloader(runner, _tools);
+        _downloader = new YtDlpDownloader(runner, _tools, egressRegistry: _egressRegistry);
         _editor = new FfmpegVideoEditor(runner, _tools);
         _rootHost.Children.Add(BuildShell());
         InitializeTheme();

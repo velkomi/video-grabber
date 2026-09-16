@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using VideoGrabber.Core.Security;
 
 namespace VideoGrabber.Infrastructure.Browser;
 
@@ -143,8 +142,8 @@ public static partial class HlsManifestParser
         try
         {
             var resolved = Uri.TryCreate(value, UriKind.Absolute, out var absolute) ? absolute : new Uri(source, value);
-            if (!UrlPolicy.TryValidate(resolved.AbsoluteUri, out var safe, out _) || safe is null || !string.IsNullOrEmpty(safe.UserInfo)) return false;
-            uri = safe;
+            if (!resolved.IsAbsoluteUri || resolved.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(resolved.UserInfo)) return false;
+            uri = resolved;
             return true;
         }
         catch (UriFormatException) { return false; }

@@ -28,6 +28,7 @@ public sealed class AuthenticatedDownloadIntegrationTests
              null, deadline.Token);
         Assert.True(generated.IsSuccess, generated.StandardError);
         await using var server = new AuthFixture(await File.ReadAllBytesAsync(source, deadline.Token));
+        using var egress = ManagedEgressFixture.RegisterListener("authenticated-download", server.Media);
         using var client = new HttpClient();
         using var anonymous = await client.GetAsync(server.Media, deadline.Token);
         Assert.Equal(HttpStatusCode.Forbidden, anonymous.StatusCode);
@@ -38,9 +39,9 @@ public sealed class AuthenticatedDownloadIntegrationTests
             [new BrowserCookie("127.0.0.1", "/", "vg_session", "fixture-only", false, true)]))
         {
             cookiePath = cookies.Path;
-            result = await new YtDlpDownloader(runner, tools).DownloadAsync(
-                new DownloadRequest(server.Media, Path.Combine(root, "output"), "best", CookiesFile: cookiePath, Referer: server.Lesson),
-                progress, deadline.Token);
+            result = await new YtDlpDownloader(runner, tools, egressRegistry: egress.Registry).DownloadAsync(
+                egress.Apply(new DownloadRequest(server.Media, Path.Combine(root, "output"), "best",
+                    CookiesFile: cookiePath, Referer: server.Lesson)), progress, deadline.Token);
         }
         Assert.False(File.Exists(cookiePath));
         Assert.True(result.Success, result.Message);

@@ -14,12 +14,14 @@ public sealed class SiteRouteProxy : IDisposable
     private readonly ConcurrentDictionary<Stream, byte> _upstreams = new();
     private readonly SemaphoreSlim _slots = new(32, 32);
     private readonly Func<string, int, CancellationToken, Task<Stream>> _connect;
+    private readonly Action<string, int> _validateTarget;
     private int _disposed;
     public int Port { get; }
     public string ProxyUrl => "socks5://127.0.0.1:" + Port;
-    public SiteRouteProxy(Func<string, int, CancellationToken, Task<Stream>> connect)
+    public SiteRouteProxy(Func<string, int, CancellationToken, Task<Stream>> connect, Action<string, int>? validateTarget = null)
     {
         _connect = connect;
+        _validateTarget = validateTarget ?? RouteConnector.ValidateProxyTarget;
         _listener.Start(32);
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _ = AcceptAsync();
@@ -75,7 +77,7 @@ public sealed class SiteRouteProxy : IDisposable
             var port = portBytes[0] * 256 + portBytes[1];
             targetHost = host;
             targetPort = port;
-            RouteConnector.ValidateProxyTarget(host, port);
+            _validateTarget(host, port);
             upstream = await _connect(host, port, deadline.Token).ConfigureAwait(false);
             _upstreams.TryAdd(upstream, 0);
             await stream.WriteAsync(new byte[] { 5, 0, 0, 1, 0, 0, 0, 0, 0, 0 }, deadline.Token).ConfigureAwait(false);
