@@ -87,7 +87,10 @@ public sealed class MigrationAcceptanceTests
             "select count(*), min(length(sha256)) from vg_migrations.applied_migrations", connection);
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
-        Assert.Equal(1L, reader.GetInt64(0));
+        var expected = typeof(MigrationRunner).Assembly.GetManifestResourceNames()
+            .Count(name => name.Contains(".Migrations.", StringComparison.Ordinal)
+                && name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal((long)expected, reader.GetInt64(0));
         Assert.Equal(64, reader.GetInt32(1));
     }
 }

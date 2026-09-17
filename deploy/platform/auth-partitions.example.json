@@ -1,0 +1,39 @@
+{
+  "BrokerPartitions": {
+    "google": {
+      "Provider": "google",
+      "Issuer": "https://google-auth.example.invalid/",
+      "Audience": "videograbber-google",
+      "CallbackUri": "https://api.example.invalid/v1/auth/broker/callback",
+      "ProviderKey": "google"
+    },
+    "apple": {
+      "Provider": "apple",
+      "Issuer": "https://apple-auth.example.invalid/",
+      "Audience": "videograbber-apple",
+      "CallbackUri": "https://api.example.invalid/v1/auth/broker/callback",
+      "ProviderKey": "apple"
+    },
+    "yandex": {
+      "Provider": "yandex",
+      "Issuer": "https://yandex-auth.example.invalid/",
+      "Audience": "videograbber-yandex",
+      "CallbackUri": "https://api.example.invalid/v1/auth/broker/callback",
+      "ProviderKey": "yandex"
+    },
+    "telegram": {
+      "Provider": "telegram",
+      "Issuer": "https://telegram-auth.example.invalid/",
+      "Audience": "videograbber-telegram",
+      "CallbackUri": "https://api.example.invalid/v1/auth/broker/callback",
+      "ProviderKey": "telegram"
+    },
+    "email": {
+      "Provider": "email",
+      "Issuer": "https://email-auth.example.invalid/",
+      "Audience": "videograbber-email",
+      "CallbackUri": "https://api.example.invalid/v1/auth/broker/callback",
+      "ProviderKey": "email"
+    }
+  }
+}

@@ -1,17 +1,44 @@
-using System.Text.Encodings.Web;
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.Extensions.Options;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using VideoGrabber.Platform.Api.Accounts;
+using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
+var sessionJwt = SessionJwtOptions.FromConfiguration(builder.Configuration);
 
-builder.Services.AddAuthentication("RejectAll")
-    .AddScheme<AuthenticationSchemeOptions, RejectAllAuthenticationHandler>(
-        "RejectAll", _ => { });
+builder.Services.AddSingleton(sessionJwt);
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = sessionJwt.Issuer,
+            ValidateAudience = true,
+            ValidAudience = sessionJwt.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(sessionJwt.SigningKey),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+            ValidAlgorithms = [SecurityAlgorithms.HmacSha256]
+        };
+    });
 builder.Services.AddAuthorization();
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IReadOnlyDictionary<string, BrokerPartitionOptions>>(sp =>
+    BrokerPartitionConfiguration.Load(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<SessionStore>();
+builder.Services.AddSingleton<IBrokerCodeExchange, UnavailableBrokerCodeExchange>();
+builder.Services.AddSingleton<IBrokerSigningKeySource, HttpBrokerSigningKeySource>();
+builder.Services.AddSingleton<IBrokerUserInfoSource, HttpBrokerUserInfoSource>();
+builder.Services.AddSingleton<IBrokerBindingStore>(sp => sp.GetRequiredService<SessionStore>());
+builder.Services.AddSingleton<IBrokerTokenValidator, BrokerTokenValidator>();
+builder.Services.AddSingleton<ProviderFlow>();
 builder.Services.AddSingleton(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -21,6 +48,7 @@ builder.Services.AddSingleton(sp =>
     return NpgsqlDataSource.Create(dsn);
 });
 builder.Services.AddSingleton<IAccountStore, AccountStore>();
+builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 
 var app = builder.Build();
 
@@ -42,20 +70,10 @@ app.Use(async (context, next) =>
     }
     await next();
 });
-
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAccountEndpoints();
+app.MapSessionEndpoints();
 app.Run();
 
 public partial class Program;
-
-file sealed class RejectAllAuthenticationHandler(
-    IOptionsMonitor<AuthenticationSchemeOptions> options,
-    ILoggerFactory logger,
-    UrlEncoder encoder)
-    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
-{
-    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
-        => Task.FromResult(AuthenticateResult.NoResult());
-}

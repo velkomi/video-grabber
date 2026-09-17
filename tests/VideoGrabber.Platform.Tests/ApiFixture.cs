@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
 
@@ -26,12 +30,14 @@ public sealed class ApiFixture : IAsyncDisposable
         NpgsqlDataSource database,
         NpgsqlDataSource apiDataSource,
         NpgsqlDataSource identityDataSource,
-        AdjustableTimeProvider clock)
+        AdjustableTimeProvider clock,
+        BrokerEmulator broker)
     {
         Database = database;
         _apiDataSource = apiDataSource;
         _identityDataSource = identityDataSource;
         Clock = clock;
+        Broker = broker;
         _factory = CreateFactory();
         Anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
@@ -41,6 +47,8 @@ public sealed class ApiFixture : IAsyncDisposable
 
     public NpgsqlDataSource Database { get; }
     public AdjustableTimeProvider Clock { get; }
+    public BrokerEmulator Broker { get; }
+    public System.Collections.Concurrent.ConcurrentQueue<string> Logs { get; } = new();
     public HttpClient Anonymous { get; private set; }
 
     public static async Task<ApiFixture> StartAsync()
@@ -66,7 +74,8 @@ public sealed class ApiFixture : IAsyncDisposable
 
         var apiDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_api"));
         var identityDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_identity"));
-        return new ApiFixture(database, apiDataSource, identityDataSource, new AdjustableTimeProvider());
+        return new ApiFixture(database, apiDataSource, identityDataSource,
+            new AdjustableTimeProvider(), new BrokerEmulator());
     }
 
     public async Task<TestAccount> AccountAsync(
@@ -74,10 +83,23 @@ public sealed class ApiFixture : IAsyncDisposable
         string subject,
         string? verifiedEmail = null)
     {
-        var client = CreateIdentityClient(provider, subject, verifiedEmail);
-        var response = await client.GetAsync("/v1/me");
-        response.EnsureSuccessStatusCode();
-        var profile = await response.Content.ReadFromJsonAsync<AccountProfile>()
+        const string verifier = "fixture-account-verifier-0123456789";
+        var begin = await Anonymous.PostAsJsonAsync("/v1/auth/start",
+            new BeginSignIn(provider, new Uri("https://client.example.test/auth/complete"), Pkce(verifier)));
+        begin.EnsureSuccessStatusCode();
+        var started = await begin.Content.ReadFromJsonAsync<SignInStart>()
+            ?? throw new InvalidDataException("Sign-in start response was empty.");
+        var state = QueryValue(started.AuthorizationUri, "state");
+        var nonce = QueryValue(started.AuthorizationUri, "nonce");
+        var code = Broker.RegisterCode(Partition(provider), subject, nonce,
+            Clock.GetUtcNow().AddMinutes(5), verifiedEmail);
+        var completed = await Anonymous.PostAsJsonAsync("/v1/auth/complete",
+            new CompleteSignIn(started.FlowId, code, state, verifier));
+        completed.EnsureSuccessStatusCode();
+        var session = await completed.Content.ReadFromJsonAsync<ApiSession>()
+            ?? throw new InvalidDataException("API session response was empty.");
+        var client = SessionClient(session);
+        var profile = await client.GetFromJsonAsync<AccountProfile>("/v1/me")
             ?? throw new InvalidDataException("Profile response was empty.");
         return new TestAccount(profile.AccountId, client);
     }
@@ -110,29 +132,45 @@ public sealed class ApiFixture : IAsyncDisposable
     {
         Anonymous.Dispose();
         _factory.Dispose();
+        Broker.Dispose();
         await _identityDataSource.DisposeAsync();
         await _apiDataSource.DisposeAsync();
         await Database.DisposeAsync();
     }
 
-    private HttpClient CreateIdentityClient(
-        string provider,
-        string subject,
-        string? verifiedEmail)
+
+    public HttpClient SessionClient(ApiSession session)
     {
         var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });
-        client.DefaultRequestHeaders.Add("X-Test-Provider", provider);
-        client.DefaultRequestHeaders.Add("X-Test-Subject", subject);
-        if (!string.IsNullOrWhiteSpace(verifiedEmail))
-            client.DefaultRequestHeaders.Add("X-Test-Email", verifiedEmail);
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", session.AccessToken);
         return client;
     }
 
+    public BrokerPartitionOptions Partition(string provider)
+        => PlatformApiFactory.TestPartitions()[provider];
+
+    private static string Pkce(string verifier)
+        => Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.ASCII.GetBytes(verifier)))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    private static string QueryValue(Uri uri, string name)
+    {
+        foreach (var item in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = item.Split('=', 2);
+            if (pair.Length == 2 && Uri.UnescapeDataString(pair[0]) == name)
+                return Uri.UnescapeDataString(pair[1]);
+        }
+        throw new InvalidDataException($"Missing query value {name}.");
+    }
+
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, Clock);
+        => new(_apiDataSource, _identityDataSource, Clock, Broker, Logs);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -156,72 +194,71 @@ public sealed class ApiFixture : IAsyncDisposable
 internal sealed class PlatformApiFactory(
     NpgsqlDataSource apiDataSource,
     NpgsqlDataSource identityDataSource,
-    AdjustableTimeProvider clock) : WebApplicationFactory<Program>
+    AdjustableTimeProvider clock,
+    BrokerEmulator broker,
+    ConcurrentQueue<string> logs) : WebApplicationFactory<Program>
 {
+    internal const string TestSessionKey = "test-only-videograbber-session-signing-key-2026";
+
+    internal static IReadOnlyDictionary<string, BrokerPartitionOptions> TestPartitions()
+        => new[] { "google", "apple", "yandex", "telegram", "email" }
+            .ToDictionary(
+                provider => provider,
+                provider => new BrokerPartitionOptions(
+                    provider,
+                    new Uri($"https://{provider}.broker.test/"),
+                    "videograbber-test",
+                    new Uri("https://api.example.test/auth/callback"),
+                    provider),
+                StringComparer.OrdinalIgnoreCase);
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(new CapturingLoggerProvider(logs)); });
+        builder.UseSetting("VG_PLATFORM_SESSION_SIGNING_KEY", TestSessionKey);
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<NpgsqlDataSource>();
+            services.RemoveAll<TimeProvider>();
+            services.RemoveAll<IReadOnlyDictionary<string, BrokerPartitionOptions>>();
+            services.AddSingleton<TimeProvider>(clock);
+            services.AddSingleton<IReadOnlyDictionary<string, BrokerPartitionOptions>>(
+                TestPartitions());
             services.RemoveAll<IAccountStore>();
+            services.RemoveAll<IIdentityAccountResolver>();
+            services.RemoveAll<IBrokerCodeExchange>();
+            services.RemoveAll<IBrokerSigningKeySource>();
+            services.RemoveAll<IBrokerUserInfoSource>();
             services.AddSingleton(apiDataSource);
             services.AddSingleton<IAccountStore>(_ => new AccountStore(apiDataSource));
-            services.AddSingleton(new TestIdentityResolver(new AccountStore(identityDataSource), clock));
-            services.AddAuthentication(options =>
-                {
-                    options.DefaultAuthenticateScheme = "TestIdentity";
-                    options.DefaultChallengeScheme = "TestIdentity";
-                })
-                .AddScheme<AuthenticationSchemeOptions, TestIdentityAuthenticationHandler>(
-                    "TestIdentity", _ => { });
+            services.AddSingleton<IIdentityAccountResolver>(
+                _ => new TestIdentityResolver(new AccountStore(identityDataSource)));
+            services.AddSingleton<IBrokerCodeExchange>(broker);
+            services.AddSingleton<IBrokerSigningKeySource>(broker);
+            services.AddSingleton<IBrokerUserInfoSource>(broker);
         });
     }
 }
 
-file sealed class TestIdentityResolver(
-    AccountStore store,
-    AdjustableTimeProvider clock)
+file sealed class TestIdentityResolver(AccountStore store) : IIdentityAccountResolver
 {
     public Task<AccountProfile> ResolveAsync(
-        string provider,
-        string subject,
-        string? email,
+        VerifiedIdentity identity,
         CancellationToken cancellationToken)
-        => store.ResolveAsync(new VerifiedIdentity(
-            $"https://{provider}.issuer.test",
-            provider,
-            subject,
-            email,
-            clock.GetUtcNow(),
-            "test"), cancellationToken);
+        => store.ResolveAsync(identity, cancellationToken);
 }
 
-file sealed class TestIdentityAuthenticationHandler(
-    IOptionsMonitor<AuthenticationSchemeOptions> options,
-    ILoggerFactory logger,
-    UrlEncoder encoder,
-    TestIdentityResolver resolver)
-    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+internal sealed class CapturingLoggerProvider(ConcurrentQueue<string> logs) : ILoggerProvider
 {
-    protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
-    {
-        var provider = Request.Headers["X-Test-Provider"].ToString();
-        var subject = Request.Headers["X-Test-Subject"].ToString();
-        if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(subject))
-            return AuthenticateResult.NoResult();
+    public ILogger CreateLogger(string categoryName) => new CapturingLogger(logs);
+    public void Dispose() { }
+}
 
-        var profile = await resolver.ResolveAsync(
-            provider,
-            subject,
-            Request.Headers["X-Test-Email"].ToString() is { Length: > 0 } email ? email : null,
-            Context.RequestAborted);
-        var claims = new[]
-        {
-            new Claim("account_id", profile.AccountId.ToString("D")),
-            new Claim(ClaimTypes.NameIdentifier, profile.AccountId.ToString("D"))
-        };
-        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme.Name));
-        return AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name));
-    }
+internal sealed class CapturingLogger(ConcurrentQueue<string> logs) : ILogger
+{
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+    public bool IsEnabled(LogLevel logLevel) => true;
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+        Func<TState, Exception?, string> formatter)
+        => logs.Enqueue(formatter(state, exception));
 }
