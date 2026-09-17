@@ -83,9 +83,7 @@ public sealed partial class MainWindow : Window
         Content = _rootHost;
         AppDiagnostics.Write("Code-only host initialized");
 
-        var componentRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "VideoGrabber", "tools");
+        var componentRoot = Path.Combine(AppDataRoot, "tools");
         var transaction = new ComponentInstallTransaction(_componentRunner);
         transaction.AbortRecoveryAsync(componentRoot, CancellationToken.None).GetAwaiter().GetResult();
         var initialTools = new ToolLocator(AppContext.BaseDirectory, componentRoot);
@@ -93,7 +91,7 @@ public sealed partial class MainWindow : Window
         _rootHost.Children.Add(BuildShell());
         InitializeTheme();
 
-        Title = "VideoGrabber";
+        Title = AppDisplayName;
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "VideoGrabber.ico");
         if (File.Exists(iconPath))
         {
@@ -159,7 +157,7 @@ public sealed partial class MainWindow : Window
         });
         brand.Children.Add(new TextBlock
         {
-            Text = "VideoGrabber",
+            Text = AppDisplayName,
             FontSize = 17,
             FontWeight = FontWeights.SemiBold,
             Foreground = TextBrush,
@@ -503,13 +501,30 @@ public sealed partial class MainWindow : Window
 
     private async Task RunEditAsync(VideoEditRequest request)
     {
+        var managed = CreateLocalOperation("edit",
+            request.Mode.ToString(), request.OutputPath,
+            string.Join("|", request.Inputs), request.Start?.ToString() ?? "", request.Duration?.ToString() ?? "");
+        try
+        {
+            await _managedCoordinator.RunAsync(managed,
+                token => RunAuthorizedEditAsync(request, token), ManagedReport, _windowLifetime.Token);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            ShowEditorMessage("Доступ к редактированию не разрешён: " + ex.Message, InfoBarSeverity.Error);
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task<OperationOutcome> RunAuthorizedEditAsync(VideoEditRequest request, CancellationToken managedToken)
+    {
         if (_operations.IsBusy || _isInstallingComponents)
         {
             ShowEditorMessage("Другая операция уже выполняется. Сначала завершите или отмените её.", InfoBarSeverity.Error);
-            return;
+            return OperationOutcome.Failed;
         }
-        if (!_operations.TryBegin()) return;
-        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
+        if (!_operations.TryBegin()) return OperationOutcome.Failed;
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token, managedToken);
         var outcome = OperationOutcome.Failed;
         _operation = operation;
         SetOperationControls(true);
@@ -529,6 +544,7 @@ public sealed partial class MainWindow : Window
             AppDiagnostics.Write("Editor failed: " + exception.Message);
         }
         finally { CompleteOperation(_operations.Complete(outcome)); }
+        return outcome;
     }
 
     private async Task<IReadOnlyList<string>> PickVideoFilesAsync(bool multiple)

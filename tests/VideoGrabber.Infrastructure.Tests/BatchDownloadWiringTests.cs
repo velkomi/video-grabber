@@ -50,7 +50,7 @@ public sealed class BatchDownloadWiringTests
         {
             Assert.Contains("_operations.TryBegin()", source);
             Assert.Contains("CompleteOperation(_operations.Complete(outcome))", source);
-            Assert.Contains("CreateLinkedTokenSource(_windowLifetime.Token)", source);
+            Assert.Contains("CreateLinkedTokenSource(_windowLifetime.Token", source);
         }
         Assert.Contains("VideoEditMode.FastTrim", shell);
         Assert.Contains("VideoEditMode.Join", shell);

@@ -36,7 +36,31 @@ public sealed partial class MainWindow
         => RunDownloadOperationAsync(intent, new BrowserDownloadPreparation(this));
 
     private async Task<OperationOutcome> RunDownloadOperationAsync(UserDownloadIntent intent,
-        IBrowserDownloadPreparation preparation, bool resetCookieSelectionAfterUse = true, BrowserDownloadQueueItem? queuedEntry = null)
+        IBrowserDownloadPreparation preparation, bool resetCookieSelectionAfterUse = true,
+        BrowserDownloadQueueItem? queuedEntry = null, string managedKind = "direct_download")
+    {
+        var managed = CreateDownloadOperation(intent, managedKind, queuedEntry);
+        try
+        {
+            return await _managedCoordinator.RunAsync(managed,
+                token => RunAuthorizedDownloadOperationAsync(intent, preparation,
+                    resetCookieSelectionAfterUse, queuedEntry, token),
+                ManagedReport, _windowLifetime.Token);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            SetDownloadState("Доступ к управляемой операции не разрешён.", ex.Message, true);
+            return OperationOutcome.Failed;
+        }
+        catch (OperationCanceledException)
+        {
+            return OperationOutcome.Cancelled;
+        }
+    }
+
+    private async Task<OperationOutcome> RunAuthorizedDownloadOperationAsync(UserDownloadIntent intent,
+        IBrowserDownloadPreparation preparation, bool resetCookieSelectionAfterUse,
+        BrowserDownloadQueueItem? queuedEntry, CancellationToken managedToken)
     {
         if (_operations.IsBusy || _isInstallingComponents)
         {
@@ -48,7 +72,7 @@ public sealed partial class MainWindow
             SetDownloadState("Выберите папку сохранения.", null, true);
             return OperationOutcome.Failed;
         }
-        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token, managedToken);
         _operation = operation;
         if (!RequiredComponentsAvailable())
         {

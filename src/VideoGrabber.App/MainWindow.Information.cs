@@ -18,8 +18,7 @@ public sealed partial class MainWindow
     private ComboBox _themeBox = null!;
     private bool _themeApplying;
 
-    private static string ThemeSettingsPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoGrabber", "ui-settings.json");
+    private static string ThemeSettingsPath => Path.Combine(AppDataRoot, "ui-settings.json");
 
     private ScrollViewer BuildInformationPage()
     {

@@ -4,6 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../VideoGrabber.Core/VideoGrabber.Core.csproj" />
+    <ProjectReference Include="../VideoGrabber.Platform.Contracts/VideoGrabber.Platform.Contracts.csproj" />
   </ItemGroup>
 </Project>
-

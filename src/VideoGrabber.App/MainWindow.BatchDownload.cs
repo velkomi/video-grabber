@@ -14,7 +14,7 @@ public sealed partial class MainWindow
         bool resetCookieSelectionAfterUse = true, string? qualityOverride = null)
     {
         var intent = CaptureDownloadIntent(candidate.Source, qualityOverride ?? SelectedBrowserQuality(candidate));
-        return await RunDownloadOperationAsync(intent, new BrowserDownloadPreparation(this, candidate, ordinal), resetCookieSelectionAfterUse);
+        return await RunDownloadOperationAsync(intent, new BrowserDownloadPreparation(this, candidate, ordinal), resetCookieSelectionAfterUse, managedKind: "browser_candidate");
     }
     private string SelectedBrowserQuality(MediaCandidate candidate)
     {
@@ -157,7 +157,7 @@ public sealed partial class MainWindow
                 };
                 var outcome = await RunDownloadOperationAsync(intent,
                     new BrowserDownloadPreparation(this, entry.Candidate, entry.Ordinal, entry.Context),
-                    resetCookieSelectionAfterUse: false, queuedEntry: entry);
+                    resetCookieSelectionAfterUse: false, queuedEntry: entry, managedKind: "queue_selected");
                 if (navigationVersion != _queueNavigationVersion) return;
                 if (outcome == OperationOutcome.Succeeded)
                 {

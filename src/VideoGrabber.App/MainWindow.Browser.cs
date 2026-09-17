@@ -108,7 +108,7 @@ public sealed partial class MainWindow
                 var browser = new WebView2();
                 _mediaBrowser = browser;
                 _browserHost.Children.Add(browser);
-                var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoGrabber", "browser-cache");
+                var data = Path.Combine(AppDataRoot, "browser-cache");
                 _browserUsesSiteRoutes = routeProxy is not null;
                 var environmentOptions = new CoreWebView2EnvironmentOptions();
                 if (routeProxy is not null)
@@ -120,7 +120,7 @@ public sealed partial class MainWindow
                 var environment = await CoreWebView2Environment.CreateWithOptionsAsync(null, data, environmentOptions);
                 if (!_browserPages.IsCurrent(lease) || !ReferenceEquals(_mediaBrowser, browser)) return;
                 var options = environment.CreateCoreWebView2ControllerOptions();
-                options.ProfileName = "VideoGrabber";
+                options.ProfileName = AppProductName;
                 options.IsInPrivateModeEnabled = true;
                 await browser.EnsureCoreWebView2Async(environment, options);
                 if (!_browserPages.IsCurrent(lease) || !ReferenceEquals(_mediaBrowser, browser)) return;

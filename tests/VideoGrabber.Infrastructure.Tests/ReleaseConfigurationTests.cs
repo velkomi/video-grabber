@@ -25,4 +25,13 @@ public sealed class ReleaseConfigurationTests
         Assert.Contains("docs\\MEDIA_WORKFLOWS.md", script);
         Assert.True(File.Exists(Path.Combine(Root(), "docs", "MEDIA_WORKFLOWS.md")));
     }
-}
+
+    [Fact]
+    public void Release_script_separates_managed_and_local_artifacts()
+    {
+        var script = File.ReadAllText(Path.Combine(Root(), "scripts", "Build-Release.ps1"));
+        Assert.Contains("[ValidateSet('Local', 'Managed')]", script);
+        Assert.Contains("[string]$Edition = 'Local'", script);
+        Assert.Contains("-p:VideoGrabberEdition=$Edition", script);
+        Assert.Contains("VideoGrabber.Managed-$Runtime", script);
+    }}

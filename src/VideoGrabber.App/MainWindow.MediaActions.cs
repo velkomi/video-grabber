@@ -22,7 +22,7 @@ public sealed partial class MainWindow
     private Button _mp3Button = null!;
     private Button _textButton = null!;
     private UiPreferences _preferences = ReadPreferences();
-    private static string PreferencesPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoGrabber", "preferences.json");
+    private static string PreferencesPath => Path.Combine(AppDataRoot, "preferences.json");
     private sealed class UiPreferences
     {
         public string WhisperExecutable { get; set; } = "";
@@ -72,11 +72,6 @@ public sealed partial class MainWindow
 
     private async Task RunLocalMediaAsync(bool text)
     {
-        if (_operations.IsBusy || _isInstallingComponents)
-        {
-            _localMediaStatus.Text = "Другая операция уже выполняется. Сначала завершите или отмените её.";
-            return;
-        }
         var input = _localMediaBox.Text.Trim().Trim('"');
         var output = _localOutputBaseBox.Text.Trim().Trim('"');
         if (!File.Exists(input) || string.IsNullOrWhiteSpace(output))
@@ -84,8 +79,33 @@ public sealed partial class MainWindow
             _localMediaStatus.Text = "Проверьте исходный файл и путь результата.";
             return;
         }
-        if (!_operations.TryBegin()) return;
-        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
+        var kind = text ? "transcription" : "mp3";
+        var managed = CreateLocalOperation(kind, input, output);
+        try
+        {
+            await _managedCoordinator.RunAsync(managed,
+                token => RunAuthorizedLocalMediaAsync(text, token), ManagedReport, _windowLifetime.Token);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _localMediaStatus.Text = "Доступ к операции не разрешён: " + ex.Message;
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task<OperationOutcome> RunAuthorizedLocalMediaAsync(bool text, CancellationToken managedToken)
+    {
+        if (_operations.IsBusy || _isInstallingComponents)
+        {
+            _localMediaStatus.Text = "Другая операция уже выполняется. Сначала завершите или отмените её.";
+            return OperationOutcome.Failed;
+        }
+        var input = _localMediaBox.Text.Trim().Trim('"');
+        var output = _localOutputBaseBox.Text.Trim().Trim('"');
+        if (!File.Exists(input) || string.IsNullOrWhiteSpace(output))
+            return OperationOutcome.Failed;
+        if (!_operations.TryBegin()) return OperationOutcome.Failed;
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token, managedToken);
         var outcome = OperationOutcome.Failed;
         using var job = DiagnosticHub.Begin(text ? "ui.transcription" : "ui.audio");
         _operation = operation;
@@ -124,6 +144,7 @@ public sealed partial class MainWindow
         {
             CompleteOperation(_operations.Complete(outcome));
         }
+        return outcome;
     }
 
     private Border BuildTranscriptionSettingsCard()

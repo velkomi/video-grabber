@@ -13,7 +13,12 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\VideoGrabber.ico</ApplicationIcon>
     <RootNamespace>VideoGrabber.App</RootNamespace>
+    <VideoGrabberEdition Condition="'$(VideoGrabberEdition)' == ''">Local</VideoGrabberEdition>
     <AssemblyName>VideoGrabber</AssemblyName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(VideoGrabberEdition)' == 'Managed'">
+    <DefineConstants>$(DefineConstants);VIDEOGRABBER_MANAGED</DefineConstants>
+    <AssemblyName>VideoGrabber.Managed</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />

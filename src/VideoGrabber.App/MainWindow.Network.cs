@@ -19,7 +19,7 @@ public sealed partial class MainWindow
     private bool _browserUsesSiteRoutes;
     private TextBlock _routeStatus = null!;
     private bool _routeProbeRunning;
-    private static string RoutesPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoGrabber", "site-routes.json");
+    private static string RoutesPath => Path.Combine(AppDataRoot, "site-routes.json");
     private Border BuildNetworkCard()
     {
         var panel = Vertical(12);
