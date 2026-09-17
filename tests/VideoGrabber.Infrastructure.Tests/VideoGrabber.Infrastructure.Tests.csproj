@@ -14,6 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/VideoGrabber.Infrastructure/VideoGrabber.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/VideoGrabber.Platform.Contracts/VideoGrabber.Platform.Contracts.csproj" />
   </ItemGroup>
 </Project>
 

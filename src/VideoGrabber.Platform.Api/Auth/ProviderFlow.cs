@@ -63,8 +63,8 @@ public sealed class ProviderFlow(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Provider);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ClientChallenge);
-        if (request.ReturnUri.Scheme != Uri.UriSchemeHttps)
-            throw new ArgumentException("Return URI must use HTTPS.", nameof(request));
+        if (!IsAllowedClientReturnUri(request.ReturnUri))
+            throw new ArgumentException("Return URI must use HTTPS or the exact desktop loopback callback.", nameof(request));
         if (!partitions.TryGetValue(request.Provider, out var partition))
             throw new KeyNotFoundException("Unknown identity provider.");
 
@@ -111,6 +111,18 @@ public sealed class ProviderFlow(
         var identity = await ValidateCompletionAsync(request, cancellationToken).ConfigureAwait(false);
         var profile = await identities.ResolveAsync(identity, cancellationToken).ConfigureAwait(false);
         return await sessions.IssueAsync(profile.AccountId, cancellationToken).ConfigureAwait(false);
+    }
+    internal static bool IsAllowedClientReturnUri(Uri uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        if (uri.Scheme == Uri.UriSchemeHttps) return true;
+        return uri.Scheme == Uri.UriSchemeHttp
+            && string.Equals(uri.Host, "127.0.0.1", StringComparison.Ordinal)
+            && !uri.IsDefaultPort
+            && string.Equals(uri.AbsolutePath, "/videograbber-auth/callback", StringComparison.Ordinal)
+            && string.IsNullOrEmpty(uri.UserInfo)
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment);
     }
     private static Uri BuildAuthorizationUri(
         BrokerPartitionOptions partition,

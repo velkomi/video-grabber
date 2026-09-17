@@ -140,13 +140,20 @@
         "contentHash": "hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A=="
       },
       "videograbber.core": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.12, )"
+        }
       },
       "videograbber.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Core": "[1.0.0, )"
+          "VideoGrabber.Core": "[0.1.10-preview.12, )",
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.12, )"
         }
+      },
+      "videograbber.platform.contracts": {
+        "type": "Project"
       }
     },
     "net10.0-windows10.0.19041/win-x64": {

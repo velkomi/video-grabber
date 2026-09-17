@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Npgsql;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Api.Auth;
 using Xunit;
 
 namespace VideoGrabber.Platform.Tests;
@@ -270,6 +271,32 @@ public sealed class ProviderAssertionTests
         Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
     }
 
+    [Fact]
+    public async Task Desktop_loopback_return_is_allowed_but_external_http_is_rejected()
+    {
+        await using var f = await ApiFixture.StartAsync();
+        const string verifier = "desktop-loopback-verifier-0123456789";
+        var loopback = await f.Anonymous.PostAsJsonAsync("/v1/auth/start",
+            new BeginSignIn("google", new Uri("http://127.0.0.1:54321/videograbber-auth/callback"), Pkce(verifier)));
+        Assert.Equal(HttpStatusCode.OK, loopback.StatusCode);
+
+        var external = await f.Anonymous.PostAsJsonAsync("/v1/auth/start",
+            new BeginSignIn("google", new Uri("http://client.example.test/videograbber-auth/callback"), Pkce(verifier)));
+        Assert.Equal(HttpStatusCode.BadRequest, external.StatusCode);
+    }
+    [Theory]
+    [InlineData("https://client.example.test/auth/complete", true)]
+    [InlineData("http://127.0.0.1:54321/videograbber-auth/callback", true)]
+    [InlineData("http://localhost:54321/videograbber-auth/callback", false)]
+    [InlineData("http://127.0.0.1:54321/other", false)]
+    [InlineData("http://client.example.test/videograbber-auth/callback", false)]
+    public void Desktop_return_uri_policy_allows_only_https_or_exact_ipv4_loopback(string uri, bool allowed)
+    {
+        var method = typeof(ProviderFlow).GetMethod("IsAllowedClientReturnUri",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        Assert.Equal(allowed, (bool)method!.Invoke(null, [new Uri(uri)])!);
+    }
     private static string Pkce(string verifier)
         => Convert.ToBase64String(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
