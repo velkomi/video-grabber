@@ -74,6 +74,14 @@ builder.Services.AddSingleton(sp =>
     return GrantStore.CreateOwned(sp.GetRequiredService<NpgsqlDataSource>(), adminDsn,
         sp.GetRequiredService<IAccountStore>(), sp.GetRequiredService<TimeProvider>());
 });
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var ledgerDsn = configuration.GetConnectionString("PlatformLedger")
+        ?? configuration["VG_PLATFORM_LEDGER_DSN"]
+        ?? throw new InvalidOperationException("Platform ledger database DSN is not configured.");
+    return CreditLedger.CreateOwned(ledgerDsn, sp.GetRequiredService<TimeProvider>());
+});
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 
@@ -167,6 +175,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapAccountEndpoints();
 app.MapAccessEndpoints();
+app.MapReservationEndpoints();
 app.MapIdentityEndpoints();
 app.MapSessionEndpoints();
 app.Run();

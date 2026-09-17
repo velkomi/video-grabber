@@ -30,6 +30,7 @@ public sealed class ApiFixture : IAsyncDisposable
     private readonly NpgsqlDataSource _apiDataSource;
     private readonly NpgsqlDataSource _identityDataSource;
     private readonly NpgsqlDataSource _adminDataSource;
+    private readonly NpgsqlDataSource _ledgerDataSource;
     private readonly string _clusterConnectionString;
     private readonly string _databaseName;
     private PlatformApiFactory _factory;
@@ -39,6 +40,7 @@ public sealed class ApiFixture : IAsyncDisposable
         NpgsqlDataSource apiDataSource,
         NpgsqlDataSource identityDataSource,
         NpgsqlDataSource adminDataSource,
+        NpgsqlDataSource ledgerDataSource,
         string clusterConnectionString,
         string databaseName,
         AdjustableTimeProvider clock,
@@ -48,6 +50,7 @@ public sealed class ApiFixture : IAsyncDisposable
         _apiDataSource = apiDataSource;
         _identityDataSource = identityDataSource;
         _adminDataSource = adminDataSource;
+        _ledgerDataSource = ledgerDataSource;
         _clusterConnectionString = clusterConnectionString;
         _databaseName = databaseName;
         Clock = clock;
@@ -92,7 +95,8 @@ public sealed class ApiFixture : IAsyncDisposable
         var apiDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_api"));
         var identityDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_identity"));
         var adminDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_admin"));
-        return new ApiFixture(database, apiDataSource, identityDataSource, adminDataSource,
+        var ledgerDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_ledger"));
+        return new ApiFixture(database, apiDataSource, identityDataSource, adminDataSource, ledgerDataSource,
             clusterConnectionString, databaseName, new AdjustableTimeProvider(), new BrokerEmulator());
     }
 
@@ -166,6 +170,7 @@ public sealed class ApiFixture : IAsyncDisposable
         Anonymous.Dispose();
         _factory.Dispose();
         Broker.Dispose();
+        await _ledgerDataSource.DisposeAsync();
         await _adminDataSource.DisposeAsync();
         await _identityDataSource.DisposeAsync();
         await _apiDataSource.DisposeAsync();
@@ -217,7 +222,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, _adminDataSource, Clock, Broker, Logs);
+        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, Clock, Broker, Logs);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -234,6 +239,7 @@ public sealed class ApiFixture : IAsyncDisposable
         {
             Options = "-c role=" + role
         };
+        if (role == "vg_ledger") builder.MaxPoolSize = 32;
         return builder.ConnectionString;
     }
 }
@@ -242,6 +248,7 @@ internal sealed class PlatformApiFactory(
     NpgsqlDataSource apiDataSource,
     NpgsqlDataSource identityDataSource,
     NpgsqlDataSource adminDataSource,
+    NpgsqlDataSource ledgerDataSource,
     AdjustableTimeProvider clock,
     BrokerEmulator broker,
     ConcurrentQueue<string> logs) : WebApplicationFactory<Program>
@@ -292,6 +299,8 @@ internal sealed class PlatformApiFactory(
             services.RemoveAll<GrantStore>();
             services.AddSingleton(sp => GrantStore.CreateForTesting(
                 apiDataSource, adminDataSource, sp.GetRequiredService<IAccountStore>(), clock));
+            services.RemoveAll<CreditLedger>();
+            services.AddSingleton(CreditLedger.CreateForTesting(ledgerDataSource, clock));
         });
     }
 }

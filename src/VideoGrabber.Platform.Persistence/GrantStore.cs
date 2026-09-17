@@ -108,6 +108,22 @@ public sealed class GrantStore : IAsyncDisposable
         audit.Parameters.AddWithValue("reason", request.Reason);
         audit.Parameters.AddWithValue("created", now);
         await audit.ExecuteNonQueryAsync(cancellationToken);
+        if (request.Kind is "credits" or "hybrid")
+        {
+            await using var issue = new NpgsqlCommand("""
+                insert into licensing.credit_ledger(
+                  ledger_id,account_id,grant_id,event_kind,available_delta,reserved_delta,
+                  spent_delta,void_delta,actor_account_id,reason)
+                values(@id,@account,@grant,'issue',@amount,0,0,0,@admin,@reason)
+                """, connection, transaction);
+            issue.Parameters.AddWithValue("id", Guid.NewGuid());
+            issue.Parameters.AddWithValue("account", request.AccountId);
+            issue.Parameters.AddWithValue("grant", grantId);
+            issue.Parameters.AddWithValue("amount", amount);
+            issue.Parameters.AddWithValue("admin", adminId);
+            issue.Parameters.AddWithValue("reason", request.Reason);
+            await issue.ExecuteNonQueryAsync(cancellationToken);
+        }
         await transaction.CommitAsync(cancellationToken);
         return new(grantId, request.AccountId, "admin_gift");
     }
