@@ -48,6 +48,7 @@ builder.Services.AddSingleton(sp =>
     return NpgsqlDataSource.Create(dsn);
 });
 builder.Services.AddSingleton<IAccountStore, AccountStore>();
+builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 
 var app = builder.Build();
@@ -73,6 +74,7 @@ app.Use(async (context, next) =>
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAccountEndpoints();
+app.MapIdentityEndpoints();
 app.MapSessionEndpoints();
 app.Run();
 

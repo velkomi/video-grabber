@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using VideoGrabber.Platform.Api.Accounts;
 using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
@@ -22,20 +23,24 @@ public sealed record TestAccount(Guid Id, HttpClient Client);
 
 public sealed class ApiFixture : IAsyncDisposable
 {
+    private static readonly SemaphoreSlim MigrationGate = new(1, 1);
     private readonly NpgsqlDataSource _apiDataSource;
     private readonly NpgsqlDataSource _identityDataSource;
+    private readonly NpgsqlDataSource _adminDataSource;
     private PlatformApiFactory _factory;
 
     private ApiFixture(
         NpgsqlDataSource database,
         NpgsqlDataSource apiDataSource,
         NpgsqlDataSource identityDataSource,
+        NpgsqlDataSource adminDataSource,
         AdjustableTimeProvider clock,
         BrokerEmulator broker)
     {
         Database = database;
         _apiDataSource = apiDataSource;
         _identityDataSource = identityDataSource;
+        _adminDataSource = adminDataSource;
         Clock = clock;
         Broker = broker;
         _factory = CreateFactory();
@@ -70,11 +75,14 @@ public sealed class ApiFixture : IAsyncDisposable
 
         baseBuilder.Database = databaseName;
         var database = NpgsqlDataSource.Create(baseBuilder.ConnectionString);
-        await MigrationRunner.ApplyAsync(database, CancellationToken.None);
+        await MigrationGate.WaitAsync();
+        try { await MigrationRunner.ApplyAsync(database, CancellationToken.None); }
+        finally { MigrationGate.Release(); }
 
         var apiDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_api"));
         var identityDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_identity"));
-        return new ApiFixture(database, apiDataSource, identityDataSource,
+        var adminDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_admin"));
+        return new ApiFixture(database, apiDataSource, identityDataSource, adminDataSource,
             new AdjustableTimeProvider(), new BrokerEmulator());
     }
 
@@ -133,6 +141,7 @@ public sealed class ApiFixture : IAsyncDisposable
         Anonymous.Dispose();
         _factory.Dispose();
         Broker.Dispose();
+        await _adminDataSource.DisposeAsync();
         await _identityDataSource.DisposeAsync();
         await _apiDataSource.DisposeAsync();
         await Database.DisposeAsync();
@@ -153,6 +162,9 @@ public sealed class ApiFixture : IAsyncDisposable
     public BrokerPartitionOptions Partition(string provider)
         => PlatformApiFactory.TestPartitions()[provider];
 
+    public T Service<T>() where T : notnull
+        => _factory.Services.GetRequiredService<T>();
+
     private static string Pkce(string verifier)
         => Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(
                 System.Text.Encoding.ASCII.GetBytes(verifier)))
@@ -170,7 +182,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, Clock, Broker, Logs);
+        => new(_apiDataSource, _identityDataSource, _adminDataSource, Clock, Broker, Logs);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -194,6 +206,7 @@ public sealed class ApiFixture : IAsyncDisposable
 internal sealed class PlatformApiFactory(
     NpgsqlDataSource apiDataSource,
     NpgsqlDataSource identityDataSource,
+    NpgsqlDataSource adminDataSource,
     AdjustableTimeProvider clock,
     BrokerEmulator broker,
     ConcurrentQueue<string> logs) : WebApplicationFactory<Program>
@@ -236,6 +249,10 @@ internal sealed class PlatformApiFactory(
             services.AddSingleton<IBrokerCodeExchange>(broker);
             services.AddSingleton<IBrokerSigningKeySource>(broker);
             services.AddSingleton<IBrokerUserInfoSource>(broker);
+            services.RemoveAll<IdentityLinkService>();
+            services.AddSingleton(sp => IdentityLinkService.CreateForTesting(
+                apiDataSource, identityDataSource, adminDataSource, clock,
+                sp.GetRequiredService<IBrokerTokenValidator>(), TestPartitions()));
         });
     }
 }
