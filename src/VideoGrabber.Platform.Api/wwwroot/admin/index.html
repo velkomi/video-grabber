@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>VideoGrabber — Admin</title>
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<main>
+  <h1>VideoGrabber Admin</h1>
+  <form id="lookup-form">
+    <label for="identity">Провайдер ID или подтверждённый email</label>
+    <div class="row"><input id="identity" required autocomplete="off"><button>Найти</button></div>
+  </form>
+  <p id="status" role="status">Введите идентификатор аккаунта.</p>
+  <section id="account" hidden>
+    <h2>Аккаунт</h2>
+    <dl><dt>ID</dt><dd id="account-id"></dd><dt>Роль</dt><dd id="account-role"></dd><dt>Блокировка</dt><dd id="account-blocked"></dd></dl>
+    <label for="reason">Причина изменения</label>
+    <textarea id="reason" rows="3" required></textarea>
+    <div class="actions"><button data-action="block">Блокировать</button><button data-action="unblock">Разблокировать</button><button data-action="reset">Сбросить устройства</button></div>
+    <h2>Аудит</h2><pre id="audit"></pre>
+  </section>
+</main>
+<script type="module" src="/admin/admin.js"></script>
+</body></html>

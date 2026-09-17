@@ -17,6 +17,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using VideoGrabber.Platform.Api.Accounts;
+using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Contracts;
@@ -132,7 +133,7 @@ public sealed class ApiFixture : IAsyncDisposable
         return new TestAccount(profile.AccountId, client);
     }
 
-    public async Task<HttpClient> AdminAsync()
+    public async Task<HttpClient> AdminAsync(bool freshMfa = true)
     {
         var account = await AccountAsync("email", "admin-" + Guid.NewGuid().ToString("N"));
         await using var connection = await Database.OpenConnectionAsync();
@@ -140,7 +141,7 @@ public sealed class ApiFixture : IAsyncDisposable
             "update licensing.accounts set base_role='owner_admin' where account_id=@id", connection);
         command.Parameters.AddWithValue("id", account.Id);
         await command.ExecuteNonQueryAsync();
-        ApplyFreshMfa(account.Client, account.Id);
+        if (freshMfa) ApplyFreshMfa(account.Client, account.Id);
         return account.Client;
     }
 
@@ -320,6 +321,8 @@ internal sealed class PlatformApiFactory(
             services.AddSingleton(CreditLedger.CreateForTesting(ledgerDataSource, clock));
             services.RemoveAll<DeviceStore>();
             services.AddSingleton(DeviceStore.CreateForTesting(deviceDataSource, clock));
+            services.RemoveAll<AdminService>();
+            services.AddSingleton(AdminService.CreateForTesting(adminDataSource, clock));
         });
     }
 }

@@ -93,6 +93,7 @@ public sealed class DeviceStore : IAsyncDisposable
         var result = new List<DeviceReceipt>();
         while (await reader.ReadAsync(cancellationToken))
             result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2)));
+        await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
         return result;
     }

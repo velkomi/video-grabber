@@ -7,6 +7,7 @@ using System.Threading.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using VideoGrabber.Platform.Api.Accounts;
+using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Contracts;
@@ -93,6 +94,14 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton(sp =>
     LeaseSigningKeyOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<OfflineLeaseService>();
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var adminDsn = configuration.GetConnectionString("PlatformAdmin")
+        ?? configuration["VG_PLATFORM_ADMIN_DSN"]
+        ?? throw new InvalidOperationException("Platform admin database DSN is not configured.");
+    return AdminService.CreateOwned(adminDsn, sp.GetRequiredService<TimeProvider>());
+});
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 
@@ -106,6 +115,8 @@ var allowedOrigins = builder.Configuration.GetSection("Security:AllowedOrigins")
 
 var app = builder.Build();
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
 app.UseCookiePolicy(new CookiePolicyOptions
 {
     HttpOnly = HttpOnlyPolicy.Always,
@@ -184,6 +195,7 @@ app.UseRouting();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapAccessEndpoints();
 app.MapReservationEndpoints();

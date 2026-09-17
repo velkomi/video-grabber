@@ -275,7 +275,7 @@ public sealed class IdentityLinkService : IAsyncDisposable
             || await FindIdentityOwnerAsync(target, cancellationToken) != request.TargetAccountId)
             throw new UnauthorizedAccessException("Merge proof does not own the requested account.");
 
-        await MergeAccountsAsync(request, cancellationToken);
+        await MergeAccountsAsync(adminId, request, cancellationToken);
         await RevokeSessionsAsync(request.SourceAccountId, cancellationToken);
         await AuditMergeAsync(adminId, request, cancellationToken);
     }
@@ -309,35 +309,164 @@ public sealed class IdentityLinkService : IAsyncDisposable
     }
 
     private async Task MergeAccountsAsync(
-        MergeRequest request,
-        CancellationToken cancellationToken)
+        Guid adminId, MergeRequest request, CancellationToken cancellationToken)
     {
+        var now = _clock.GetUtcNow();
         await using var connection = await _adminDataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
-            IsolationLevel.Serializable, cancellationToken);
-        foreach (var accountId in new[] { request.SourceAccountId, request.TargetAccountId }
-                     .OrderBy(value => value.ToString("D"), StringComparer.Ordinal))
-            await LockAccountAsync(connection, transaction, accountId, cancellationToken);
+            IsolationLevel.ReadCommitted, cancellationToken);
+        var accounts = await LockMergeAccountsAsync(connection, transaction, request, cancellationToken);
+        if (accounts.Count != 2 || accounts.Any(account => account.Blocked || account.MergedInto is not null))
+            throw new FinancialMergeRequiresReconciliationException();
+        if (await HasActiveReservationsAsync(connection, transaction, request, cancellationToken))
+            throw new FinancialMergeRequiresReconciliationException();
 
-        await using (var business = new NpgsqlCommand("""
-            select count(*) from licensing.accounts
-            where account_id in (@source,@target)
-              and (first_purchase_at is not null or merged_into is not null)
-            """, connection, transaction))
-        {
-            business.Parameters.AddWithValue("source", request.SourceAccountId);
-            business.Parameters.AddWithValue("target", request.TargetAccountId);
-            if ((long)(await business.ExecuteScalarAsync(cancellationToken))! > 0)
-                throw new FinancialMergeRequiresReconciliationException();
-        }
-
+        await TransferActiveGrantsAsync(connection, transaction, adminId, request, now, cancellationToken);
         var identities = await ReadIdentitiesAsync(
             connection, transaction, request.SourceAccountId, cancellationToken);
         if (identities.Count == 0) throw new IdentityNotFoundException();
+        await MoveIdentitiesAsync(connection, transaction, request, identities, cancellationToken);
+        await ApplyMergeAccountStateAsync(connection, transaction, adminId, request, accounts, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
 
+    private static async Task<List<MergeAccountState>> LockMergeAccountsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, MergeRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            select account_id,base_role,blocked_at is not null,first_purchase_at,merged_into
+            from licensing.accounts where account_id in (@source,@target)
+            order by account_id::text for update
+            """, connection, transaction);
+        command.Parameters.AddWithValue("source", request.SourceAccountId);
+        command.Parameters.AddWithValue("target", request.TargetAccountId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<MergeAccountState>();
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2),
+                reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+                reader.IsDBNull(4) ? null : reader.GetGuid(4)));
+        return result;
+    }
+
+    private static async Task<bool> HasActiveReservationsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, MergeRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            select exists(select 1 from licensing.reservations
+              where account_id in (@source,@target) and state in ('reserved','review_required'))
+            """, connection, transaction);
+        command.Parameters.AddWithValue("source", request.SourceAccountId);
+        command.Parameters.AddWithValue("target", request.TargetAccountId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    private static async Task TransferActiveGrantsAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid adminId,
+        MergeRequest request, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            select grant_id,kind,valid_until,available,reserved,original_amount
+            from licensing.entitlement_grants
+            where account_id=@source and revoked_at is null and valid_from<=@now
+              and (valid_until is null or valid_until>@now)
+            order by created_at,grant_id for update
+            """, connection, transaction);
+        command.Parameters.AddWithValue("source", request.SourceAccountId);
+        command.Parameters.AddWithValue("now", now);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var grants = new List<MergeGrantState>();
+        while (await reader.ReadAsync(cancellationToken))
+            grants.Add(new(reader.GetGuid(0), reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
+                reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5)));
+        await reader.DisposeAsync();
+        if (grants.Any(grant => grant.Reserved > 0))
+            throw new FinancialMergeRequiresReconciliationException();
+        foreach (var grant in grants)
+            await TransferGrantAsync(connection, transaction, adminId, request, grant, now, cancellationToken);
+    }
+
+    private static async Task TransferGrantAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid adminId,
+        MergeRequest request, MergeGrantState grant, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var transferable = grant.Kind is "credits" or "hybrid" ? grant.Available : 0L;
+        if (grant.Kind is "credits" or "hybrid" && transferable <= 0)
+        {
+            await RevokeSourceGrantAsync(connection, transaction, grant.Id, now, cancellationToken);
+            return;
+        }
+        var targetGrantId = Guid.NewGuid();
+        await using (var insert = new NpgsqlCommand("""
+            insert into licensing.entitlement_grants(
+              grant_id,account_id,kind,source,valid_from,valid_until,available,reserved,
+              original_amount,admin_id,reason,created_at)
+            values(@id,@target,@kind,'adjustment',@start,@end,@available,0,@original,@admin,@reason,@now)
+            """, connection, transaction))
+        {
+            insert.Parameters.AddWithValue("id", targetGrantId);
+            insert.Parameters.AddWithValue("target", request.TargetAccountId);
+            insert.Parameters.AddWithValue("kind", grant.Kind);
+            insert.Parameters.AddWithValue("start", now);
+            insert.Parameters.AddWithValue("end", (object?)grant.EndsAt ?? DBNull.Value);
+            insert.Parameters.AddWithValue("available", transferable);
+            insert.Parameters.AddWithValue("original", grant.Kind is "credits" or "hybrid" ? transferable : grant.OriginalAmount);
+            insert.Parameters.AddWithValue("admin", adminId);
+            insert.Parameters.AddWithValue("reason", "account merge: " + request.Reason);
+            insert.Parameters.AddWithValue("now", now);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await RevokeSourceGrantAsync(connection, transaction, grant.Id, now, cancellationToken);
+        if (transferable > 0)
+        {
+            await InsertMergeLedgerAsync(connection, transaction, request.SourceAccountId, grant.Id,
+                -transferable, adminId, request.Reason, cancellationToken);
+            await InsertMergeLedgerAsync(connection, transaction, request.TargetAccountId, targetGrantId,
+                transferable, adminId, request.Reason, cancellationToken);
+        }
+    }
+
+    private static async Task RevokeSourceGrantAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid grantId,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            "update licensing.entitlement_grants set available=0,revoked_at=@now where grant_id=@grant",
+            connection, transaction);
+        command.Parameters.AddWithValue("now", now);
+        command.Parameters.AddWithValue("grant", grantId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertMergeLedgerAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid accountId, Guid grantId,
+        long availableDelta, Guid adminId, string reason, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            insert into licensing.credit_ledger(
+              ledger_id,account_id,grant_id,event_kind,available_delta,reserved_delta,
+              spent_delta,void_delta,actor_account_id,reason)
+            values(@id,@account,@grant,'adjustment',@available,0,0,0,@admin,@reason)
+            """, connection, transaction);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("grant", grantId);
+        command.Parameters.AddWithValue("available", availableDelta);
+        command.Parameters.AddWithValue("admin", adminId);
+        command.Parameters.AddWithValue("reason", "account merge: " + reason);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task MoveIdentitiesAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, MergeRequest request,
+        IReadOnlyList<StoredIdentity> identities, CancellationToken cancellationToken)
+    {
         await using (var remove = new NpgsqlCommand(
-            "delete from licensing.identities where account_id=@source",
-            connection, transaction))
+            "delete from licensing.identities where account_id=@source", connection, transaction))
         {
             remove.Parameters.AddWithValue("source", request.SourceAccountId);
             await remove.ExecuteNonQueryAsync(cancellationToken);
@@ -345,16 +474,45 @@ public sealed class IdentityLinkService : IAsyncDisposable
         foreach (var identity in identities)
             await InsertStoredIdentityAsync(connection, transaction,
                 request.TargetAccountId, identity, cancellationToken);
+    }
 
-        await using (var tombstone = new NpgsqlCommand(
-            "update licensing.accounts set merged_into=@target where account_id=@source",
+    private static async Task ApplyMergeAccountStateAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid adminId,
+        MergeRequest request, IReadOnlyList<MergeAccountState> accounts,
+        CancellationToken cancellationToken)
+    {
+        var source = accounts.Single(account => account.Id == request.SourceAccountId);
+        var target = accounts.Single(account => account.Id == request.TargetAccountId);
+        var purchaseAt = target.FirstPurchaseAt is null ? source.FirstPurchaseAt
+            : source.FirstPurchaseAt is null ? target.FirstPurchaseAt
+            : target.FirstPurchaseAt < source.FirstPurchaseAt ? target.FirstPurchaseAt : source.FirstPurchaseAt;
+        var targetRole = purchaseAt is not null && target.Role == "guest" ? "user" : target.Role;
+        await using (var updateTarget = new NpgsqlCommand(
+            "update licensing.accounts set base_role=@role,first_purchase_at=@purchase where account_id=@target",
             connection, transaction))
+        {
+            updateTarget.Parameters.AddWithValue("role", targetRole);
+            updateTarget.Parameters.AddWithValue("purchase", (object?)purchaseAt ?? DBNull.Value);
+            updateTarget.Parameters.AddWithValue("target", request.TargetAccountId);
+            await updateTarget.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var tombstone = new NpgsqlCommand(
+            "update licensing.accounts set merged_into=@target where account_id=@source", connection, transaction))
         {
             tombstone.Parameters.AddWithValue("target", request.TargetAccountId);
             tombstone.Parameters.AddWithValue("source", request.SourceAccountId);
             await tombstone.ExecuteNonQueryAsync(cancellationToken);
         }
-        await transaction.CommitAsync(cancellationToken);
+        await using var relation = new NpgsqlCommand("""
+            insert into licensing.account_merge_relations(
+              source_account_id,target_account_id,actor_account_id,reason)
+            values(@source,@target,@admin,@reason)
+            """, connection, transaction);
+        relation.Parameters.AddWithValue("source", request.SourceAccountId);
+        relation.Parameters.AddWithValue("target", request.TargetAccountId);
+        relation.Parameters.AddWithValue("admin", adminId);
+        relation.Parameters.AddWithValue("reason", request.Reason);
+        await relation.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<List<StoredIdentity>> ReadIdentitiesAsync(
@@ -442,6 +600,10 @@ public sealed class IdentityLinkService : IAsyncDisposable
 
     private sealed record StoredIdentity(Guid IdentityId, string Issuer, string Provider,
         string Subject, string? VerifiedEmail, DateTimeOffset LinkedAt);
+    private sealed record MergeAccountState(Guid Id, string Role, bool Blocked,
+        DateTimeOffset? FirstPurchaseAt, Guid? MergedInto);
+    private sealed record MergeGrantState(Guid Id, string Kind, DateTimeOffset? EndsAt,
+        long Available, long Reserved, long OriginalAmount);
 
     public async Task<LinkChallenge> BeginRecoveryAsync(Guid adminId, Guid accountId, string proofSource, string reason, bool mfaVerified, CancellationToken cancellationToken)
     {

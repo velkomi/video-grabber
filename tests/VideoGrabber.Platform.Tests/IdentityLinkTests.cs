@@ -238,7 +238,7 @@ public sealed class IdentityLinkRaceTests
 public sealed class IdentityMergeTests
 {
     [Fact]
-    public async Task Purchased_account_merge_requires_reconciliation()
+    public async Task Purchased_account_merge_preserves_source_purchase_history()
     {
         await using var f = await ApiFixture.StartAsync();
         var source = await f.AccountAsync("google", "merge-paid-source");
@@ -249,8 +249,16 @@ public sealed class IdentityMergeTests
         await MarkPurchasedAsync(f, source.Id);
         var request = await MergeRequestForAsync(f, source, target);
 
-        await Assert.ThrowsAsync<FinancialMergeRequiresReconciliationException>(() =>
-            f.Service<IdentityLinkService>().MergeAsync(admin!.AccountId, request, default));
+        await f.Service<IdentityLinkService>().MergeAsync(admin!.AccountId, request, default);
+
+        await using var connection = await f.Database.OpenConnectionAsync();
+        await using var history = new Npgsql.NpgsqlCommand(
+            "select first_purchase_at,merged_into from licensing.accounts where account_id=@source", connection);
+        history.Parameters.AddWithValue("source", source.Id);
+        await using var reader = await history.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.False(reader.IsDBNull(0));
+        Assert.Equal(target.Id, reader.GetGuid(1));
     }
 
     [Fact]
