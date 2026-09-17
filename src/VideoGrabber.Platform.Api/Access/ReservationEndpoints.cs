@@ -16,12 +16,17 @@ public static class ReservationEndpoints
         ReservationRequest request,
         HttpContext http,
         CreditLedger ledger,
+        DeviceStore devices,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(http.User.FindFirst("account_id")?.Value, out var accountId))
             return Results.Unauthorized();
         try
         {
+            if (request.Executor == "desktop_worker" &&
+                (request.DeviceId is not Guid deviceId ||
+                 !await devices.IsActiveAsync(accountId, deviceId, cancellationToken)))
+                return Results.Conflict(new { code = "registered_device_required" });
             return Results.Ok(await ledger.ReserveAsync(accountId, request, cancellationToken));
         }
         catch (ReservationConflictException)

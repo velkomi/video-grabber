@@ -4,6 +4,7 @@ using System.Text;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -16,6 +17,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using VideoGrabber.Platform.Api.Accounts;
+using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
@@ -31,6 +33,7 @@ public sealed class ApiFixture : IAsyncDisposable
     private readonly NpgsqlDataSource _identityDataSource;
     private readonly NpgsqlDataSource _adminDataSource;
     private readonly NpgsqlDataSource _ledgerDataSource;
+    private readonly NpgsqlDataSource _deviceDataSource;
     private readonly string _clusterConnectionString;
     private readonly string _databaseName;
     private PlatformApiFactory _factory;
@@ -41,6 +44,7 @@ public sealed class ApiFixture : IAsyncDisposable
         NpgsqlDataSource identityDataSource,
         NpgsqlDataSource adminDataSource,
         NpgsqlDataSource ledgerDataSource,
+        NpgsqlDataSource deviceDataSource,
         string clusterConnectionString,
         string databaseName,
         AdjustableTimeProvider clock,
@@ -51,6 +55,7 @@ public sealed class ApiFixture : IAsyncDisposable
         _identityDataSource = identityDataSource;
         _adminDataSource = adminDataSource;
         _ledgerDataSource = ledgerDataSource;
+        _deviceDataSource = deviceDataSource;
         _clusterConnectionString = clusterConnectionString;
         _databaseName = databaseName;
         Clock = clock;
@@ -96,7 +101,8 @@ public sealed class ApiFixture : IAsyncDisposable
         var identityDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_identity"));
         var adminDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_admin"));
         var ledgerDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_ledger"));
-        return new ApiFixture(database, apiDataSource, identityDataSource, adminDataSource, ledgerDataSource,
+        var deviceDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_device"));
+        return new ApiFixture(database, apiDataSource, identityDataSource, adminDataSource, ledgerDataSource, deviceDataSource,
             clusterConnectionString, databaseName, new AdjustableTimeProvider(), new BrokerEmulator());
     }
 
@@ -170,6 +176,7 @@ public sealed class ApiFixture : IAsyncDisposable
         Anonymous.Dispose();
         _factory.Dispose();
         Broker.Dispose();
+        await _deviceDataSource.DisposeAsync();
         await _ledgerDataSource.DisposeAsync();
         await _adminDataSource.DisposeAsync();
         await _identityDataSource.DisposeAsync();
@@ -222,7 +229,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, Clock, Broker, Logs);
+        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, Clock, Broker, Logs);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -249,11 +256,13 @@ internal sealed class PlatformApiFactory(
     NpgsqlDataSource identityDataSource,
     NpgsqlDataSource adminDataSource,
     NpgsqlDataSource ledgerDataSource,
+    NpgsqlDataSource deviceDataSource,
     AdjustableTimeProvider clock,
     BrokerEmulator broker,
     ConcurrentQueue<string> logs) : WebApplicationFactory<Program>
 {
     internal const string TestSessionKey = "test-only-videograbber-session-signing-key-2026";
+    private static readonly string TestLeasePrivateKey = CreateTestLeasePrivateKey();
 
     internal static IReadOnlyDictionary<string, BrokerPartitionOptions> TestPartitions()
         => new[] { "google", "apple", "yandex", "telegram", "email" }
@@ -266,12 +275,20 @@ internal sealed class PlatformApiFactory(
                     new Uri("https://api.example.test/auth/callback"),
                     provider),
                 StringComparer.OrdinalIgnoreCase);
+    private static string CreateTestLeasePrivateKey()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        return Convert.ToBase64String(key.ExportPkcs8PrivateKey());
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("Security:AllowedOrigins:0", "https://miniapp.example.test");
         builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(new CapturingLoggerProvider(logs)); });
         builder.UseSetting("VG_PLATFORM_SESSION_SIGNING_KEY", TestSessionKey);
+        builder.UseSetting("VG_PLATFORM_LEASE_KEY_ID", "test-lease-key-1");
+        builder.UseSetting("VG_PLATFORM_LEASE_SIGNING_KEY_PKCS8", TestLeasePrivateKey);
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<NpgsqlDataSource>();
@@ -301,6 +318,8 @@ internal sealed class PlatformApiFactory(
                 apiDataSource, adminDataSource, sp.GetRequiredService<IAccountStore>(), clock));
             services.RemoveAll<CreditLedger>();
             services.AddSingleton(CreditLedger.CreateForTesting(ledgerDataSource, clock));
+            services.RemoveAll<DeviceStore>();
+            services.AddSingleton(DeviceStore.CreateForTesting(deviceDataSource, clock));
         });
     }
 }

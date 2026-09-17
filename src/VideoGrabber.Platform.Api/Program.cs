@@ -82,6 +82,17 @@ builder.Services.AddSingleton(sp =>
         ?? throw new InvalidOperationException("Platform ledger database DSN is not configured.");
     return CreditLedger.CreateOwned(ledgerDsn, sp.GetRequiredService<TimeProvider>());
 });
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var deviceDsn = configuration.GetConnectionString("PlatformDevice")
+        ?? configuration["VG_PLATFORM_DEVICE_DSN"]
+        ?? throw new InvalidOperationException("Platform device database DSN is not configured.");
+    return DeviceStore.CreateOwned(deviceDsn, sp.GetRequiredService<TimeProvider>());
+});
+builder.Services.AddSingleton(sp =>
+    LeaseSigningKeyOptions.FromConfiguration(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<OfflineLeaseService>();
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 
@@ -176,6 +187,7 @@ app.UseAuthorization();
 app.MapAccountEndpoints();
 app.MapAccessEndpoints();
 app.MapReservationEndpoints();
+app.MapDeviceEndpoints();
 app.MapIdentityEndpoints();
 app.MapSessionEndpoints();
 app.Run();

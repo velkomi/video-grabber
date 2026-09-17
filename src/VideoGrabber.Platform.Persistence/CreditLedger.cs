@@ -430,6 +430,8 @@ public sealed class CreditLedger : IAsyncDisposable
             throw new ArgumentException("Unsupported executor.");
         if (request.Executor == "server_worker" && request.DeviceId is not null)
             throw new ArgumentException("Server reservations do not use a device id.");
+        if (request.Executor == "desktop_worker" && request.DeviceId is null)
+            throw new ArgumentException("Desktop reservations require a registered device id.");
     }
 
     public async ValueTask DisposeAsync()
