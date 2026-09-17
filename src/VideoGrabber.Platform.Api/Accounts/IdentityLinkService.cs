@@ -112,7 +112,7 @@ public sealed class IdentityLinkService : IAsyncDisposable
     {
         await using var connection = await _identityDataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
-            IsolationLevel.Serializable, cancellationToken);
+            IsolationLevel.ReadCommitted, cancellationToken);
         await SetAccountAsync(connection, transaction, accountId, cancellationToken);
         await LockAccountAsync(connection, transaction, accountId, cancellationToken);
         var count = await CountIdentitiesAsync(connection, transaction, accountId, cancellationToken);
