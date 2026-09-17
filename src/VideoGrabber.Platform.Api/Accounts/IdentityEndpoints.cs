@@ -7,10 +7,10 @@ public static class IdentityEndpoints
 {
     public static IEndpointRouteBuilder MapIdentityEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/v1/identities/link", BeginAsync).RequireAuthorization();
-        endpoints.MapPost("/v1/identities/link/complete", CompleteAsync).RequireAuthorization();
-        endpoints.MapDelete("/v1/identities/{identityId:guid}", UnlinkAsync).RequireAuthorization();
-        endpoints.MapPost("/v1/recovery/complete", CompleteRecoveryAsync);
+        endpoints.MapPost("/v1/identities/link", BeginAsync).RequireAuthorization().RequireRateLimiting("auth");
+        endpoints.MapPost("/v1/identities/link/complete", CompleteAsync).RequireAuthorization().RequireRateLimiting("auth");
+        endpoints.MapDelete("/v1/identities/{identityId:guid}", UnlinkAsync).RequireAuthorization().RequireRateLimiting("auth");
+        endpoints.MapPost("/v1/recovery/complete", CompleteRecoveryAsync).RequireRateLimiting("auth");
         return endpoints;
     }
 

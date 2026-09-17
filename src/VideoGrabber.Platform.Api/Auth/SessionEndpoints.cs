@@ -7,10 +7,10 @@ public static class SessionEndpoints
     public static IEndpointRouteBuilder MapSessionEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/v1/auth/start", StartAsync);
-        endpoints.MapPost("/v1/auth/complete", CompleteAsync);
-        endpoints.MapPost("/v1/auth/refresh", RefreshAsync);
-        endpoints.MapPost("/v1/auth/logout", LogoutAsync);
+        endpoints.MapPost("/v1/auth/start", StartAsync).RequireRateLimiting("auth");
+        endpoints.MapPost("/v1/auth/complete", CompleteAsync).RequireRateLimiting("auth");
+        endpoints.MapPost("/v1/auth/refresh", RefreshAsync).RequireRateLimiting("auth");
+        endpoints.MapPost("/v1/auth/logout", LogoutAsync).RequireRateLimiting("auth");
         return endpoints;
     }
 

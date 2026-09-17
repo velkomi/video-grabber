@@ -27,6 +27,8 @@ public sealed class ApiFixture : IAsyncDisposable
     private readonly NpgsqlDataSource _apiDataSource;
     private readonly NpgsqlDataSource _identityDataSource;
     private readonly NpgsqlDataSource _adminDataSource;
+    private readonly string _clusterConnectionString;
+    private readonly string _databaseName;
     private PlatformApiFactory _factory;
 
     private ApiFixture(
@@ -34,6 +36,8 @@ public sealed class ApiFixture : IAsyncDisposable
         NpgsqlDataSource apiDataSource,
         NpgsqlDataSource identityDataSource,
         NpgsqlDataSource adminDataSource,
+        string clusterConnectionString,
+        string databaseName,
         AdjustableTimeProvider clock,
         BrokerEmulator broker)
     {
@@ -41,6 +45,8 @@ public sealed class ApiFixture : IAsyncDisposable
         _apiDataSource = apiDataSource;
         _identityDataSource = identityDataSource;
         _adminDataSource = adminDataSource;
+        _clusterConnectionString = clusterConnectionString;
+        _databaseName = databaseName;
         Clock = clock;
         Broker = broker;
         _factory = CreateFactory();
@@ -64,6 +70,7 @@ public sealed class ApiFixture : IAsyncDisposable
         var baseBuilder = new NpgsqlConnectionStringBuilder(dsn);
         ValidateTestTarget(baseBuilder);
 
+        var clusterConnectionString = baseBuilder.ConnectionString;
         var databaseName = "vg_test_" + Guid.NewGuid().ToString("N");
         await using (var adminSource = NpgsqlDataSource.Create(baseBuilder.ConnectionString))
         await using (var connection = await adminSource.OpenConnectionAsync())
@@ -83,7 +90,7 @@ public sealed class ApiFixture : IAsyncDisposable
         var identityDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_identity"));
         var adminDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_admin"));
         return new ApiFixture(database, apiDataSource, identityDataSource, adminDataSource,
-            new AdjustableTimeProvider(), new BrokerEmulator());
+            clusterConnectionString, databaseName, new AdjustableTimeProvider(), new BrokerEmulator());
     }
 
     public async Task<TestAccount> AccountAsync(
@@ -145,8 +152,18 @@ public sealed class ApiFixture : IAsyncDisposable
         await _identityDataSource.DisposeAsync();
         await _apiDataSource.DisposeAsync();
         await Database.DisposeAsync();
+        await DropDatabaseAsync(_clusterConnectionString, _databaseName);
     }
 
+    private static async Task DropDatabaseAsync(string connectionString, string databaseName)
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString) { Database = "postgres" };
+        await using var source = NpgsqlDataSource.Create(builder.ConnectionString);
+        await using var connection = await source.OpenConnectionAsync();
+        var quoted = "\"" + databaseName.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+        await using var command = new NpgsqlCommand($"drop database if exists {quoted} with (force)", connection);
+        await command.ExecuteNonQueryAsync();
+    }
 
     public HttpClient SessionClient(ApiSession session)
     {
@@ -227,6 +244,7 @@ internal sealed class PlatformApiFactory(
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        builder.UseSetting("Security:AllowedOrigins:0", "https://miniapp.example.test");
         builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(new CapturingLoggerProvider(logs)); });
         builder.UseSetting("VG_PLATFORM_SESSION_SIGNING_KEY", TestSessionKey);
         builder.ConfigureServices(services =>
