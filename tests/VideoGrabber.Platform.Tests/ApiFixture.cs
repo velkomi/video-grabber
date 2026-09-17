@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.IdentityModel.Tokens.Jwt;
+using System.Text;
 using System.Net.Http.Json;
 using System.Net.Http.Headers;
 using System.Security.Claims;
@@ -11,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using VideoGrabber.Platform.Api.Accounts;
 using VideoGrabber.Platform.Api.Auth;
@@ -127,8 +130,23 @@ public sealed class ApiFixture : IAsyncDisposable
             "update licensing.accounts set base_role='owner_admin' where account_id=@id", connection);
         command.Parameters.AddWithValue("id", account.Id);
         await command.ExecuteNonQueryAsync();
-        account.Client.DefaultRequestHeaders.Add("X-Test-Mfa", "fresh");
+        ApplyFreshMfa(account.Client, account.Id);
         return account.Client;
+    }
+
+    private void ApplyFreshMfa(HttpClient client, Guid accountId)
+    {
+        var now = Clock.GetUtcNow();
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(PlatformApiFactory.TestSessionKey));
+        var token = new JwtSecurityToken("videograbber-platform", "videograbber-api",
+            [new Claim(JwtRegisteredClaimNames.Sub, accountId.ToString("D")),
+             new Claim("account_id", accountId.ToString("D")),
+             new Claim("sid", Guid.NewGuid().ToString("D")),
+             new Claim("mfa_at", now.ToUnixTimeSeconds().ToString())],
+            now.UtcDateTime, now.AddMinutes(5).UtcDateTime,
+            new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", new JwtSecurityTokenHandler().WriteToken(token));
     }
 
     public Task RestartAsync()
@@ -271,6 +289,9 @@ internal sealed class PlatformApiFactory(
             services.AddSingleton(sp => IdentityLinkService.CreateForTesting(
                 apiDataSource, identityDataSource, adminDataSource, clock,
                 sp.GetRequiredService<IBrokerTokenValidator>(), TestPartitions()));
+            services.RemoveAll<GrantStore>();
+            services.AddSingleton(sp => GrantStore.CreateForTesting(
+                apiDataSource, adminDataSource, sp.GetRequiredService<IAccountStore>(), clock));
         });
     }
 }

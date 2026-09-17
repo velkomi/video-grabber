@@ -7,6 +7,7 @@ using System.Threading.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using VideoGrabber.Platform.Api.Accounts;
+using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
@@ -64,6 +65,15 @@ builder.Services.AddSingleton(sp =>
     return NpgsqlDataSource.Create(dsn);
 });
 builder.Services.AddSingleton<IAccountStore, AccountStore>();
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var adminDsn = configuration.GetConnectionString("PlatformAdmin")
+        ?? configuration["VG_PLATFORM_ADMIN_DSN"]
+        ?? throw new InvalidOperationException("Platform admin database DSN is not configured.");
+    return GrantStore.CreateOwned(sp.GetRequiredService<NpgsqlDataSource>(), adminDsn,
+        sp.GetRequiredService<IAccountStore>(), sp.GetRequiredService<TimeProvider>());
+});
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 
@@ -156,6 +166,7 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapAccountEndpoints();
+app.MapAccessEndpoints();
 app.MapIdentityEndpoints();
 app.MapSessionEndpoints();
 app.Run();
