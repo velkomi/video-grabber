@@ -10,6 +10,7 @@ using VideoGrabber.Platform.Api.Accounts;
 using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
+using VideoGrabber.Platform.Api.Jobs;
 using VideoGrabber.Platform.Api.Telegram;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
@@ -99,6 +100,7 @@ builder.Services.AddSingleton(sp =>
         ?? throw new InvalidOperationException("Platform ledger database DSN is not configured.");
     return CreditLedger.CreateOwned(ledgerDsn, sp.GetRequiredService<TimeProvider>());
 });
+builder.Services.AddSingleton<JobStore>();
 builder.Services.AddSingleton(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -236,6 +238,8 @@ app.MapTelegramWebhookEndpoints();
 app.MapCapabilityEndpoints();
 app.MapTelegramAdminLinkEndpoints();
 app.MapDestinationEndpoints();
+app.MapJobEndpoints();
+app.MapAttemptEndpoints();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

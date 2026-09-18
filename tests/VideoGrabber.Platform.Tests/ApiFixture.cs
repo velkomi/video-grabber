@@ -154,6 +154,26 @@ public sealed class ApiFixture : IAsyncDisposable
         ApplyFreshMfa(client, accountId);
         return client;
     }
+    public async Task<string> SourceAsync(Guid accountId, string quality)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(quality);
+        var sourceId = "src_" + Guid.NewGuid().ToString("N");
+        await using var connection = await Database.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand("""
+            insert into licensing.sources(
+              source_id,account_id,media_id,source_cipher,qualities,expires_at)
+            values(@source,@account,@media,@cipher,@qualities::jsonb,@expires)
+            """, connection);
+        command.Parameters.AddWithValue("source", sourceId);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("media", "synthetic-" + sourceId);
+        command.Parameters.AddWithValue("cipher", RandomNumberGenerator.GetBytes(48));
+        command.Parameters.AddWithValue("qualities",
+            System.Text.Json.JsonSerializer.Serialize(new[] { quality }));
+        command.Parameters.AddWithValue("expires", Clock.GetUtcNow().AddMinutes(30));
+        await command.ExecuteNonQueryAsync();
+        return sourceId;
+    }
     public async Task<HttpClient> AdminAsync(bool freshMfa = true)
     {
         var account = await AccountAsync("email", "admin-" + Guid.NewGuid().ToString("N"));
@@ -346,6 +366,7 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_TELEGRAM_BOT_USERNAME", "VideoGrabberTestBot");
         builder.UseSetting("VG_TELEGRAM_BOT_USER_ID", TelegramApiEmulator.BotUserId.ToString());
         builder.UseSetting("VG_TELEGRAM_WORKER_ENABLED", "false");
+        builder.UseSetting("VG_SERVER_WORKER_TOKEN", "test-server-worker-token");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<NpgsqlDataSource>();

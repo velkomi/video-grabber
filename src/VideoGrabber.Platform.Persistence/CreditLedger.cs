@@ -31,6 +31,7 @@ public sealed class CreditLedger : IAsyncDisposable
 
     public static CreditLedger CreateForTesting(NpgsqlDataSource dataSource, TimeProvider clock)
         => new(dataSource, clock, false);
+    internal NpgsqlDataSource DataSource => _dataSource;
     public async Task<ReservationReceipt> ReserveAsync(
         Guid accountId,
         ReservationRequest request,
@@ -52,36 +53,40 @@ public sealed class CreditLedger : IAsyncDisposable
     private async Task<ReservationReceipt> ReserveOnceAsync(
         Guid accountId, ReservationRequest request, CancellationToken cancellationToken)
     {
-        var now = _clock.GetUtcNow();
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
-        await LockAccountAsync(connection, transaction, accountId, cancellationToken);
+        var receipt = await ReserveInTransactionAsync(connection, transaction, accountId, request, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return receipt;
+    }
 
+    internal async Task<ReservationReceipt> ReserveInTransactionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        ReservationRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateReservation(request);
+        var now = _clock.GetUtcNow();
+        await LockAccountAsync(connection, transaction, accountId, cancellationToken);
         var existing = await ReadReservationByIntentAsync(
             connection, transaction, accountId, request.IntentId, cancellationToken);
         if (existing is not null)
         {
             if (!existing.Matches(request)) throw new ReservationConflictException();
-            await transaction.CommitAsync(cancellationToken);
             return existing.ToReceipt();
         }
-
         var account = await ReadAccountAsync(connection, transaction, accountId, cancellationToken)
             ?? throw new ReservationUnavailableException();
         if (account.Blocked) throw new ReservationUnavailableException();
-
         var expiresAt = now.Add(HoldLifetime);
         if (account.Role == "owner_admin" ||
             await HasTimedAccessAsync(connection, transaction, accountId, now, cancellationToken))
-        {
-            var receipt = await InsertReservationAsync(connection, transaction, accountId,
+            return await InsertReservationAsync(connection, transaction, accountId,
                 request, null, false, expiresAt, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return receipt;
-        }
 
-        var grantId = await LockCreditGrantAsync(
-            connection, transaction, accountId, now, cancellationToken)
+        var grantId = await LockCreditGrantAsync(connection, transaction, accountId, now, cancellationToken)
             ?? throw new ReservationUnavailableException();
         await using (var decrement = new NpgsqlCommand("""
             update licensing.entitlement_grants
@@ -93,17 +98,29 @@ public sealed class CreditLedger : IAsyncDisposable
             if (await decrement.ExecuteNonQueryAsync(cancellationToken) != 1)
                 throw new ReservationUnavailableException();
         }
-
         var reserved = await InsertReservationAsync(connection, transaction, accountId,
             request, grantId, true, expiresAt, cancellationToken);
         await InsertLedgerEventAsync(connection, transaction, accountId, grantId,
             reserved.ReservationId, "reserve", -1, +1, 0, 0, null,
             "credit reserved", cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
         return reserved;
     }
-
     public async Task<ReservationReceipt> FinalizeAsync(
+        Guid accountId,
+        FinalizeReservation finalize,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        var receipt = await FinalizeInTransactionAsync(
+            connection, transaction, accountId, finalize, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return receipt;
+    }
+
+    internal async Task<ReservationReceipt> FinalizeInTransactionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         Guid accountId,
         FinalizeReservation finalize,
         CancellationToken cancellationToken)
@@ -113,24 +130,15 @@ public sealed class CreditLedger : IAsyncDisposable
             throw new ArgumentException("Finalize reservation payload is incomplete.");
         if (finalize.Outcome is not ("success" or "review_required"))
             throw new ArgumentException("Unsupported reservation outcome.");
-
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         await LockAccountAsync(connection, transaction, accountId, cancellationToken);
         var row = await ReadReservationByIdAsync(
             connection, transaction, accountId, finalize.ReservationId, cancellationToken)
             ?? throw new ReservationConflictException();
-
         if (row.State != "reserved")
         {
-            if (row.State == "completed" && row.Matches(finalize))
-            {
-                await transaction.CommitAsync(cancellationToken);
-                return row.ToReceipt();
-            }
+            if (row.State == "completed" && row.Matches(finalize)) return row.ToReceipt();
             throw new ReservationConflictException();
         }
-
         var nextState = finalize.Outcome == "success" ? "completed" : "review_required";
         if (finalize.Outcome == "success" && row.UsesCredit)
         {
@@ -147,7 +155,6 @@ public sealed class CreditLedger : IAsyncDisposable
                 row.ReservationId, "commit", 0, -1, +1, 0, finalize.EvidenceId,
                 "verified output committed", cancellationToken);
         }
-
         await using (var update = new NpgsqlCommand("""
             update licensing.reservations
             set state=@state,attempt_id=@attempt,fence=@fence,evidence_id=@evidence,finalized_at=@now
@@ -164,11 +171,8 @@ public sealed class CreditLedger : IAsyncDisposable
             if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
                 throw new ReservationConflictException();
         }
-
-        await transaction.CommitAsync(cancellationToken);
         return row.ToReceipt(nextState, finalize.AttemptId, finalize.Fence, finalize.EvidenceId);
     }
-
     public async Task<bool> ReleaseUnstartedAsync(
         Guid reservationId,
         CancellationToken cancellationToken)
@@ -176,10 +180,22 @@ public sealed class CreditLedger : IAsyncDisposable
         if (reservationId == Guid.Empty) return false;
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        var released = await ReleaseUnstartedInTransactionAsync(
+            connection, transaction, reservationId, cancellationToken);
+        if (released) await transaction.CommitAsync(cancellationToken);
+        return released;
+    }
+
+    internal async Task<bool> ReleaseUnstartedInTransactionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid reservationId,
+        CancellationToken cancellationToken)
+    {
+        if (reservationId == Guid.Empty) return false;
         var row = await ReadReservationByIdAsync(connection, transaction, null, reservationId, cancellationToken);
         if (row is null || row.State != "reserved") return false;
         await LockAccountAsync(connection, transaction, row.AccountId, cancellationToken);
-
         if (row.UsesCredit)
         {
             if (row.GrantId is not Guid grantId) throw new InvalidDataException("Credit reservation has no grant.");
@@ -200,19 +216,13 @@ public sealed class CreditLedger : IAsyncDisposable
                 active ? "unstarted reservation released" : "expired or revoked reservation voided",
                 cancellationToken);
         }
-
-        await using (var update = new NpgsqlCommand(
+        await using var update = new NpgsqlCommand(
             "update licensing.reservations set state='released',finalized_at=@now where reservation_id=@reservation and state='reserved'",
-            connection, transaction))
-        {
-            update.Parameters.AddWithValue("now", _clock.GetUtcNow());
-            update.Parameters.AddWithValue("reservation", reservationId);
-            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1) return false;
-        }
-        await transaction.CommitAsync(cancellationToken);
-        return true;
+            connection, transaction);
+        update.Parameters.AddWithValue("now", _clock.GetUtcNow());
+        update.Parameters.AddWithValue("reservation", reservationId);
+        return await update.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
-
     private static async Task LockAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
