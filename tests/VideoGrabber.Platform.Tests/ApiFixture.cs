@@ -73,6 +73,7 @@ public sealed class ApiFixture : IAsyncDisposable
     public AdjustableTimeProvider Clock { get; }
     public BrokerEmulator Broker { get; }
     public TelegramApiEmulator TelegramApi { get; } = new();
+    public YooKassaEmulator YooKassaApi { get; } = new();
     public System.Collections.Concurrent.ConcurrentQueue<string> Logs { get; } = new();
     public HttpClient Anonymous { get; private set; }
 
@@ -297,7 +298,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, Clock, Broker, TelegramApi, Logs);
+        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, Clock, Broker, TelegramApi, YooKassaApi, Logs);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -328,6 +329,7 @@ internal sealed class PlatformApiFactory(
     AdjustableTimeProvider clock,
     BrokerEmulator broker,
     TelegramApiEmulator telegramApi,
+    YooKassaEmulator yooKassaApi,
     ConcurrentQueue<string> logs) : WebApplicationFactory<Program>
 {
     internal const string TestSessionKey = "test-only-videograbber-session-signing-key-2026";
@@ -381,6 +383,9 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_DELIVERY_WORKER_ENABLED", "false");
         builder.UseSetting("VG_PAYMENT_RECONCILIATION_ENABLED", "false");
         builder.UseSetting("VG_PAYMENT_SUPPORT_TEXT", "Payment support: support@example.test");
+        builder.UseSetting("VG_YOOKASSA_SHOP_ID", "test-shop-123");
+        builder.UseSetting("VG_YOOKASSA_SECRET_KEY", "test-secret-never-production");
+        builder.UseSetting("VG_YOOKASSA_RETURN_URL", "https://desktop.example.test/payment-return");
         builder.UseSetting("VG_TELEGRAM_DOCUMENT_MAX_BYTES", (10L * 1024 * 1024).ToString());
         builder.UseSetting("VG_SERVER_WORKER_TOKEN", "test-server-worker-token");
         builder.UseSetting("VG_SOURCE_ENCRYPTION_KEY", "KSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0g=");
@@ -428,6 +433,8 @@ internal sealed class PlatformApiFactory(
             services.AddSingleton<ITelegramAccountResolver>(_ => TelegramAccountResolver.CreateForTesting(identityDataSource));
             services.AddHttpClient("TelegramBotApi")
                 .ConfigurePrimaryHttpMessageHandler(_ => telegramApi);
+            services.AddHttpClient("YooKassa")
+                .ConfigurePrimaryHttpMessageHandler(_ => yooKassaApi);
         });
     }
 }

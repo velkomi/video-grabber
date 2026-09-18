@@ -64,6 +64,7 @@ public sealed partial class MainWindow
         access.Children.Add(SectionHeading("Доступ"));
         access.Children.Add(_accountAccessText);
         body.Children.Add(Card(access));
+        body.Children.Add(BuildManagedPaymentsCard());
 
         _accountDevicesPanel = Vertical(8);
         _accountDevicesPanel.Children.Add(SectionHeading("Компьютеры"));

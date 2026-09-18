@@ -58,6 +58,7 @@ public static class PaymentEndpoints
         HttpContext http,
         PaymentStore payments,
         StarsPaymentAdapter stars,
+        YooKassaPaymentAdapter yookassa,
         CancellationToken cancellationToken)
     {
         if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
@@ -67,7 +68,7 @@ public static class PaymentEndpoints
             {
                 "stars" => await stars.CreateAsync(
                     accountId, request, cancellationToken),
-                "yookassa" => await payments.BeginAsync(
+                "yookassa" => await yookassa.CreateAsync(
                     accountId, request, cancellationToken),
                 _ => throw new KeyNotFoundException(
                     "Payment provider is unavailable.")

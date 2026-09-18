@@ -66,6 +66,7 @@ builder.Services.AddRateLimiter(options =>
 });
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("TelegramBotApi").RemoveAllLoggers();
+builder.Services.AddHttpClient("YooKassa").RemoveAllLoggers();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IReadOnlyDictionary<string, BrokerPartitionOptions>>(sp =>
     BrokerPartitionConfiguration.Load(sp.GetRequiredService<IConfiguration>()));
@@ -116,6 +117,7 @@ builder.Services.AddSingleton<PaymentStore>(sp =>
         catalog);
 });
 builder.Services.AddSingleton<StarsPaymentAdapter>();
+builder.Services.AddSingleton<YooKassaPaymentAdapter>();
 builder.Services.AddSingleton<StarsUpdateHandler>();
 builder.Services.AddHostedService<PaymentReconciliationWorker>();
 builder.Services.AddSingleton<EgressProxy>();
@@ -265,6 +267,7 @@ app.MapDestinationEndpoints();
 app.MapDeliveryEndpoints();
 app.MapRetentionEndpoints();
 app.MapPaymentEndpoints();
+app.MapYooKassaWebhookEndpoints();
 app.MapJobEndpoints();
 app.MapJobEventEndpoints();
 app.MapAttemptEndpoints();

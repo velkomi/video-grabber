@@ -2,6 +2,7 @@ namespace VideoGrabber.Platform.Api.Payments;
 
 public sealed class PaymentReconciliationWorker(
     StarsPaymentAdapter stars,
+    YooKassaPaymentAdapter yookassa,
     IConfiguration configuration,
     ILogger<PaymentReconciliationWorker> logger) : BackgroundService
 {
@@ -17,12 +18,15 @@ public sealed class PaymentReconciliationWorker(
         {
             try
             {
-                var count = await stars.ReconcileAsync(stoppingToken)
+                var starsCount = await stars.ReconcileAsync(stoppingToken)
                     .ConfigureAwait(false);
-                if (count > 0)
+                var yooCount = await yookassa.ReconcileAsync(stoppingToken)
+                    .ConfigureAwait(false);
+                if (starsCount + yooCount > 0)
                     logger.LogInformation(
-                        "Payment reconciliation applied {Count} Stars transitions.",
-                        count);
+                        "Payment reconciliation applied Stars={StarsCount}, YooKassa={YooCount} transitions.",
+                        starsCount,
+                        yooCount);
                 await Task.Delay(
                     TimeSpan.FromSeconds(30), stoppingToken)
                     .ConfigureAwait(false);

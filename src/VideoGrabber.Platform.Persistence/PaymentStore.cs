@@ -259,6 +259,36 @@ public sealed class PaymentStore
             payment.AccountId, payment.PaymentId, cancellationToken);
     }
 
+    public async Task BindProviderReferenceAsync(
+        Guid paymentId,
+        string providerPaymentId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(providerPaymentId);
+        if (providerPaymentId.Length > 128)
+            throw new ArgumentException("Provider payment ID is too long.");
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            await using var command = new NpgsqlCommand("""
+                update licensing.payments
+                set provider_payment_id=coalesce(provider_payment_id,@provider_id),
+                    updated_at=@now
+                where payment_id=@payment
+                  and (provider_payment_id is null or provider_payment_id=@provider_id)
+                returning payment_id
+                """, connection);
+            command.Parameters.AddWithValue("provider_id", providerPaymentId);
+            command.Parameters.AddWithValue("now", _clock.GetUtcNow());
+            command.Parameters.AddWithValue("payment", paymentId);
+            if (await command.ExecuteScalarAsync(cancellationToken) is null)
+                throw new PaymentConflictException();
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            throw new PaymentConflictException();
+        }
+    }
     public async Task<PaymentView?> ReadAsync(
         Guid accountId,
         Guid paymentId,
