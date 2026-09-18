@@ -1,0 +1,52 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--tg-theme-text-color, #1f2937);
+  background: var(--tg-theme-bg-color, #f5f7fb);
+  min-width: 320px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, a { font: inherit; }
+button, .button-link {
+  min-height: 42px;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: var(--tg-theme-button-color, #2d7dff);
+  color: var(--tg-theme-button-text-color, #fff);
+}
+button:disabled { opacity: .48; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, a:focus-visible {
+  outline: 3px solid var(--tg-theme-link-color, #2d7dff);
+  outline-offset: 2px;
+}
+.shell { width: min(760px, 100%); margin: 0 auto; padding: 16px; }
+.hero { display: flex; gap: 16px; align-items: center; justify-content: space-between; }
+.hero h1 { margin: 0; font-size: 28px; }
+.eyebrow { margin: 0 0 4px; opacity: .66; }
+.status { min-height: 24px; margin: 12px 0; }
+.card {
+  margin: 12px 0;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--tg-theme-secondary-bg-color, #fff);
+  box-shadow: 0 1px 4px rgb(0 0 0 / .07);
+}
+.card h2 { margin: 0 0 12px; font-size: 18px; }
+.metric { font-size: 28px; font-weight: 700; margin: 4px 0; }
+.list { display: grid; gap: 8px; }
+.item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.item-text { min-width: 0; overflow-wrap: anywhere; }
+.row { display: flex; gap: 8px; }
+.row input { min-width: 0; flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px; }
+label { display: block; margin-bottom: 7px; font-weight: 600; }
+.button-link { display: inline-flex; align-items: center; text-decoration: none; margin-top: 12px; }
+.error { color: #b42318; }
+.success { color: #067647; }
+@media (max-width: 480px) {
+  .shell { padding: 12px; }
+  .hero { align-items: flex-start; }
+  .row { flex-direction: column; }
+  .item { align-items: flex-start; flex-direction: column; }
+  button, .button-link { width: 100%; justify-content: center; }
+}

@@ -37,6 +37,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ClockSkew = TimeSpan.FromSeconds(30),
             ValidAlgorithms = [SecurityAlgorithms.HmacSha256]
         };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                if (string.IsNullOrWhiteSpace(context.Token)
+                    && context.Request.Cookies.TryGetValue("vg_session", out var cookieToken)
+                    && !string.IsNullOrWhiteSpace(cookieToken))
+                    context.Token = cookieToken;
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
@@ -51,6 +62,7 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("TelegramBotApi").RemoveAllLoggers();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IReadOnlyDictionary<string, BrokerPartitionOptions>>(sp =>
     BrokerPartitionConfiguration.Load(sp.GetRequiredService<IConfiguration>()));
@@ -108,11 +120,17 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
-builder.Services.AddSingleton<ITelegramUpdateInbox>(sp => new TelegramUpdateInbox(
+builder.Services.AddSingleton(sp => new TelegramUpdateInbox(
     sp.GetRequiredService<NpgsqlDataSource>(), telegramSecurity.InboxEncryptionKey,
     sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton<ITelegramUpdateInbox>(sp => sp.GetRequiredService<TelegramUpdateInbox>());
 builder.Services.AddSingleton<TelegramAssertionStore>();
 builder.Services.AddSingleton<ITelegramAccountResolver, TelegramAccountResolver>();
+builder.Services.AddSingleton<BotCallbackStore>();
+builder.Services.AddSingleton<IBotApiClient, BotApiClient>();
+builder.Services.AddSingleton<BotCommandHandler>();
+builder.Services.AddSingleton<TelegramInboxWorker>();
+builder.Services.AddHostedService<TelegramInboxHostedService>();
 
 var allowedOrigins = builder.Configuration.GetSection("Security:AllowedOrigins").GetChildren()
     .Select(section => section.Value)
@@ -169,7 +187,8 @@ app.Use(async (context, next) =>
 {
     var isMutation = HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method)
         || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method);
-    if (isMutation && context.Request.Cookies.ContainsKey("vg_session"))
+    var csrfExempt = context.Request.Path.Equals("/v1/telegram/session", StringComparison.Ordinal);
+    if (isMutation && !csrfExempt && context.Request.Cookies.ContainsKey("vg_session"))
     {
         var cookieToken = context.Request.Cookies["vg_csrf"];
         var headerToken = context.Request.Headers["X-CSRF-Token"].ToString();
@@ -213,6 +232,8 @@ app.MapIdentityEndpoints();
 app.MapSessionEndpoints();
 app.MapTelegramSessionEndpoints();
 app.MapTelegramWebhookEndpoints();
+app.MapCapabilityEndpoints();
+app.MapTelegramAdminLinkEndpoints();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

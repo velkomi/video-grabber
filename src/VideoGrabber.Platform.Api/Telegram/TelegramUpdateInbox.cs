@@ -120,6 +120,29 @@ public sealed class TelegramUpdateInbox(
         }
     }
 
+    public async Task ReleaseAsync(long updateId, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            update licensing.telegram_updates
+            set state='pending'
+            where update_id=@id and state='processing'
+            """, connection);
+        command.Parameters.AddWithValue("id", updateId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<int> RecoverStaleProcessingAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            update licensing.telegram_updates
+            set state='pending'
+            where state='processing' and received_at < @cutoff
+            """, connection);
+        command.Parameters.AddWithValue("cutoff", _clock.GetUtcNow().AddMinutes(-5));
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
     public async Task MarkHandledAsync(long updateId, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);

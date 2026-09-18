@@ -135,6 +135,25 @@ public sealed class ApiFixture : IAsyncDisposable
         return new TestAccount(profile.AccountId, client);
     }
 
+    public async Task PromoteAdminAsync(Guid accountId)
+    {
+        await using var connection = await Database.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "update licensing.accounts set base_role='owner_admin' where account_id=@id", connection);
+        command.Parameters.AddWithValue("id", accountId);
+        if (await command.ExecuteNonQueryAsync() != 1)
+            throw new InvalidOperationException("Test admin account was not found.");
+    }
+
+    public HttpClient FreshMfaClient(Guid accountId)
+    {
+        var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+        ApplyFreshMfa(client, accountId);
+        return client;
+    }
     public async Task<HttpClient> AdminAsync(bool freshMfa = true)
     {
         var account = await AccountAsync("email", "admin-" + Guid.NewGuid().ToString("N"));
@@ -198,6 +217,32 @@ public sealed class ApiFixture : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
     }
 
+    public HttpClient TelegramWebClient()
+        => _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true,
+            BaseAddress = new Uri("https://localhost")
+        });
+    public async Task<HttpClient> MiniAppAsync(long userId)
+    {
+        var client = TelegramWebClient();
+
+        var fields = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["auth_date"] = Clock.GetUtcNow().ToUnixTimeSeconds().ToString(),
+            ["query_id"] = "AA-miniapp-" + userId + "-" + Guid.NewGuid().ToString("N"),
+            ["user"] = System.Text.Json.JsonSerializer.Serialize(new { id = userId, first_name = "MiniApp" })
+        };
+        var initData = TelegramAuthTests.SignInitData(fields, TelegramAuthTests.BotToken);
+        using var response = await client.PostAsync("/v1/telegram/session",
+            new StringContent(initData, Encoding.UTF8, "text/plain"));
+        response.EnsureSuccessStatusCode();
+        var webSession = await response.Content.ReadFromJsonAsync<TelegramWebSession>()
+            ?? throw new InvalidDataException("Telegram web session response was empty.");
+        client.DefaultRequestHeaders.Add("X-CSRF-Token", webSession.CsrfToken);
+        return client;
+    }
     public HttpClient SessionClient(ApiSession session)
     {
         var client = _factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -296,6 +341,10 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_TELEGRAM_BOT_TOKEN", "123456789:test-telegram-bot-token-for-local-tests");
         builder.UseSetting("VG_TELEGRAM_WEBHOOK_SECRET", "test-webhook-secret-2026");
         builder.UseSetting("VG_TELEGRAM_INBOX_KEY", Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray()));
+        builder.UseSetting("VG_TELEGRAM_MINIAPP_URL", "https://miniapp.example.test/");
+        builder.UseSetting("VG_PLATFORM_PUBLIC_URL", "https://platform.example.test/");
+        builder.UseSetting("VG_TELEGRAM_BOT_USERNAME", "VideoGrabberTestBot");
+        builder.UseSetting("VG_TELEGRAM_WORKER_ENABLED", "false");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<NpgsqlDataSource>();

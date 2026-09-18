@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>VideoGrabber</title>
+  <link rel="stylesheet" href="/miniapp/styles.css">
+</head>
+<body>
+<main class="shell">
+  <header class="hero">
+    <div><p class="eyebrow">VideoGrabber</p><h1>Аккаунт</h1></div>
+    <button id="refresh" type="button">Обновить</button>
+  </header>
+  <p id="status" class="status" role="status" aria-live="polite">Подключение…</p>
+  <section class="card"><h2>Профиль</h2><p id="profile">—</p></section>
+  <section class="card"><h2>Баланс и доступ</h2>
+    <p id="balance" class="metric">—</p><p id="access-reason">—</p><p id="access-until">—</p>
+  </section>
+  <section class="card"><h2>Способы входа</h2><div id="providers" class="list"></div></section>
+  <section class="card"><h2>Компьютеры</h2><div id="devices" class="list"></div></section>
+  <section class="card"><h2>Media</h2>
+    <p id="capability">Проверяю доступность worker…</p>
+    <button id="media-action" type="button" disabled>Отправить ссылку</button>
+  </section>
+  <section class="card"><h2>Получатели</h2>
+    <p>Приватные чаты и каналы появятся после проверки прав в следующем этапе.</p>
+    <button type="button" disabled>Настроить получателя</button>
+  </section>
+  <section id="admin" class="card" hidden>
+    <h2>Admin</h2>
+    <form id="admin-search">
+      <label for="admin-identity">ID провайдера или подтверждённый email</label>
+      <div class="row"><input id="admin-identity" autocomplete="off" required><button>Найти</button></div>
+    </form>
+    <div id="admin-results" class="list"></div>
+    <a class="button-link" href="/admin/">Открыть MFA-защищённую консоль</a>
+  </section>
+</main>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script type="module" src="/miniapp/app.js"></script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Globalization;
 using System.Text;
 using Npgsql;
@@ -6,6 +7,8 @@ using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
 
 namespace VideoGrabber.Platform.Api.Telegram;
+
+public sealed record TelegramWebSession(DateTimeOffset ExpiresAt, string CsrfToken);
 
 public interface ITelegramAccountResolver
 {
@@ -145,7 +148,20 @@ public static class TelegramSessionEndpoints
             var accountId = await accounts.ResolveAsync(principal.UserId, principal.AuthTime, cancellationToken);
             if (!await assertions.TryUseAsync(principal, accountId, cancellationToken))
                 return Results.Unauthorized();
-            return Results.Ok(await sessions.IssueAsync(accountId, cancellationToken));
+            var session = await sessions.IssueAsync(accountId, cancellationToken);
+            var csrf = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            var cookie = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.Strict,
+                Path = "/",
+                Expires = session.ExpiresAt
+            };
+            http.Response.Cookies.Append("vg_session", session.AccessToken, cookie);
+            http.Response.Cookies.Append("vg_csrf", csrf, cookie);
+            return Results.Ok(new TelegramWebSession(session.ExpiresAt, csrf));
         }
         catch (UnauthorizedAccessException) { return Results.Unauthorized(); }
         catch (ArgumentException) { return Results.Unauthorized(); }

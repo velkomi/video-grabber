@@ -94,17 +94,18 @@ public sealed class TelegramAuthTests
     {
         await using var f = await ApiFixture.StartAsync();
         var desktop = await f.AccountAsync("telegram", "5006");
+        using var web = f.TelegramWebClient();
         var initData = SignInitData(ValidFields(5006, f.Clock.GetUtcNow()), BotToken);
 
-        var response = await f.Anonymous.PostAsync("/v1/telegram/session",
+        using var response = await web.PostAsync("/v1/telegram/session",
             new StringContent(initData, Encoding.UTF8, "text/plain"));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var session = (await response.Content.ReadFromJsonAsync<ApiSession>())!;
-        using var telegram = f.SessionClient(session);
-        var profile = await telegram.GetFromJsonAsync<AccountProfile>("/v1/me");
+        var session = (await response.Content.ReadFromJsonAsync<TelegramWebSession>())!;
+        web.DefaultRequestHeaders.Add("X-CSRF-Token", session.CsrfToken);
+        var profile = await web.GetFromJsonAsync<AccountProfile>("/v1/me");
         Assert.Equal(desktop.Id, profile!.AccountId);
 
-        var replay = await f.Anonymous.PostAsync("/v1/telegram/session",
+        using var replay = await web.PostAsync("/v1/telegram/session",
             new StringContent(initData, Encoding.UTF8, "text/plain"));
         Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
     }
@@ -113,27 +114,46 @@ public sealed class TelegramAuthTests
     public async Task New_numeric_telegram_user_maps_stably_across_fresh_assertions()
     {
         await using var f = await ApiFixture.StartAsync();
+        using var web = f.TelegramWebClient();
         var firstFields = ValidFields(5010, f.Clock.GetUtcNow());
         var firstInitData = SignInitData(firstFields, BotToken);
-        using var firstResponse = await f.Anonymous.PostAsync("/v1/telegram/session",
+        using var firstResponse = await web.PostAsync("/v1/telegram/session",
             new StringContent(firstInitData, Encoding.UTF8, "text/plain"));
         Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
-        var firstSession = (await firstResponse.Content.ReadFromJsonAsync<ApiSession>())!;
-        using var firstClient = f.SessionClient(firstSession);
-        var firstProfile = (await firstClient.GetFromJsonAsync<AccountProfile>("/v1/me"))!;
+        var firstSession = (await firstResponse.Content.ReadFromJsonAsync<TelegramWebSession>())!;
+        web.DefaultRequestHeaders.Add("X-CSRF-Token", firstSession.CsrfToken);
+        var firstProfile = (await web.GetFromJsonAsync<AccountProfile>("/v1/me"))!;
 
         var secondFields = ValidFields(5010, f.Clock.GetUtcNow());
         secondFields["query_id"] = "AA-fresh-second-5010";
         var secondInitData = SignInitData(secondFields, BotToken);
-        using var secondResponse = await f.Anonymous.PostAsync("/v1/telegram/session",
+        using var secondResponse = await web.PostAsync("/v1/telegram/session",
             new StringContent(secondInitData, Encoding.UTF8, "text/plain"));
         Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
-        var secondSession = (await secondResponse.Content.ReadFromJsonAsync<ApiSession>())!;
-        using var secondClient = f.SessionClient(secondSession);
-        var secondProfile = (await secondClient.GetFromJsonAsync<AccountProfile>("/v1/me"))!;
+        var secondSession = (await secondResponse.Content.ReadFromJsonAsync<TelegramWebSession>())!;
+        web.DefaultRequestHeaders.Remove("X-CSRF-Token");
+        web.DefaultRequestHeaders.Add("X-CSRF-Token", secondSession.CsrfToken);
+        var secondProfile = (await web.GetFromJsonAsync<AccountProfile>("/v1/me"))!;
 
         Assert.Equal(firstProfile.AccountId, secondProfile.AccountId);
         Assert.Contains("telegram", secondProfile.LinkedProviders);
+    }
+    [Fact]
+    public async Task Telegram_session_can_replace_existing_cookie_without_old_csrf()
+    {
+        await using var f = await ApiFixture.StartAsync();
+        using var web = f.TelegramWebClient();
+        var firstFields = ValidFields(5011, f.Clock.GetUtcNow());
+        firstFields["query_id"] = "AA-reopen-first";
+        using var first = await web.PostAsync("/v1/telegram/session",
+            new StringContent(SignInitData(firstFields, BotToken), Encoding.UTF8, "text/plain"));
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var secondFields = ValidFields(5011, f.Clock.GetUtcNow());
+        secondFields["query_id"] = "AA-reopen-second";
+        using var second = await web.PostAsync("/v1/telegram/session",
+            new StringContent(SignInitData(secondFields, BotToken), Encoding.UTF8, "text/plain"));
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
     }
     internal static string SignInitData(Dictionary<string, string> fields, string botToken)
     {
