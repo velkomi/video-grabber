@@ -57,6 +57,15 @@
     </form>
     <div id="destinations" class="list"></div>
   </section>
+  <section id="payments" class="card">
+    <h2>Оплата</h2>
+    <p>В Telegram цифровые услуги оплачиваются только Telegram Stars. Доступ появляется только после подтверждения платежа сервером.</p>
+    <label for="payment-product">Товар</label>
+    <select id="payment-product"></select>
+    <label class="item"><span>Автопродление (если доступно)</span><input id="payment-recurring" type="checkbox"></label>
+    <button id="payment-buy" type="button">Оплатить Stars</button>
+    <div id="payment-history" class="list"></div>
+  </section>
   <section id="admin" class="card" hidden>
     <h2>Admin</h2>
     <form id="admin-search">
@@ -70,5 +79,6 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script type="module" src="/miniapp/app.js"></script>
 <script type="module" src="/miniapp/media.js"></script>
+<script type="module" src="/miniapp/payments.js"></script>
 </body>
 </html>

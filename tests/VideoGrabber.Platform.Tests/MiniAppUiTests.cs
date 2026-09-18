@@ -27,10 +27,18 @@ public sealed class MiniAppUiTests
         Assert.Contains("id=\"destinations\"", html);
         Assert.Contains("id=\"media-form\"", html);
         Assert.Contains("/miniapp/media.js", html);
+        Assert.Contains("/miniapp/payments.js", html);
+        Assert.Contains("id=\"payment-buy\"", html);
         Assert.Contains("credentials: \"same-origin\"", js);
         Assert.Contains("X-CSRF-Token", js);
         Assert.Contains("textContent", js);
         Assert.DoesNotContain("innerHTML", js, StringComparison.OrdinalIgnoreCase);
+        var paymentsJs = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.Platform.Api", "wwwroot", "miniapp", "payments.js"));
+        Assert.Contains("/v1/payment-products?surface=telegram", paymentsJs);
+        Assert.Contains("provider: \"stars\"", paymentsJs);
+        Assert.Contains("openInvoice", paymentsJs);
+        Assert.DoesNotContain("yookassa", paymentsJs, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("innerHTML", paymentsJs, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("aria-live", html);
         Assert.Contains("id=\"balance\"", html);
         Assert.Contains("id=\"providers\"", html);

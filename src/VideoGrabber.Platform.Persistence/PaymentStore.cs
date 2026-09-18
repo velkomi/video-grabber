@@ -281,6 +281,31 @@ public sealed class PaymentStore
             reader.GetString(4));
     }
 
+    public async Task<IReadOnlyList<PaymentView>> ListAsync(
+        Guid accountId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select payment_id,state,expected_minor,expected_currency,sku
+            from licensing.payments
+            where account_id=@account
+            order by created_at desc,payment_id desc
+            limit @limit
+            """, connection);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("limit", limit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<PaymentView>();
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(new PaymentView(
+                reader.GetGuid(0), reader.GetString(1),
+                new Money(reader.GetInt64(2), reader.GetString(3)),
+                reader.GetString(4)));
+        return result;
+    }
     public async Task<PaymentIntentRecord?> ReadIntentByInvoiceAsync(
         string invoicePayload,
         CancellationToken cancellationToken)
@@ -320,6 +345,75 @@ public sealed class PaymentStore
             : null;
     }
 
+    public async Task<PaymentView> MarkRefundPendingAsync(
+        Guid accountId,
+        RefundRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (accountId == Guid.Empty || request.PaymentId == Guid.Empty
+            || request.IdempotencyKey == Guid.Empty || string.IsNullOrWhiteSpace(request.Reason))
+            throw new ArgumentException("Refund request is incomplete.");
+        var now = _clock.GetUtcNow();
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        await LockAccountAsync(connection, transaction, accountId, cancellationToken);
+        var row = await ReadPaymentForUpdateAsync(connection, transaction, request.PaymentId, cancellationToken)
+            ?? throw new KeyNotFoundException("Payment was not found.");
+        if (row.AccountId != accountId || row.State != "succeeded"
+            || string.IsNullOrWhiteSpace(row.ProviderPaymentId))
+            throw new PaymentConflictException();
+        var eventKey = "refund-requested:" + request.IdempotencyKey.ToString("N");
+        await using (var evt = new NpgsqlCommand("""
+            insert into licensing.payment_events(
+              event_id,payment_id,account_id,event_key,provider,environment,
+              provider_payment_id,status,amount_minor,currency,occurred_at,created_at)
+            values(@event,@payment,@account,@key,@provider,@environment,
+              @provider_id,'refund_requested',@amount,@currency,@now,@now)
+            on conflict(payment_id,event_key) do nothing
+            """, connection, transaction))
+        {
+            evt.Parameters.AddWithValue("event", Guid.NewGuid());
+            evt.Parameters.AddWithValue("payment", row.PaymentId);
+            evt.Parameters.AddWithValue("account", row.AccountId);
+            evt.Parameters.AddWithValue("key", eventKey);
+            evt.Parameters.AddWithValue("provider", row.Provider);
+            evt.Parameters.AddWithValue("environment", row.Environment);
+            evt.Parameters.AddWithValue("provider_id", row.ProviderPaymentId);
+            evt.Parameters.AddWithValue("amount", row.ExpectedMinor);
+            evt.Parameters.AddWithValue("currency", row.ExpectedCurrency);
+            evt.Parameters.AddWithValue("now", now);
+            await evt.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await SetPaymentStateAsync(connection, transaction, row.PaymentId,
+            "refund_pending", now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new PaymentView(row.PaymentId, "refund_pending",
+            new Money(row.ExpectedMinor, row.ExpectedCurrency), row.Sku);
+    }
+
+    public async Task<IReadOnlyList<PaymentIntentRecord>> ListReconcileCandidatesAsync(
+        string provider,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select payment_id,account_id,provider,environment,sku,
+                   expected_minor,expected_currency,recurring,state,
+                   provider_payment_id,invoice_payload
+            from licensing.payments
+            where provider=@provider and state in ('pending','refund_pending','reconcile_required')
+            order by updated_at,payment_id
+            limit @limit
+            """, connection);
+        command.Parameters.AddWithValue("provider", provider);
+        command.Parameters.AddWithValue("limit", limit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<PaymentIntentRecord>();
+        while (await reader.ReadAsync(cancellationToken)) result.Add(ReadIntent(reader));
+        return result;
+    }
     private async Task ApplyPurchaseGrantAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,

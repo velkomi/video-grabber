@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using VideoGrabber.Platform.Api.Admin;
+using VideoGrabber.Platform.Api.Payments;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
 
@@ -17,6 +18,8 @@ public sealed class BotCommandHandler(
     BotCallbackStore callbacks,
     IBotApiClient bot,
     BotMediaHandler media,
+    StarsPaymentAdapter stars,
+    PaymentStore payments,
     TimeProvider clock,
     IConfiguration configuration)
 {
@@ -53,7 +56,8 @@ public sealed class BotCommandHandler(
         }
 
         if (command is "/account" or "/balance" or "/link" or "/devices" or "/destinations" or "/admin"
-            or "/media" or "/jobs" or "/download" or "/mp3" or "/trim" or "/join" or "/transcribe")
+            or "/media" or "/jobs" or "/download" or "/mp3" or "/trim" or "/join" or "/transcribe"
+            or "/buy" or "/payments" or "/paysupport")
         {
             if (!string.Equals(chatType, "private", StringComparison.OrdinalIgnoreCase))
             {
@@ -83,6 +87,13 @@ public sealed class BotCommandHandler(
                 return;
             case "/admin":
                 await HandleAdminAsync(chatId, accountId, args, cancellationToken);
+                return;
+            case "/buy":
+                await HandleBuyAsync(chatId, accountId, args, cancellationToken);
+                return;
+            case "/payments":
+            case "/paysupport":
+                await SendPaymentSupportAsync(chatId, accountId, cancellationToken);
                 return;
             default:
                 if (await media.HandleAsync(chatId, accountId, command, args, cancellationToken))
@@ -164,6 +175,70 @@ public sealed class BotCommandHandler(
             ? "Проверенных получателей пока нет. Добавьте получателя в Mini App."
             : "Проверенные получатели:\n" + string.Join("\n", active.Select(x => $"• {x.Kind} {x.ChatId}"));
         await bot.SendMessageAsync(new BotMessage(chatId, text, MiniAppMarkup()), cancellationToken);
+    }
+    private async Task HandleBuyAsync(
+        long chatId,
+        Guid accountId,
+        string args,
+        CancellationToken cancellationToken)
+    {
+        var parts = args.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 0)
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Формат: /buy <sku> [recurring]. В Telegram цифровые услуги оплачиваются только Stars."),
+                cancellationToken);
+            return;
+        }
+        var recurring = parts.Length > 1
+            && string.Equals(parts[1], "recurring", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            var checkout = await stars.CreateAsync(
+                accountId,
+                new PurchaseRequest(parts[0], "stars", Guid.NewGuid(), recurring),
+                cancellationToken);
+            if (checkout.RedirectUri is null)
+                throw new InvalidDataException("Stars invoice link is unavailable.");
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                $"Заказ {checkout.PaymentId:D} создан. Доступ появится только после подтверждённого платежа Telegram.",
+                UrlMarkup("Оплатить Stars", checkout.RedirectUri)),
+                cancellationToken);
+        }
+        catch (Exception ex) when (
+            ex is KeyNotFoundException
+            or PaymentDisabledException
+            or PaymentConflictException
+            or UnauthorizedAccessException
+            or InvalidOperationException
+            or ArgumentException)
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Покупка сейчас недоступна для этого товара/аккаунта."),
+                cancellationToken);
+        }
+    }
+
+    private async Task SendPaymentSupportAsync(
+        long chatId,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        var rows = await payments.ListAsync(accountId, 10, cancellationToken);
+        var support = configuration["VG_PAYMENT_SUPPORT_TEXT"];
+        if (string.IsNullOrWhiteSpace(support))
+            support = "Контакт поддержки платежей пока не настроен администратором.";
+        var history = rows.Count == 0
+            ? "Платежей пока нет."
+            : string.Join("\n", rows.Select(x =>
+                $"{x.PaymentId:D} • {x.Sku} • {x.Status} • {x.Amount.MinorUnits} {x.Amount.Currency}"));
+        await bot.SendMessageAsync(new BotMessage(
+            chatId,
+            support + "\n\nВаши последние платежи:\n" + history),
+            cancellationToken);
     }
     private async Task HandleAdminAsync(
         long chatId,
@@ -260,8 +335,8 @@ public sealed class BotCommandHandler(
     }
 
     private static string HelpText()
-        => "Команды: /account, /balance, /link, /devices, /destinations, /help. " +
-           "Media-команды появятся только после подключения worker в P5. /admin доступен только owner_admin.";
+        => "Команды: /account, /balance, /link, /devices, /destinations, /media, /jobs, /download, /mp3, /trim, /join, /transcribe, /buy, /payments, /paysupport, /help. " +
+           "В Telegram цифровые покупки — только Stars. /admin доступен только owner_admin.";
 
     private static (string Command, string Args) ParseCommand(string text)
     {

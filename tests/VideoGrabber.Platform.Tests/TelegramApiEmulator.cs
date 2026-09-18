@@ -12,9 +12,20 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
     public const long BotUserId = 9990001L;
     private readonly ConcurrentQueue<TelegramApiRequest> _requests = new();
     private readonly ConcurrentDictionary<long, RightsState> _rights = new();
+    private readonly List<JsonElement> _starTransactions = [];
     public IReadOnlyCollection<TelegramApiRequest> Requests => _requests.ToArray();
     public bool LoseNextDocumentAck { get; set; }
+    public bool LoseNextRefundAck { get; set; }
 
+    public void SetStarTransactions(params object[] transactions)
+    {
+        lock (_starTransactions)
+        {
+            _starTransactions.Clear();
+            foreach (var transaction in transactions)
+                _starTransactions.Add(JsonSerializer.SerializeToElement(transaction));
+        }
+    }
     public void SetRights(long chatId, long userId, bool userCanPublish, bool botCanPublish, string kind)
     {
         if (chatId == 0 || userId <= 0) throw new ArgumentOutOfRangeException(nameof(chatId));
@@ -36,6 +47,27 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
             return HandleGetChatMember(body);
         if (path.EndsWith("/answerCallbackQuery", StringComparison.Ordinal))
             return Json(new { ok = true, result = true });
+        if (path.EndsWith("/createInvoiceLink", StringComparison.Ordinal))
+            return Json(new { ok = true, result = "https://t.me/$videograbber-test-invoice" });
+        if (path.EndsWith("/answerPreCheckoutQuery", StringComparison.Ordinal))
+            return Json(new { ok = true, result = true });
+        if (path.EndsWith("/refundStarPayment", StringComparison.Ordinal))
+        {
+            if (LoseNextRefundAck)
+            {
+                LoseNextRefundAck = false;
+                throw new HttpRequestException("synthetic refund ACK loss");
+            }
+            return Json(new { ok = true, result = true });
+        }
+        if (path.EndsWith("/editUserStarSubscription", StringComparison.Ordinal))
+            return Json(new { ok = true, result = true });
+        if (path.EndsWith("/getStarTransactions", StringComparison.Ordinal))
+        {
+            JsonElement[] items;
+            lock (_starTransactions) items = _starTransactions.Select(x => x.Clone()).ToArray();
+            return Json(new { ok = true, result = new { transactions = items } });
+        }
         if (path.EndsWith("/sendDocument", StringComparison.Ordinal))
         {
             if (LoseNextDocumentAck)

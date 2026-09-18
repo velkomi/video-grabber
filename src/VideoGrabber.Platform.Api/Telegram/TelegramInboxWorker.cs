@@ -2,6 +2,7 @@ namespace VideoGrabber.Platform.Api.Telegram;
 
 public sealed class TelegramInboxWorker(
     TelegramUpdateInbox inbox,
+    VideoGrabber.Platform.Api.Payments.StarsUpdateHandler stars,
     BotCommandHandler handler)
 {
     public async Task<bool> RunOnceAsync(CancellationToken cancellationToken)
@@ -10,7 +11,9 @@ public sealed class TelegramInboxWorker(
         if (update is null) return false;
         try
         {
-            await handler.HandleAsync(update, cancellationToken).ConfigureAwait(false);
+            var handledByPayment = await stars.HandleAsync(update, cancellationToken).ConfigureAwait(false);
+            if (!handledByPayment)
+                await handler.HandleAsync(update, cancellationToken).ConfigureAwait(false);
             await inbox.MarkHandledAsync(update.UpdateId, cancellationToken).ConfigureAwait(false);
             return true;
         }

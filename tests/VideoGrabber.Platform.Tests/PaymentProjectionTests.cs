@@ -13,7 +13,7 @@ public sealed class PaymentProjectionTests
     public async Task One_verified_charge_creates_one_purchase_grant()
     {
         await using var f = await ApiFixture.StartAsync();
-        var user = await f.AccountAsync("telegram", "payer");
+        var user = await f.AccountAsync("telegram", "93001");
         using var checkoutResponse = await user.Client.PostAsJsonAsync(
             "/v1/payments",
             new PurchaseRequest("test.credits3", "stars", Guid.NewGuid(), false));
@@ -43,7 +43,7 @@ public sealed class PaymentProjectionTests
     public async Task Pending_payment_does_not_grant_access()
     {
         await using var f = await ApiFixture.StartAsync();
-        var user = await f.AccountAsync("telegram", "pending-payer");
+        var user = await f.AccountAsync("telegram", "93002");
         var checkout = await CheckoutAsync(user.Client, "test.credits3", "stars");
         var pending = new VerifiedPayment(
             "stars", "test", "pending-1", checkout.PaymentId,
@@ -67,7 +67,7 @@ public sealed class PaymentProjectionTests
         string environment)
     {
         await using var f = await ApiFixture.StartAsync();
-        var user = await f.AccountAsync("telegram", "mismatch-" + Guid.NewGuid().ToString("N"));
+        var user = await f.AccountAsync("telegram", "93006");
         var checkout = await CheckoutAsync(user.Client, "test.credits3", "stars");
         var payment = new VerifiedPayment(
             "stars", environment, "mismatch-charge-" + Guid.NewGuid().ToString("N"),
@@ -85,7 +85,7 @@ public sealed class PaymentProjectionTests
     public async Task Altered_body_with_same_payment_idempotency_key_conflicts()
     {
         await using var f = await ApiFixture.StartAsync();
-        var user = await f.AccountAsync("telegram", "payment-idem");
+        var user = await f.AccountAsync("telegram", "93003");
         var key = Guid.NewGuid();
         using var first = await user.Client.PostAsJsonAsync(
             "/v1/payments",
@@ -101,7 +101,7 @@ public sealed class PaymentProjectionTests
     public async Task Transaction_fault_between_event_and_grant_rolls_back_everything()
     {
         await using var f = await ApiFixture.StartAsync();
-        var user = await f.AccountAsync("telegram", "payment-crash");
+        var user = await f.AccountAsync("telegram", "93004");
         var checkout = await CheckoutAsync(user.Client, "test.credits3", "stars");
         var catalog = PaymentCatalog.Load(CatalogPath());
         var faulted = PaymentStore.CreateForTesting(
@@ -132,7 +132,7 @@ public sealed class PaymentProjectionTests
     public async Task Refunded_payment_cannot_be_regranted_by_late_success_replay()
     {
         await using var f = await ApiFixture.StartAsync();
-        var user = await f.AccountAsync("telegram", "payment-refund");
+        var user = await f.AccountAsync("telegram", "93005");
         var checkout = await CheckoutAsync(user.Client, "test.credits3", "stars");
         var succeeded = new VerifiedPayment(
             "stars", "test", "refund-charge", checkout.PaymentId,

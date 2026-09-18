@@ -115,6 +115,9 @@ builder.Services.AddSingleton<PaymentStore>(sp =>
         sp.GetRequiredService<TimeProvider>(),
         catalog);
 });
+builder.Services.AddSingleton<StarsPaymentAdapter>();
+builder.Services.AddSingleton<StarsUpdateHandler>();
+builder.Services.AddHostedService<PaymentReconciliationWorker>();
 builder.Services.AddSingleton<EgressProxy>();
 builder.Services.AddSingleton<SourceAnalysisService>();
 builder.Services.AddSingleton<ArtifactUploadService>();

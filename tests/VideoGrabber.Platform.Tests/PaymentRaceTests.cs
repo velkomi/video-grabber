@@ -12,7 +12,7 @@ public sealed class PaymentRaceTests
     public async Task Hundred_verified_replays_converge_to_one_grant_and_one_event()
     {
         await using var f = await ApiFixture.StartAsync();
-        var user = await f.AccountAsync("telegram", "race-payer");
+        var user = await f.AccountAsync("telegram", "93101");
         var checkout = await CheckoutAsync(user.Client);
         var verified = new VerifiedPayment(
             "stars", "test", "race-charge-1", checkout.PaymentId,
@@ -41,7 +41,7 @@ public sealed class PaymentRaceTests
     public async Task Same_provider_charge_cannot_back_two_payment_intents()
     {
         await using var f = await ApiFixture.StartAsync();
-        var user = await f.AccountAsync("telegram", "charge-collision");
+        var user = await f.AccountAsync("telegram", "93102");
         var first = await CheckoutAsync(user.Client);
         var second = await CheckoutAsync(user.Client);
         var store = f.Service<PaymentStore>();
@@ -70,8 +70,8 @@ public sealed class PaymentRaceTests
     public async Task Verified_payment_cannot_be_applied_to_foreign_account()
     {
         await using var f = await ApiFixture.StartAsync();
-        var owner = await f.AccountAsync("telegram", "payment-owner");
-        var foreign = await f.AccountAsync("telegram", "payment-foreign");
+        var owner = await f.AccountAsync("telegram", "93103");
+        var foreign = await f.AccountAsync("telegram", "93104");
         var checkout = await CheckoutAsync(owner.Client);
 
         await Assert.ThrowsAsync<PaymentConflictException>(

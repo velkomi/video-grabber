@@ -13,6 +13,11 @@ public interface IBotApiClient
     Task AnswerCallbackAsync(string callbackQueryId, string text, CancellationToken cancellationToken);
     Task<BotSentMessage> SendDocumentAsync(long chatId, Stream content, string fileName, CancellationToken cancellationToken);
     Task<TelegramChatRights> GetRightsAsync(long chatId, long userId, CancellationToken cancellationToken);
+    Task<Uri> CreateInvoiceAsync(long payerId, string payload, string title, Money amount, int? subscriptionPeriod, CancellationToken cancellationToken);
+    Task AnswerPreCheckoutAsync(string queryId, bool accepted, string? error, CancellationToken cancellationToken);
+    Task<bool> RefundStarsAsync(long payerId, string telegramChargeId, CancellationToken cancellationToken);
+    Task<JsonElement> ReadStarTransactionsAsync(int offset, int limit, CancellationToken cancellationToken);
+    Task<bool> SetStarSubscriptionCanceledAsync(long payerId, string firstChargeId, bool canceled, CancellationToken cancellationToken);
 }
 
 public sealed class BotApiClient(
@@ -130,6 +135,120 @@ public sealed class BotApiClient(
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<Uri> CreateInvoiceAsync(
+        long payerId,
+        string payload,
+        string title,
+        Money amount,
+        int? subscriptionPeriod,
+        CancellationToken cancellationToken)
+    {
+        if (payerId <= 0) throw new ArgumentOutOfRangeException(nameof(payerId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(payload);
+        ArgumentException.ThrowIfNullOrWhiteSpace(title);
+        if (payload.Length > 128 || title.Length > 32)
+            throw new ArgumentException("Stars invoice text exceeds Telegram limits.");
+        if (amount.Currency != "XTR" || amount.MinorUnits <= 0)
+            throw new ArgumentException("Stars invoices require positive XTR amount.");
+        if (subscriptionPeriod is not null && subscriptionPeriod != 2592000)
+            throw new ArgumentException("Stars subscription period must be 2592000 seconds.");
+        var requestPayload = new Dictionary<string, object?>
+        {
+            ["title"] = title,
+            ["description"] = "VideoGrabber digital service",
+            ["payload"] = payload,
+            ["provider_token"] = string.Empty,
+            ["currency"] = "XTR",
+            ["prices"] = new[] { new { label = title, amount = amount.MinorUnits } }
+        };
+        if (subscriptionPeriod is int period)
+            requestPayload["subscription_period"] = period;
+        var result = await CallAnyAsync("createInvoiceLink", requestPayload, cancellationToken)
+            .ConfigureAwait(false);
+        if (result.ValueKind != JsonValueKind.String
+            || !Uri.TryCreate(result.GetString(), UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidDataException("Telegram invoice link is invalid.");
+        return uri;
+    }
+
+    public async Task AnswerPreCheckoutAsync(
+        string queryId,
+        bool accepted,
+        string? error,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(queryId);
+        var result = await CallAnyAsync(
+            "answerPreCheckoutQuery",
+            accepted
+                ? new { pre_checkout_query_id = queryId, ok = true }
+                : new { pre_checkout_query_id = queryId, ok = false, error_message = string.IsNullOrWhiteSpace(error) ? "Payment validation failed" : error },
+            cancellationToken).ConfigureAwait(false);
+        if (result.ValueKind is not JsonValueKind.True)
+            throw new HttpRequestException("Telegram rejected pre-checkout answer.");
+    }
+
+    public async Task<bool> RefundStarsAsync(
+        long payerId,
+        string telegramChargeId,
+        CancellationToken cancellationToken)
+    {
+        if (payerId <= 0) throw new ArgumentOutOfRangeException(nameof(payerId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(telegramChargeId);
+        var result = await CallAnyAsync(
+            "refundStarPayment",
+            new { user_id = payerId, telegram_payment_charge_id = telegramChargeId },
+            cancellationToken).ConfigureAwait(false);
+        return result.ValueKind == JsonValueKind.True;
+    }
+
+    public async Task<JsonElement> ReadStarTransactionsAsync(
+        int offset,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (offset < 0 || limit is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(limit));
+        var result = await CallAnyAsync(
+            "getStarTransactions", new { offset, limit }, cancellationToken).ConfigureAwait(false);
+        if (result.ValueKind != JsonValueKind.Object)
+            throw new InvalidDataException("Telegram StarTransactions response is invalid.");
+        return result;
+    }
+
+    public async Task<bool> SetStarSubscriptionCanceledAsync(
+        long payerId,
+        string firstChargeId,
+        bool canceled,
+        CancellationToken cancellationToken)
+    {
+        if (payerId <= 0) throw new ArgumentOutOfRangeException(nameof(payerId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(firstChargeId);
+        var result = await CallAnyAsync(
+            "editUserStarSubscription",
+            new { user_id = payerId, telegram_payment_charge_id = firstChargeId, is_canceled = canceled },
+            cancellationToken).ConfigureAwait(false);
+        return result.ValueKind == JsonValueKind.True;
+    }
+
+    private async Task<JsonElement> CallAnyAsync(
+        string method,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, MethodUri(method))
+        {
+            Content = JsonContent.Create(payload)
+        };
+        using var response = await clients.CreateClient("TelegramBotApi")
+            .SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<TelegramEnvelope>(cancellationToken: cancellationToken)
+            .ConfigureAwait(false) ?? throw new InvalidDataException("Telegram Bot API response was empty.");
+        if (!envelope.Ok)
+            throw new HttpRequestException("Telegram Bot API rejected " + method + ".");
+        return envelope.Result.Clone();
+    }
     public async Task<TelegramChatRights> GetRightsAsync(
         long chatId,
         long userId,

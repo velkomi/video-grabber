@@ -379,6 +379,8 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_TELEGRAM_BOT_USER_ID", TelegramApiEmulator.BotUserId.ToString());
         builder.UseSetting("VG_TELEGRAM_WORKER_ENABLED", "false");
         builder.UseSetting("VG_DELIVERY_WORKER_ENABLED", "false");
+        builder.UseSetting("VG_PAYMENT_RECONCILIATION_ENABLED", "false");
+        builder.UseSetting("VG_PAYMENT_SUPPORT_TEXT", "Payment support: support@example.test");
         builder.UseSetting("VG_TELEGRAM_DOCUMENT_MAX_BYTES", (10L * 1024 * 1024).ToString());
         builder.UseSetting("VG_SERVER_WORKER_TOKEN", "test-server-worker-token");
         builder.UseSetting("VG_SOURCE_ENCRYPTION_KEY", "KSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0g=");
