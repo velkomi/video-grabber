@@ -10,13 +10,17 @@ using VideoGrabber.Platform.Api.Accounts;
 using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
+using VideoGrabber.Platform.Api.Telegram;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 var sessionJwt = SessionJwtOptions.FromConfiguration(builder.Configuration);
+var telegramSecurity = TelegramSecurityOptions.FromConfiguration(builder.Configuration);
 
 builder.Services.AddSingleton(sessionJwt);
+builder.Services.AddSingleton(telegramSecurity);
+builder.Services.AddSingleton<IMiniAppAssertionValidator>(_ => new MiniAppAssertionValidator(telegramSecurity.BotToken));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -104,6 +108,11 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
+builder.Services.AddSingleton<ITelegramUpdateInbox>(sp => new TelegramUpdateInbox(
+    sp.GetRequiredService<NpgsqlDataSource>(), telegramSecurity.InboxEncryptionKey,
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton<TelegramAssertionStore>();
+builder.Services.AddSingleton<ITelegramAccountResolver, TelegramAccountResolver>();
 
 var allowedOrigins = builder.Configuration.GetSection("Security:AllowedOrigins").GetChildren()
     .Select(section => section.Value)
@@ -202,6 +211,8 @@ app.MapReservationEndpoints();
 app.MapDeviceEndpoints();
 app.MapIdentityEndpoints();
 app.MapSessionEndpoints();
+app.MapTelegramSessionEndpoints();
+app.MapTelegramWebhookEndpoints();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

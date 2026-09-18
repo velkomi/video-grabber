@@ -20,6 +20,7 @@ using VideoGrabber.Platform.Api.Accounts;
 using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
+using VideoGrabber.Platform.Api.Telegram;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
 
@@ -71,6 +72,7 @@ public sealed class ApiFixture : IAsyncDisposable
     public NpgsqlDataSource Database { get; }
     public AdjustableTimeProvider Clock { get; }
     public BrokerEmulator Broker { get; }
+    public TelegramApiEmulator TelegramApi { get; } = new();
     public System.Collections.Concurrent.ConcurrentQueue<string> Logs { get; } = new();
     public HttpClient Anonymous { get; private set; }
 
@@ -230,7 +232,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, Clock, Broker, Logs);
+        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, Clock, Broker, TelegramApi, Logs);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -260,6 +262,7 @@ internal sealed class PlatformApiFactory(
     NpgsqlDataSource deviceDataSource,
     AdjustableTimeProvider clock,
     BrokerEmulator broker,
+    TelegramApiEmulator telegramApi,
     ConcurrentQueue<string> logs) : WebApplicationFactory<Program>
 {
     internal const string TestSessionKey = "test-only-videograbber-session-signing-key-2026";
@@ -290,6 +293,9 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_PLATFORM_SESSION_SIGNING_KEY", TestSessionKey);
         builder.UseSetting("VG_PLATFORM_LEASE_KEY_ID", "test-lease-key-1");
         builder.UseSetting("VG_PLATFORM_LEASE_SIGNING_KEY_PKCS8", TestLeasePrivateKey);
+        builder.UseSetting("VG_TELEGRAM_BOT_TOKEN", "123456789:test-telegram-bot-token-for-local-tests");
+        builder.UseSetting("VG_TELEGRAM_WEBHOOK_SECRET", "test-webhook-secret-2026");
+        builder.UseSetting("VG_TELEGRAM_INBOX_KEY", Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray()));
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<NpgsqlDataSource>();
@@ -323,6 +329,10 @@ internal sealed class PlatformApiFactory(
             services.AddSingleton(DeviceStore.CreateForTesting(deviceDataSource, clock));
             services.RemoveAll<AdminService>();
             services.AddSingleton(AdminService.CreateForTesting(adminDataSource, clock));
+            services.RemoveAll<ITelegramAccountResolver>();
+            services.AddSingleton<ITelegramAccountResolver>(_ => TelegramAccountResolver.CreateForTesting(identityDataSource));
+            services.AddHttpClient("TelegramBotApi")
+                .ConfigurePrimaryHttpMessageHandler(_ => telegramApi);
         });
     }
 }
