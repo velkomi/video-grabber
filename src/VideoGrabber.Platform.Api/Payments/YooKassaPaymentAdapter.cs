@@ -13,6 +13,7 @@ namespace VideoGrabber.Platform.Api.Payments;
 
 public sealed class YooKassaPaymentAdapter(
     PaymentStore payments,
+    SubscriptionStore subscriptions,
     IHttpClientFactory clients,
     IConfiguration configuration,
     TimeProvider clock) : IPaymentAdapter
@@ -172,6 +173,8 @@ public sealed class YooKassaPaymentAdapter(
             ?? throw new KeyNotFoundException("Unknown YooKassa order.");
         if (intent.Provider != "yookassa")
             throw new PaymentConflictException();
+        var product = payments.Catalog.RequireProduct(
+            intent.Sku, "yookassa", intent.Recurring);
         if (intent.ProviderPaymentId is { Length: > 0 }
             && intent.ProviderPaymentId != providerPaymentId)
             throw new PaymentConflictException();
@@ -210,6 +213,12 @@ public sealed class YooKassaPaymentAdapter(
             && methodId.ValueKind == JsonValueKind.String)
             savedMethod = methodId.GetString();
 
+        if (intent.Recurring && status == "succeeded" && string.IsNullOrWhiteSpace(savedMethod))
+            throw new PaymentConflictException();
+        var paidThrough = intent.Recurring && status == "succeeded"
+            ? occurred.AddDays(product.Days)
+            : (DateTimeOffset?)null;
+
         return new VerifiedPayment(
             "yookassa",
             intent.Environment,
@@ -220,9 +229,130 @@ public sealed class YooKassaPaymentAdapter(
             status,
             occurred,
             savedMethod,
-            null);
+            paidThrough);
     }
 
+    public async Task<YooKassaRenewalCheckout> CreateRecurringRenewalAsync(
+        SubscriptionRecord subscription,
+        DateTimeOffset periodStart,
+        CancellationToken cancellationToken)
+    {
+        if (subscription.Provider != "yookassa" || !subscription.AutoRenew
+            || subscription.State != "active")
+            throw new SubscriptionConflictException();
+        var intent = await payments.ReadIntentAsync(
+            subscription.OriginPaymentId, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException("Origin payment was not found.");
+        if (!intent.Recurring || intent.Provider != "yookassa")
+            throw new SubscriptionConflictException();
+        var product = payments.Catalog.RequireProduct(intent.Sku, "yookassa", true);
+        var price = product.Prices["yookassa"];
+        var idempotencyKey = RenewalKey(subscription.SubscriptionId, periodStart);
+        var credentials = Credentials();
+        using var message = Request(
+            HttpMethod.Post, "payments", credentials, idempotencyKey.ToString("D"));
+        message.Content = JsonContent.Create(new
+        {
+            amount = new { value = FormatRub(price.MinorUnits), currency = "RUB" },
+            capture = true,
+            payment_method_id = subscription.ProviderReference,
+            description = "VideoGrabber renewal " + intent.Sku,
+            metadata = new
+            {
+                subscription_id = subscription.SubscriptionId.ToString("D"),
+                period_start_ms = periodStart.ToUnixTimeMilliseconds()
+            }
+        });
+        using var response = await clients.CreateClient("YooKassa")
+            .SendAsync(message, cancellationToken).ConfigureAwait(false);
+        if ((int)response.StatusCode == 429
+            || response.StatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout)
+            throw new HttpRequestException("yookassa_retryable", null, response.StatusCode);
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken));
+        var root = json.RootElement;
+        ValidateTestEnvironment(root);
+        ValidateAmount(root, price);
+        var providerId = RequiredString(root, "id");
+        if (!root.TryGetProperty("metadata", out var metadata)
+            || metadata.ValueKind != JsonValueKind.Object
+            || !metadata.TryGetProperty("subscription_id", out var subscriptionId)
+            || subscriptionId.ValueKind != JsonValueKind.String
+            || subscriptionId.GetString() != subscription.SubscriptionId.ToString("D")
+            || !metadata.TryGetProperty("period_start_ms", out var start)
+            || !start.TryGetInt64(out var startUnix)
+            || startUnix != periodStart.ToUnixTimeMilliseconds())
+            throw new PaymentConflictException();
+        return new YooKassaRenewalCheckout(providerId, idempotencyKey);
+    }
+
+    public async Task<RenewalEvent> ReadVerifiedRenewalAsync(
+        string providerPaymentId,
+        CancellationToken cancellationToken)
+    {
+        ValidateProviderId(providerPaymentId);
+        var credentials = Credentials();
+        using var message = Request(
+            HttpMethod.Get,
+            "payments/" + Uri.EscapeDataString(providerPaymentId),
+            credentials,
+            null);
+        using var response = await clients.CreateClient("YooKassa")
+            .SendAsync(message, cancellationToken).ConfigureAwait(false);
+        if ((int)response.StatusCode == 429
+            || response.StatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout)
+            throw new HttpRequestException("yookassa_retryable", null, response.StatusCode);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new KeyNotFoundException("YooKassa renewal was not found.");
+        response.EnsureSuccessStatusCode();
+        using var json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync(cancellationToken));
+        var root = json.RootElement;
+        if (RequiredString(root, "id") != providerPaymentId)
+            throw new PaymentConflictException();
+        ValidateTestEnvironment(root);
+        var status = RequiredString(root, "status");
+        var paid = root.TryGetProperty("paid", out var paidElement)
+            && paidElement.ValueKind == JsonValueKind.True;
+        if (status != "succeeded" || !paid)
+            throw new PaymentConflictException();
+        if (!root.TryGetProperty("metadata", out var metadata)
+            || metadata.ValueKind != JsonValueKind.Object
+            || !metadata.TryGetProperty("subscription_id", out var subElement)
+            || subElement.ValueKind != JsonValueKind.String
+            || !Guid.TryParse(subElement.GetString(), out var subscriptionId)
+            || !metadata.TryGetProperty("period_start_ms", out var startElement)
+            || !startElement.TryGetInt64(out var startUnix))
+            throw new PaymentConflictException();
+        var subscription = await subscriptions.ReadRecordAsync(
+            subscriptionId, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException("Subscription was not found.");
+        if (subscription.Provider != "yookassa")
+            throw new SubscriptionConflictException();
+        var intent = await payments.ReadIntentAsync(
+            subscription.OriginPaymentId, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException("Origin payment was not found.");
+        var product = payments.Catalog.RequireProduct(intent.Sku, "yookassa", true);
+        var price = product.Prices["yookassa"];
+        ValidateAmount(root, price);
+        var periodStart = DateTimeOffset.FromUnixTimeMilliseconds(startUnix);
+        var periodEnd = periodStart.AddDays(product.Days);
+        return new RenewalEvent(
+            "yookassa", subscription.Environment, providerPaymentId,
+            subscription.SubscriptionId, periodStart, periodEnd,
+            new Money(price.MinorUnits, price.Currency));
+    }
+
+    public static Guid RenewalKey(Guid subscriptionId, DateTimeOffset periodStart)
+    {
+        Span<byte> input = stackalloc byte[24];
+        subscriptionId.TryWriteBytes(input[..16]);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(
+            input[16..], periodStart.ToUnixTimeMilliseconds());
+        var hash = System.Security.Cryptography.SHA256.HashData(input);
+        return new Guid(hash.AsSpan(0, 16));
+    }
     public async Task<string> RefundAsync(
         RefundRequest request,
         CancellationToken cancellationToken)
@@ -275,6 +405,7 @@ public sealed class YooKassaPaymentAdapter(
                     candidate.ProviderPaymentId, cancellationToken).ConfigureAwait(false);
                 await payments.ApplyAsync(
                     verified, cancellationToken).ConfigureAwait(false);
+                await subscriptions.ProjectInitialPaymentAsync(candidate, verified, cancellationToken).ConfigureAwait(false);
                 applied++;
             }
             catch (HttpRequestException)
@@ -396,3 +527,5 @@ public sealed class YooKassaPaymentAdapter(
             : throw new InvalidDataException(
                 "YooKassa field " + name + " is invalid.");
 }
+
+public sealed record YooKassaRenewalCheckout(string ProviderPaymentId, Guid IdempotencyKey);

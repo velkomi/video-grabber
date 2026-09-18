@@ -18,6 +18,7 @@ public static class YooKassaWebhookEndpoints
         JsonElement notification,
         YooKassaPaymentAdapter adapter,
         PaymentStore payments,
+        SubscriptionService subscriptions,
         CancellationToken cancellationToken)
     {
         if (notification.ValueKind != JsonValueKind.Object
@@ -37,6 +38,8 @@ public static class YooKassaWebhookEndpoints
             var verified = await adapter.ReadVerifiedAsync(
                 providerId, cancellationToken).ConfigureAwait(false);
             await payments.ApplyAsync(
+                verified, cancellationToken).ConfigureAwait(false);
+            await subscriptions.ProjectInitialAsync(
                 verified, cancellationToken).ConfigureAwait(false);
             return Results.Ok();
         }

@@ -9,6 +9,7 @@ namespace VideoGrabber.Platform.Api.Payments;
 
 public sealed class StarsPaymentAdapter(
     PaymentStore payments,
+    SubscriptionStore subscriptions,
     NpgsqlDataSource apiDataSource,
     IBotApiClient bot) : IPaymentAdapter
 {
@@ -119,6 +120,7 @@ public sealed class StarsPaymentAdapter(
                 match.Value, cancellationToken).ConfigureAwait(false);
             if (verified.PaymentId != candidate.PaymentId) continue;
             await payments.ApplyAsync(verified, cancellationToken).ConfigureAwait(false);
+            await subscriptions.ProjectInitialPaymentAsync(candidate, verified, cancellationToken).ConfigureAwait(false);
             reconciled++;
         }
 

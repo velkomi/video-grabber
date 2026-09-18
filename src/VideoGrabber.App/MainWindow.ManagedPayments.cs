@@ -12,6 +12,7 @@ public sealed partial class MainWindow
     private ComboBox _managedPaymentProduct = null!;
     private CheckBox _managedPaymentRecurring = null!;
     private TextBlock _managedPaymentStatus = null!;
+    private StackPanel _managedSubscriptionsPanel = null!;
 
     private FrameworkElement BuildManagedPaymentsCard()
     {
@@ -33,13 +34,21 @@ public sealed partial class MainWindow
         panel.Children.Add(_managedPaymentRecurring);
 
         var refresh = SecondaryButton("Обновить товары");
-        refresh.Click += async (_, _) => await RefreshManagedPaymentProductsAsync();
+        refresh.Click += async (_, _) =>
+        {
+            await RefreshManagedPaymentProductsAsync();
+            await RefreshManagedSubscriptionsAsync();
+        };
         var buy = PrimaryButton("Перейти к оплате YooKassa");
         buy.Click += async (_, _) => await StartManagedYooKassaPurchaseAsync();
         panel.Children.Add(Horizontal(refresh, buy));
         _managedPaymentStatus = MutedText(
             "До входа покупка недоступна. Live-каталог не включается автоматически.");
         panel.Children.Add(_managedPaymentStatus);
+        panel.Children.Add(SectionHeading("Подписки"));
+        _managedSubscriptionsPanel = Vertical(6);
+        _managedSubscriptionsPanel.Children.Add(MutedText("После входа здесь появятся активные подписки и дата оплаченного периода."));
+        panel.Children.Add(_managedSubscriptionsPanel);
         return Card(panel);
     }
 
@@ -79,6 +88,59 @@ public sealed partial class MainWindow
         }
     }
 
+    private async Task RefreshManagedSubscriptionsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_managedAccessToken)) return;
+        var rows = await ManagedGetAsync<SubscriptionView[]>(
+            "/v1/subscriptions", _windowLifetime.Token);
+        AccountUi(() =>
+        {
+            _managedSubscriptionsPanel.Children.Clear();
+            if (rows.Length == 0)
+            {
+                _managedSubscriptionsPanel.Children.Add(MutedText("Подписок пока нет."));
+                return;
+            }
+            foreach (var subscription in rows)
+            {
+                var line = Vertical(4);
+                line.Children.Add(MutedText(
+                    $"{subscription.Provider} • {subscription.State} • оплачено до {subscription.PaidThrough.ToLocalTime():g} • auto-renew={(subscription.AutoRenew ? "on" : "off")}"));
+                if (subscription.AutoRenew && subscription.State == "active")
+                {
+                    var cancel = SecondaryButton("Отключить автопродление");
+                    cancel.Click += async (_, _) => await CancelManagedSubscriptionAsync(subscription.SubscriptionId);
+                    line.Children.Add(cancel);
+                }
+                _managedSubscriptionsPanel.Children.Add(line);
+            }
+        });
+    }
+
+    private async Task CancelManagedSubscriptionAsync(Guid subscriptionId)
+    {
+        try
+        {
+            using var request = ManagedRequest(
+                HttpMethod.Post,
+                $"/v1/subscriptions/{subscriptionId:D}/cancel");
+            request.Content = JsonContent.Create(
+                new CancelSubscriptionRequest(Guid.NewGuid()));
+            using var response = await _managedHttp.SendAsync(
+                request, _windowLifetime.Token);
+            response.EnsureSuccessStatusCode();
+            var view = await response.Content.ReadFromJsonAsync<SubscriptionView>(
+                cancellationToken: _windowLifetime.Token)
+                ?? throw new InvalidDataException("Subscription response is empty.");
+            SetManagedPaymentStatus(
+                $"Автопродление отключено. Оплаченный период сохранён до {view.PaidThrough.ToLocalTime():g}.");
+            await RefreshManagedSubscriptionsAsync();
+        }
+        catch (Exception ex)
+        {
+            SetManagedPaymentStatus("Не удалось отключить автопродление: " + ex.Message);
+        }
+    }
     private async Task StartManagedYooKassaPurchaseAsync()
     {
         if (string.IsNullOrWhiteSpace(_managedAccessToken))

@@ -219,6 +219,8 @@ public sealed partial class MainWindow
                 RenderManagedDevices(devices);
                 _accountStatus.Text = "Данные аккаунта обновлены.";
             });
+            await RefreshManagedPaymentProductsAsync();
+            await RefreshManagedSubscriptionsAsync();
         }
         catch (UnauthorizedAccessException)
         {

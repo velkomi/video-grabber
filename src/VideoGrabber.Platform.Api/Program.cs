@@ -116,6 +116,8 @@ builder.Services.AddSingleton<PaymentStore>(sp =>
         sp.GetRequiredService<TimeProvider>(),
         catalog);
 });
+builder.Services.AddSingleton<SubscriptionStore>();
+builder.Services.AddSingleton<SubscriptionService>();
 builder.Services.AddSingleton<StarsPaymentAdapter>();
 builder.Services.AddSingleton<YooKassaPaymentAdapter>();
 builder.Services.AddSingleton<StarsUpdateHandler>();
@@ -267,6 +269,7 @@ app.MapDestinationEndpoints();
 app.MapDeliveryEndpoints();
 app.MapRetentionEndpoints();
 app.MapPaymentEndpoints();
+app.MapSubscriptionEndpoints();
 app.MapYooKassaWebhookEndpoints();
 app.MapJobEndpoints();
 app.MapJobEventEndpoints();

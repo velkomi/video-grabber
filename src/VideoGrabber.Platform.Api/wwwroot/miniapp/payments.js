@@ -49,6 +49,45 @@ async function loadProducts() {
   updateRecurring();
 }
 
+async function refreshSubscriptions() {
+  const host = $("#subscription-list");
+  host.replaceChildren();
+  const rows = await api("/v1/subscriptions");
+  if (!rows.length) {
+    host.textContent = "Активных подписок пока нет.";
+    return;
+  }
+  for (const subscription of rows) {
+    const row = document.createElement("div");
+    row.className = "item";
+    const label = document.createElement("span");
+    label.className = "item-text";
+    label.textContent =
+      subscription.provider + " • " + subscription.state
+      + " • оплачено до " + new Date(subscription.paidThrough).toLocaleString()
+      + " • auto-renew=" + (subscription.autoRenew ? "on" : "off");
+    row.append(label);
+    if (subscription.autoRenew && subscription.state === "active") {
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.textContent = "Отключить автопродление";
+      cancel.addEventListener("click", async () => {
+        if (!confirm("Отключить автопродление? Уже оплаченный период сохранится.")) return;
+        await api(
+          "/v1/subscriptions/" + encodeURIComponent(subscription.subscriptionId) + "/cancel",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idempotencyKey: crypto.randomUUID() })
+          });
+        await refreshSubscriptions();
+        status("Автопродление отключено. Оплаченный период сохранён.", "success");
+      });
+      row.append(cancel);
+    }
+    host.append(row);
+  }
+}
 async function refreshPayments() {
   const host = $("#payment-history");
   host.replaceChildren();
@@ -118,6 +157,7 @@ async function boot() {
   try {
     await loadProducts();
     await refreshPayments();
+    await refreshSubscriptions();
   } catch (error) {
     status("Платежи недоступны: " + error.message, "error");
   }

@@ -8,6 +8,7 @@ namespace VideoGrabber.Platform.Api.Payments;
 public sealed class StarsUpdateHandler(
     PaymentStore payments,
     StarsPaymentAdapter stars,
+    SubscriptionService subscriptions,
     IBotApiClient bot,
     TimeProvider clock)
 {
@@ -106,8 +107,7 @@ public sealed class StarsUpdateHandler(
         var currency = RequiredString(successful, "currency");
         var amount = RequiredInt64(successful, "total_amount");
         var payload = RequiredString(successful, "invoice_payload");
-        var chargeId = RequiredString(
-            successful, "telegram_payment_charge_id");
+        var chargeId = RequiredString(successful, "telegram_payment_charge_id");
         if (currency != "XTR" || amount <= 0)
             throw new PaymentConflictException();
 
@@ -123,7 +123,7 @@ public sealed class StarsUpdateHandler(
         if (payerId != expectedPayer)
             throw new PaymentConflictException();
 
-        DateTimeOffset occurredAt = clock.GetUtcNow();
+        var occurredAt = clock.GetUtcNow();
         if (message.TryGetProperty("date", out var date)
             && date.ValueKind == JsonValueKind.Number
             && date.TryGetInt64(out var unix)
@@ -131,29 +131,45 @@ public sealed class StarsUpdateHandler(
             occurredAt = DateTimeOffset.FromUnixTimeSeconds(unix);
 
         DateTimeOffset? paidThrough = null;
-        if (successful.TryGetProperty(
-                "subscription_expiration_date",
-                out var expiration)
+        if (successful.TryGetProperty("subscription_expiration_date", out var expiration)
             && expiration.ValueKind == JsonValueKind.Number
             && expiration.TryGetInt64(out var expirationUnix)
             && expirationUnix > 0)
             paidThrough = DateTimeOffset.FromUnixTimeSeconds(expirationUnix);
 
-        await payments.ApplyAsync(
-            new VerifiedPayment(
-                "stars",
-                intent.Environment,
-                chargeId,
-                intent.PaymentId,
-                intent.AccountId,
-                new Money(amount, "XTR"),
-                "succeeded",
-                occurredAt,
-                intent.Recurring ? chargeId : null,
-                paidThrough),
-            cancellationToken).ConfigureAwait(false);
-    }
+        var isRecurring = successful.TryGetProperty("is_recurring", out var recurringElement)
+            && recurringElement.ValueKind == JsonValueKind.True;
+        var isFirstRecurring = successful.TryGetProperty("is_first_recurring", out var firstElement)
+            && firstElement.ValueKind == JsonValueKind.True;
+        if (intent.Recurring != isRecurring)
+            throw new PaymentConflictException();
+        if (intent.Recurring && paidThrough is null)
+            throw new PaymentConflictException();
 
+        var money = new Money(amount, "XTR");
+        if (intent.Recurring && !isFirstRecurring)
+        {
+            await subscriptions.ApplyStarsRenewalAsync(
+                intent.PaymentId, chargeId, paidThrough!.Value, money,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var verified = new VerifiedPayment(
+            "stars",
+            intent.Environment,
+            chargeId,
+            intent.PaymentId,
+            intent.AccountId,
+            money,
+            "succeeded",
+            occurredAt,
+            intent.Recurring ? chargeId : null,
+            paidThrough);
+        await payments.ApplyAsync(verified, cancellationToken).ConfigureAwait(false);
+        await subscriptions.ProjectInitialAsync(
+            verified, cancellationToken).ConfigureAwait(false);
+    }
     private async Task HandleRefundedPaymentAsync(
         JsonElement message,
         JsonElement refunded,
@@ -161,8 +177,7 @@ public sealed class StarsUpdateHandler(
     {
         var payerId = RequiredUserId(message, "from");
         var payload = RequiredString(refunded, "invoice_payload");
-        var chargeId = RequiredString(
-            refunded, "telegram_payment_charge_id");
+        var chargeId = RequiredString(refunded, "telegram_payment_charge_id");
         var currency = RequiredString(refunded, "currency");
         var amount = RequiredInt64(refunded, "total_amount");
         if (currency != "XTR" || amount <= 0)
@@ -178,6 +193,17 @@ public sealed class StarsUpdateHandler(
             || intent.Amount.MinorUnits != amount)
             throw new PaymentConflictException();
 
+        var now = clock.GetUtcNow();
+        if (intent.Recurring
+            && intent.ProviderPaymentId is { Length: > 0 } firstCharge
+            && !string.Equals(firstCharge, chargeId, StringComparison.Ordinal))
+        {
+            await subscriptions.ApplyStarsTerminalAsync(
+                intent.PaymentId, chargeId, "refund", now,
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         await payments.ApplyAsync(
             new VerifiedPayment(
                 "stars",
@@ -187,12 +213,11 @@ public sealed class StarsUpdateHandler(
                 intent.AccountId,
                 new Money(amount, "XTR"),
                 "refunded",
-                clock.GetUtcNow(),
+                now,
                 intent.Recurring ? chargeId : null,
                 null),
             cancellationToken).ConfigureAwait(false);
     }
-
     private static string RequiredString(
         JsonElement element,
         string property)
