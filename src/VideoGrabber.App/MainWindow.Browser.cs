@@ -61,6 +61,17 @@ public sealed partial class MainWindow
         panel.Children.Add(_browserAddress);
         panel.Children.Add(TwoColumn(_mediaCandidatesBox, _mediaQualityBox));
         panel.Children.Add(Horizontal(download, addQueue, downloadAll, howTo));
+        panel.Children.Add(SectionHeading("Весь курс GetCourse"));
+        _courseDownloadButton = PrimaryButton("Скачать весь курс");
+        _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
+        panel.Children.Add(_courseDownloadButton);
+        panel.Children.Add(MutedText("Отдельная функция: проходит доступные модули и уроки текущего GetCourse-тренинга, создаёт папки по структуре курса и скачивает видео по порядку. Используется только ваша текущая авторизованная сессия."));
+
+        panel.Children.Add(SectionHeading("После скачивания"));
+        _transcribeDownloadedButton = SecondaryButton("Транскрибировать скачанное");
+        _transcribeDownloadedButton.IsEnabled = false;
+        _transcribeDownloadedButton.Click += async (_, _) => await TranscribeLastDownloadedAsync();
+        panel.Children.Add(_transcribeDownloadedButton);
         panel.Children.Add(SectionHeading("Очередь загрузок"));
         _downloadQueueList = new ListView { Height = 150, SelectionMode = ListViewSelectionMode.Single };
         panel.Children.Add(_downloadQueueList);

@@ -108,10 +108,19 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
             request.Executor, null, state);
     }
 
+    public Task<AttemptLease?> ClaimAsync(
+        Guid workerId,
+        Guid? accountId,
+        Guid? deviceId,
+        CancellationToken cancellationToken)
+        => ClaimAsync(
+            workerId, accountId, deviceId, null, cancellationToken);
+
     public async Task<AttemptLease?> ClaimAsync(
         Guid workerId,
         Guid? accountId,
         Guid? deviceId,
+        IReadOnlyCollection<string>? supportedOperations,
         CancellationToken cancellationToken)
     {
         if (workerId == Guid.Empty)
@@ -126,7 +135,8 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         var executor = accountId is null ? "server_worker" : "desktop_worker";
         var state = accountId is null ? "queued" : "waiting_for_worker";
         var job = await ClaimCandidateAsync(
-            connection, transaction, executor, state, accountId, deviceId, cancellationToken);
+            connection, transaction, executor, state, accountId, deviceId,
+            supportedOperations, cancellationToken);
 
         if (job is null)
         {
@@ -742,6 +752,7 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         string state,
         Guid? accountId,
         Guid? deviceId,
+        IReadOnlyCollection<string>? supportedOperations,
         CancellationToken cancellationToken)
     {
 
@@ -753,6 +764,7 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
             where state=@state and executor=@executor
               and (@account::uuid is null or account_id=@account)
               and (@device::uuid is null or device_id=@device)
+              and (@operations::text[] is null or kind=any(@operations))
             order by created_at,job_id
             for update skip locked limit 1
             """;
@@ -761,6 +773,11 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         command.Parameters.AddWithValue("executor", executor);
         command.Parameters.AddWithValue("account", (object?)accountId ?? DBNull.Value);
         command.Parameters.AddWithValue("device", (object?)deviceId ?? DBNull.Value);
+        command.Parameters.AddWithValue(
+            "operations",
+            supportedOperations is { Count: > 0 }
+                ? supportedOperations.Distinct(StringComparer.Ordinal).ToArray()
+                : DBNull.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
             ? ReadJob(reader)

@@ -45,7 +45,10 @@ public sealed record AttemptCompletion(
     ArtifactReceipt? Artifact,
     string EvidenceId);
 
-public sealed record WorkerClaim(Guid WorkerId);
+public sealed record WorkerClaim(
+    Guid WorkerId,
+    int ProtocolVersion = PlatformProtocol.MinimumSupported,
+    string[]? SupportedOperations = null);
 public sealed record AnalyzedMedia(
     string SourceId,
     string MediaId,

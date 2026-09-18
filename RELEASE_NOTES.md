@@ -1,5 +1,14 @@
 # Журнал подготовки релизов
 
+## [0.1.10-preview.13] - 2026-09-18
+
+- Status: candidate
+- Previous version: 0.1.10-preview.12
+- Changed: whole GetCourse course traversal with nested training/module folders and ordered lesson filenames; one-click transcription for the last verified download; protocol/release readiness gate and exact package manifests.
+- Safety: uses only the already-authorized embedded browser session; inaccessible lessons and DRM/encrypted HLS are not bypassed.
+- Verification: automated regression and final package/release evidence are recorded by scripts/platform/Test-PlatformRelease.ps1.
+- Rollback note: preview.12 and stable v0.1.9 remain untouched.
+
 ## [0.1.10-preview.12] - 2026-09-14
 
 - Status: candidate

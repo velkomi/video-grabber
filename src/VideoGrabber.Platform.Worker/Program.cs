@@ -1,3 +1,4 @@
+using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -28,10 +29,15 @@ builder.Services.AddHttpClient("platform", client =>
     client.BaseAddress = apiUri;
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+var workerOperations = PlatformProtocol.CurrentWorkerOperations(
+    serverAsrAvailable: !string.IsNullOrWhiteSpace(
+        Environment.GetEnvironmentVariable("VG_WORKER_WHISPER_MODEL")));
+
 builder.Services.AddSingleton(sp => new WorkerApiClient(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("platform"),
     workerId,
-    workerToken));
+    workerToken,
+    workerOperations));
 builder.Services.AddSingleton<IWorkerSourceResolver>(
     sp => sp.GetRequiredService<WorkerApiClient>());
 builder.Services.AddSingleton<IWorkerArtifactResolver>(

@@ -339,3 +339,50 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("_browserPages.ForgetRequest(key, lease)", devtools);
     }
 }
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Whole_course_download_is_a_separate_browser_action()
+    {
+        var root = FindRepoRoot();
+        var browser = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+
+        Assert.Contains("SectionHeading(\"Весь курс GetCourse\")", browser);
+        Assert.Contains("PrimaryButton(\"Скачать весь курс\")", browser);
+        Assert.Contains("DownloadWholeGetCourseAsync()", browser);
+        Assert.DoesNotContain("DownloadAllVisibleCandidatesAsync()", course);
+        Assert.Contains("BuildCoursePlanAsync", course);
+        Assert.Contains("DownloadCoursePlanAsync", course);
+    }
+}
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Current_page_video_workflow_remains_available_beside_whole_course_action()
+    {
+        var root = FindRepoRoot();
+        var browser = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
+        var batch = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
+
+        Assert.Contains("Найденные видео и потоки", browser);
+        Assert.Contains("Качество выбранного видео", browser);
+        Assert.Contains("Скачать выбранное видео", browser);
+        Assert.Contains("Добавить в очередь", browser);
+        Assert.Contains("Скачать все найденные", browser);
+        Assert.Contains("QueueSelectedCandidate()", browser);
+        Assert.Contains("DownloadAllVisibleCandidatesAsync()", browser);
+        Assert.Contains("DownloadQueuedCandidatesAsync()", browser);
+        Assert.Contains("SelectedBrowserQuality(candidate)", browser);
+        Assert.Contains("QueueAllVisibleCandidates()", batch);
+        Assert.Contains("RunDownloadOperationAsync", batch);
+        Assert.Contains("Весь курс GetCourse", browser);
+        Assert.Contains("Скачать весь курс", browser);
+    }
+}

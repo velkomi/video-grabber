@@ -26,8 +26,17 @@ public static class AttemptEndpoints
         if (!Authorized(http, configuration)) return Results.Unauthorized();
         try
         {
+            if (!PlatformProtocol.IsSupported(request.ProtocolVersion))
+                return Results.StatusCode(StatusCodes.Status426UpgradeRequired);
+            var operations = request.SupportedOperations is { Length: > 0 }
+                ? request.SupportedOperations
+                : PlatformProtocol.LegacyWorkerOperations();
+            var allowed = PlatformProtocol.CurrentWorkerOperations(serverAsrAvailable: true);
+            if (operations.Any(op => !allowed.Contains(op, StringComparer.Ordinal))
+                || operations.Distinct(StringComparer.Ordinal).Count() != operations.Length)
+                return Results.BadRequest(new { code = "invalid_worker_capabilities" });
             var lease = await jobs.ClaimAsync(
-                request.WorkerId, null, null, cancellationToken);
+                request.WorkerId, null, null, operations, cancellationToken);
             return lease is null ? Results.NoContent() : Results.Ok(lease);
         }
         catch (ArgumentException ex)

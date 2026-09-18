@@ -8,7 +8,7 @@ public sealed partial class MainWindow
 {
     // WebView2/UI adaptation only; operation, cancellation and completion policy live in Infrastructure/Core.
     private sealed class BrowserDownloadPreparation(MainWindow window, MediaCandidate? selectedCandidate = null, int ordinal = 1,
-        BrowserQueueContext? queueContext = null)
+        BrowserQueueContext? queueContext = null, string? suggestedBaseNameOverride = null)
         : IBrowserDownloadPreparation
     {
         public async Task<PreparedBrowserDownload> PrepareAsync(UserDownloadIntent intent, BrowserPageLease lease, CancellationToken token)
@@ -38,7 +38,7 @@ public sealed partial class MainWindow
                             bool? expectedAudio = intent.AudioOnly || plan.HlsAudioSource is not null ? true : null;
                             return Task.FromResult(new PreparedDownload(plan.Source, candidate.Referer, null, null, null,
                                 plan.HlsVideoSource, plan.HlsAudioSource, plan.DirectManifest, plan.ResolvedHlsLeaf,
-                                MediaCandidatePresentation.SuggestedBaseName(candidate, candidate.PageOrdinal ?? ordinal, intent.Quality, queueContext?.Metadata ?? window._browserMetadata),
+                                suggestedBaseNameOverride ?? MediaCandidatePresentation.SuggestedBaseName(candidate, candidate.PageOrdinal ?? ordinal, intent.Quality, queueContext?.Metadata ?? window._browserMetadata),
                                 expectedDuration, expectedAudio));
                         }, error => throw new InvalidOperationException(error ?? "Не удалось проверить выбранное качество HLS."));
                 }

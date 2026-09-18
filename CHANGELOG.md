@@ -3,6 +3,8 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии следуют [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+- Preview.13 adds one-click transcription of the last verified download and whole-course GetCourse traversal with nested module folders, ordered lesson filenames and resume-by-existing-output.
+- Platform release readiness now records protocol compatibility, exact source SHA, Local/Managed/API/Worker manifests and fail-closed BLOCKED live gates.
 - Preview.12 fixes exact GetCourse player ordering by iframe URL, allows queue edits during active downloads, keeps work files in the chosen output folder, and improves course filenames.
 
 

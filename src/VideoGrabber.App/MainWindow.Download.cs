@@ -147,6 +147,7 @@ public sealed partial class MainWindow
                 {
                     _localMediaBox.Text = path;
                     _localOutputBaseBox.Text = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "-text");
+                    RegisterDownloadedMedia(path);
                 }
             }
             return result.Outcome;
@@ -164,6 +165,7 @@ public sealed partial class MainWindow
     private void CancelOperation()
     {
         _progressOwner = null;
+        _courseCancellation?.Cancel();
         _operations.Cancel();
         _browserOperation?.Cancel();
         _operation?.Cancel();
@@ -171,8 +173,9 @@ public sealed partial class MainWindow
 
     private void SetOperationControls(bool busy)
     {
-        _downloadButton.IsEnabled = _mp3Button.IsEnabled = _textButton.IsEnabled = !busy;
-        _cancelButton.IsEnabled = busy;
+        _downloadButton.IsEnabled = _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive;
+        _cancelButton.IsEnabled = busy || _courseDownloadActive;
+        UpdateCourseControls();
     }
 
     // The service or local operation has already computed completion exactly once.

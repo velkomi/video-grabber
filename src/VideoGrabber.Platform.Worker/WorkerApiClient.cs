@@ -7,14 +7,18 @@ namespace VideoGrabber.Platform.Worker;
 public sealed class WorkerApiClient(
     HttpClient http,
     Guid workerId,
-    string workerToken) : IWorkerSourceResolver, IWorkerArtifactResolver
+    string workerToken,
+    string[] supportedOperations) : IWorkerSourceResolver, IWorkerArtifactResolver
 {
     private const string Header = "X-VideoGrabber-Worker-Token";
 
     public async Task<AttemptLease?> ClaimAsync(CancellationToken cancellationToken)
     {
         using var request = Create(HttpMethod.Post, "/v1/worker/jobs/claim");
-        request.Content = JsonContent.Create(new WorkerClaim(workerId));
+        request.Content = JsonContent.Create(new WorkerClaim(
+            workerId,
+            PlatformProtocol.Current,
+            supportedOperations));
         using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode == HttpStatusCode.NoContent) return null;
         response.EnsureSuccessStatusCode();
@@ -102,6 +106,9 @@ public sealed class WorkerApiClient(
     {
         var request = new HttpRequestMessage(method, path);
         request.Headers.Add(Header, workerToken);
+        request.Headers.Add(
+            "X-VideoGrabber-Protocol",
+            PlatformProtocol.Current.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return request;
     }
 }

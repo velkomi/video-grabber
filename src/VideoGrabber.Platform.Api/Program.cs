@@ -281,7 +281,7 @@ app.Use(async (context, next) =>
         if (HttpMethods.IsOptions(context.Request.Method))
         {
             context.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
-            context.Response.Headers["Access-Control-Allow-Headers"] = "Authorization,Content-Type,X-CSRF-Token,X-VideoGrabber-Api-Version";
+            context.Response.Headers["Access-Control-Allow-Headers"] = "Authorization,Content-Type,X-CSRF-Token,X-VideoGrabber-Api-Version,X-VideoGrabber-Protocol";
             context.Response.StatusCode = StatusCodes.Status204NoContent;
             return;
         }
@@ -309,8 +309,20 @@ app.Use(async (context, next) =>
 
 app.Use(async (context, next) =>
 {
-    var version = context.Request.Headers["X-VideoGrabber-Api-Version"].ToString();
-    if (!string.IsNullOrWhiteSpace(version) && version != "1")
+    var legacyVersion = context.Request.Headers["X-VideoGrabber-Api-Version"].ToString();
+    var protocolRaw = context.Request.Headers["X-VideoGrabber-Protocol"].ToString();
+    var legacyInvalid = !string.IsNullOrWhiteSpace(legacyVersion)
+        && legacyVersion != PlatformProtocol.LegacyApiVersion.ToString(
+            System.Globalization.CultureInfo.InvariantCulture);
+    var protocolInvalid = !string.IsNullOrWhiteSpace(protocolRaw)
+        && !PlatformProtocol.TryParseSupported(protocolRaw, out _);
+
+    context.Response.Headers["X-VideoGrabber-Protocol-Current"] =
+        PlatformProtocol.Current.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    context.Response.Headers["X-VideoGrabber-Protocol-Minimum"] =
+        PlatformProtocol.MinimumSupported.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    if (legacyInvalid || protocolInvalid)
     {
         context.Response.StatusCode = StatusCodes.Status426UpgradeRequired;
         context.Response.ContentType = "application/problem+json";
@@ -319,7 +331,9 @@ app.Use(async (context, next) =>
             type = "about:blank",
             title = "Client upgrade required",
             status = StatusCodes.Status426UpgradeRequired,
-            code = "client_upgrade_required"
+            code = "client_upgrade_required",
+            currentProtocol = PlatformProtocol.Current,
+            minimumProtocol = PlatformProtocol.MinimumSupported
         });
         return;
     }

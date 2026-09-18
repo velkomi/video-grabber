@@ -19,9 +19,10 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
         var root = Path.Combine(evidence, "six-parts");
         var output = Path.Combine(evidence, "six-parts-downloaded");
         Directory.CreateDirectory(output);
-        var servers = Enumerable.Range(1, 6).Select(part => new HlsFixture(Path.Combine(root, "part-" + part))).ToArray();
         var runner = new ProcessRunner();
         var tools = new ToolLocator(Environment.GetEnvironmentVariable("VIDEOGRABBER_INTEGRATION_TOOLS"));
+        await GenerateSixPartsFixturesAsync(root, runner, tools, CancellationToken.None);
+        var servers = Enumerable.Range(1, 6).Select(part => new HlsFixture(Path.Combine(root, "part-" + part))).ToArray();
         var slots = Enumerable.Range(1, 6).Select(part => new BrowserPlayerSlot(part, "PART " + part,
             new Uri("https://api1.gcvh.ru/sign-player/?part=" + part))).ToArray();
         var metadata = new BrowserPageMetadata("SYNTHETIC LESSON", slots.Select(s => s.Title!).ToArray(), slots);
@@ -150,4 +151,49 @@ public sealed partial class AuthenticatedHlsDownloadIntegrationTests
             return result.StandardOutput.Trim();
         }
     }
-}
+
+    private static async Task GenerateSixPartsFixturesAsync(
+        string root,
+        IProcessRunner runner,
+        ToolLocator tools,
+        CancellationToken token)
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, true);
+        Directory.CreateDirectory(root);
+        var colors = new[] { "red", "green", "blue", "yellow", "magenta", "cyan" };
+        for (var part = 1; part <= 6; part++)
+        {
+            token.ThrowIfCancellationRequested();
+            var partRoot = Path.Combine(root, "part-" + part);
+            Directory.CreateDirectory(partRoot);
+            var duration = part <= 2 ? 2 : part;
+            foreach (var height in new[] { 360, 720 })
+            {
+                var width = height == 360 ? 640 : 1280;
+                var mp4 = Path.Combine(partRoot, $"part-{part}-{height}.mp4");
+                var create = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
+                    ["-hide_banner", "-nostdin", "-y",
+                     "-f", "lavfi", "-i", $"color=c={colors[part - 1]}:size={width}x{height}:rate=10",
+                     "-f", "lavfi", "-i", $"sine=frequency={420 + part * 37}:sample_rate=44100",
+                     "-t", duration.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                     "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+                     "-c:a", "aac", "-shortest", mp4]), null, token);
+                Assert.True(create.IsSuccess, create.StandardError);
+
+                var playlist = Path.Combine(partRoot, height + ".m3u8");
+                var segmentPattern = Path.Combine(partRoot, $"{height}-%03d.ts");
+                var hls = await runner.RunAsync(new ProcessSpec(tools.Ffmpeg,
+                    ["-hide_banner", "-nostdin", "-y", "-i", mp4,
+                     "-c", "copy", "-f", "hls", "-hls_time", "1", "-hls_list_size", "0",
+                     "-hls_segment_filename", segmentPattern, playlist]), null, token);
+                Assert.True(hls.IsSuccess, hls.StandardError);
+            }
+
+            await File.WriteAllTextAsync(Path.Combine(partRoot, "master.m3u8"),
+                "#EXTM3U\n" +
+                "#EXT-X-VERSION:3\n" +
+                "#EXT-X-STREAM-INF:BANDWIDTH=650000,RESOLUTION=640x360\n360.m3u8\n" +
+                "#EXT-X-STREAM-INF:BANDWIDTH=1800000,RESOLUTION=1280x720\n720.m3u8\n",
+                token);
+        }
+    }}
