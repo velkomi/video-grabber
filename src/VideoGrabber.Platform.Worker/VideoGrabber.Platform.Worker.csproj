@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../VideoGrabber.Platform.Contracts/VideoGrabber.Platform.Contracts.csproj" />
+    <ProjectReference Include="../VideoGrabber.Platform.Core/VideoGrabber.Platform.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,15 @@
+.git
+.gitignore
+**/bin
+**/obj
+**/.vs
+release
+Artifacts
+artifacts
+TestResults
+*.user
+*.suo
+*.zip
+*.msix
+*.msixbundle
+*.pdb

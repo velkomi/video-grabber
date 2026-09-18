@@ -14,6 +14,7 @@ public static class AttemptEndpoints
         endpoints.MapPost("/v1/worker/jobs/claim", ClaimAsync);
         endpoints.MapPost("/v1/worker/jobs/heartbeat", HeartbeatAsync);
         endpoints.MapPost("/v1/worker/jobs/complete", CompleteAsync);
+        endpoints.MapGet("/v1/worker/sources/{sourceId}", ResolveSourceAsync);
         return endpoints;
     }
 
@@ -56,6 +57,23 @@ public static class AttemptEndpoints
         { return Results.BadRequest(new { code = "invalid_completion", detail = ex.Message }); }
     }
 
+    private static async Task<IResult> ResolveSourceAsync(
+        string sourceId,
+        string quality,
+        HttpContext http,
+        IConfiguration configuration,
+        SourceAnalysisService sources,
+        CancellationToken cancellationToken)
+    {
+        if (!Authorized(http, configuration)) return Results.Unauthorized();
+        try
+        {
+            var source = await sources.ResolveForWorkerAsync(sourceId, quality, cancellationToken);
+            return source is null ? Results.NotFound() : Results.Ok(source);
+        }
+        catch (UnauthorizedAccessException)
+        { return Results.StatusCode(StatusCodes.Status403Forbidden); }
+    }
     private static bool Authorized(HttpContext http, IConfiguration configuration)
     {
         var expected = configuration["VG_SERVER_WORKER_TOKEN"];

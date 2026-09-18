@@ -354,6 +354,7 @@ internal sealed class PlatformApiFactory(
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("Security:AllowedOrigins:0", "https://miniapp.example.test");
+        builder.UseSetting("ConnectionStrings:PlatformLedger", ledgerDataSource.ConnectionString);
         builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(new CapturingLoggerProvider(logs)); });
         builder.UseSetting("VG_PLATFORM_SESSION_SIGNING_KEY", TestSessionKey);
         builder.UseSetting("VG_PLATFORM_LEASE_KEY_ID", "test-lease-key-1");
@@ -367,6 +368,9 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_TELEGRAM_BOT_USER_ID", TelegramApiEmulator.BotUserId.ToString());
         builder.UseSetting("VG_TELEGRAM_WORKER_ENABLED", "false");
         builder.UseSetting("VG_SERVER_WORKER_TOKEN", "test-server-worker-token");
+        builder.UseSetting("VG_SOURCE_ENCRYPTION_KEY", "KSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0g=");
+        builder.UseSetting("VG_EGRESS_PROXY_URI", "http://127.0.0.1:3128");
+        builder.UseSetting("VG_YTDLP_PATH", "yt-dlp");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<NpgsqlDataSource>();

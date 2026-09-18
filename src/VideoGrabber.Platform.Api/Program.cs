@@ -101,6 +101,8 @@ builder.Services.AddSingleton(sp =>
     return CreditLedger.CreateOwned(ledgerDsn, sp.GetRequiredService<TimeProvider>());
 });
 builder.Services.AddSingleton<JobStore>();
+builder.Services.AddSingleton<EgressProxy>();
+builder.Services.AddSingleton<SourceAnalysisService>();
 builder.Services.AddSingleton(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -240,6 +242,7 @@ app.MapTelegramAdminLinkEndpoints();
 app.MapDestinationEndpoints();
 app.MapJobEndpoints();
 app.MapAttemptEndpoints();
+app.MapSourceEndpoints();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

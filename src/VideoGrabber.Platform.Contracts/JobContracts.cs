@@ -45,3 +45,20 @@ public sealed record AttemptCompletion(
     string EvidenceId);
 
 public sealed record WorkerClaim(Guid WorkerId);
+public sealed record AnalyzedMedia(
+    string SourceId,
+    string MediaId,
+    string Title,
+    long? DurationMs,
+    string[] Qualities,
+    string RequiredExecutor);
+
+public sealed record WorkerSourceDescriptor(
+    string SourceId,
+    Uri Source,
+    string FormatSelector,
+    int? Width,
+    int? Height,
+    string MediaType,
+    DateTimeOffset ExpiresAt);
+public sealed record AnalyzeSourceRequest(Uri Source);
