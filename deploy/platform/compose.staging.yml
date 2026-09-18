@@ -1,0 +1,197 @@
+name: ${VG_ENVIRONMENT_NAME:?stage name required}
+
+services:
+  postgres:
+    image: ${VG_POSTGRES_IMAGE:?pinned postgres image required}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: videograbber
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d videograbber"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+  migrator:
+    image: ${VG_API_IMAGE:?pinned api image required}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh","-ec"]
+    command:
+      - export VG_PLATFORM_MIGRATION_DSN="$$(cat /run/secrets/migration_dsn)"; exec dotnet VideoGrabber.Platform.Api.dll --migrate-platform
+    secrets:
+      - migration_dsn
+    networks: [internal]
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+  api:
+    image: ${VG_API_IMAGE:?pinned api image required}
+    restart: unless-stopped
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh","-ec"]
+    command:
+      - |
+        export VG_PLATFORM_API_DSN="$$(cat /run/secrets/api_dsn)"
+        export VG_PLATFORM_ADMIN_DSN="$$(cat /run/secrets/admin_dsn)"
+        export VG_PLATFORM_LEDGER_DSN="$$(cat /run/secrets/ledger_dsn)"
+        export VG_SERVER_WORKER_TOKEN="$$(cat /run/secrets/worker_token)"
+        export VG_SESSION_JWT_SIGNING_KEY="$$(cat /run/secrets/session_key)"
+        export VG_TELEGRAM_BOT_TOKEN="$$(cat /run/secrets/telegram_bot_token)"
+        exec dotnet VideoGrabber.Platform.Api.dll
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      VG_SESSION_JWT_ISSUER: ${VG_AUTH_ISSUER:?}
+      VG_SESSION_JWT_AUDIENCE: videograbber
+      Security__AllowedOrigins__0: https://${VG_STAGE_HOST:?}
+      VG_PAYMENT_CATALOG_PATH: ${VG_PAYMENT_CATALOG_PATH:-}
+      VG_PAYMENT_RECONCILIATION_ENABLED: "false"
+      VG_DELIVERY_WORKER_ENABLED: "true"
+      VG_RETENTION_ENABLED: "false"
+      VG_TELEGRAM_BOT_API_BASE: ${VG_TELEGRAM_BOT_API_BASE:-https://api.telegram.org}
+    secrets:
+      - api_dsn
+      - admin_dsn
+      - ledger_dsn
+      - worker_token
+      - session_key
+      - telegram_bot_token
+    networks: [internal, edge]
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+      - /app/artifact-uploads:size=1g,mode=0700
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.5
+    healthcheck:
+      test: ["CMD","wget","-qO-","http://127.0.0.1:8080/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    image: ${VG_WORKER_IMAGE:?pinned worker image required}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    entrypoint: ["/bin/sh","-ec"]
+    command:
+      - |
+        export VG_SERVER_WORKER_TOKEN="$$(cat /run/secrets/worker_token)"
+        exec dotnet VideoGrabber.Platform.Worker.dll
+    environment:
+      VG_PLATFORM_API_URL: http://api:8080
+      VG_WORKER_ID: ${VG_WORKER_ID:?}
+      VG_EGRESS_PROXY_URI: ${VG_EGRESS_PROXY_URI:?}
+      VG_WORKER_JOB_ROOT: /var/lib/videograbber/jobs
+      VG_RETENTION_ENABLED: "false"
+    secrets: [worker_token]
+    volumes:
+      - workerjobs:/var/lib/videograbber/jobs
+    networks: [internal]
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2.0
+
+  bot-api:
+    profiles: ["local-bot-api"]
+    image: ${VG_BOT_API_IMAGE:?qualified pinned bot api image required}
+    restart: unless-stopped
+    environment:
+      TELEGRAM_API_ID_FILE: /run/secrets/telegram_api_id
+      TELEGRAM_API_HASH_FILE: /run/secrets/telegram_api_hash
+    secrets:
+      - telegram_api_id
+      - telegram_api_hash
+    volumes:
+      - botdata:/var/lib/telegram-bot-api
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 1.0
+
+  caddy:
+    image: ${VG_CADDY_IMAGE:?pinned caddy image required}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      VG_STAGE_HOST: ${VG_STAGE_HOST:?}
+    ports:
+      - "127.0.0.1:${VG_STAGE_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    networks: [edge]
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+
+networks:
+  internal:
+    internal: true
+  edge: {}
+
+volumes:
+  pgdata:
+    name: ${VG_ENVIRONMENT_NAME}-pgdata
+  workerjobs:
+    name: ${VG_ENVIRONMENT_NAME}-workerjobs
+  botdata:
+    name: ${VG_ENVIRONMENT_NAME}-botdata
+  caddydata:
+    name: ${VG_ENVIRONMENT_NAME}-caddydata
+  caddyconfig:
+    name: ${VG_ENVIRONMENT_NAME}-caddyconfig
+
+secrets:
+  postgres_password:
+    file: ${VG_POSTGRES_PASSWORD_FILE:?}
+  migration_dsn:
+    file: ${VG_MIGRATION_DSN_FILE:?}
+  api_dsn:
+    file: ${VG_API_DSN_FILE:?}
+  admin_dsn:
+    file: ${VG_ADMIN_DSN_FILE:?}
+  ledger_dsn:
+    file: ${VG_LEDGER_DSN_FILE:?}
+  worker_token:
+    file: ${VG_WORKER_TOKEN_FILE:?}
+  session_key:
+    file: ${VG_SESSION_KEY_FILE:?}
+  telegram_bot_token:
+    file: ${VG_TELEGRAM_BOT_TOKEN_FILE:?}
+  telegram_api_id:
+    file: ${VG_TELEGRAM_API_ID_FILE:-./secrets/disabled}
+  telegram_api_hash:
+    file: ${VG_TELEGRAM_API_HASH_FILE:-./secrets/disabled}

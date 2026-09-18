@@ -12,11 +12,72 @@ using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Api.Jobs;
 using VideoGrabber.Platform.Api.Payments;
+using VideoGrabber.Platform.Api.Operations;
 using VideoGrabber.Platform.Api.Telegram;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Core.Payments;
+using VideoGrabber.Platform.Core.Operations;
 using VideoGrabber.Platform.Persistence;
 
+if (args.Length > 0 && string.Equals(args[0], "--validate-stage-config", StringComparison.Ordinal))
+{
+    if (args.Length != 2)
+    {
+        Console.Error.WriteLine("StageConfigPath");
+        Environment.ExitCode = 1;
+        return;
+    }
+    try
+    {
+        var config = DeploymentConfiguration.Load(args[1]);
+        var errors = DeploymentConfiguration.Validate(config);
+        if (errors.Count == 0)
+        {
+            Console.WriteLine("PASS");
+            Environment.ExitCode = 0;
+        }
+        else
+        {
+            foreach (var field in errors) Console.Error.WriteLine(field);
+            Environment.ExitCode = 1;
+        }
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+    {
+        Console.Error.WriteLine("StageConfig");
+        Environment.ExitCode = 1;
+    }
+    return;
+}
+if (args.Length > 0 && string.Equals(args[0], "--migrate-platform", StringComparison.Ordinal))
+{
+    var migrationDsn = Environment.GetEnvironmentVariable("VG_PLATFORM_MIGRATION_DSN");
+    if (string.IsNullOrWhiteSpace(migrationDsn))
+    {
+        Console.Error.WriteLine("MigrationDsn");
+        Environment.ExitCode = 1;
+        return;
+    }
+    await using var migrationDataSource = NpgsqlDataSource.Create(migrationDsn);
+    await MigrationRunner.ApplyAsync(migrationDataSource, CancellationToken.None);
+    Console.WriteLine("PASS");
+    return;
+}
+if (args.Length > 0 && string.Equals(args[0], "--consistency-report", StringComparison.Ordinal))
+{
+    var consistencyDsn = Environment.GetEnvironmentVariable("VG_PLATFORM_CONSISTENCY_DSN");
+    if (string.IsNullOrWhiteSpace(consistencyDsn))
+    {
+        Console.Error.WriteLine("ConsistencyDsn");
+        Environment.ExitCode = 1;
+        return;
+    }
+    await using var consistencyDataSource = NpgsqlDataSource.Create(consistencyDsn);
+    var report = await ConsistencyReport.RunAsync(consistencyDataSource, CancellationToken.None);
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report));
+    Environment.ExitCode = report.Values.All(value => value == 0) ? 0 : 2;
+    return;
+}
 var builder = WebApplication.CreateBuilder(args);
 var sessionJwt = SessionJwtOptions.FromConfiguration(builder.Configuration);
 var telegramSecurity = TelegramSecurityOptions.FromConfiguration(builder.Configuration);
@@ -276,6 +337,7 @@ app.MapJobEventEndpoints();
 app.MapAttemptEndpoints();
 app.MapSourceEndpoints();
 app.MapArtifactUploadEndpoints();
+app.MapPlatformHealthEndpoints();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

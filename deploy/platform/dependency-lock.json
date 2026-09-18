@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-09-18T11:19:00Z",
+  "sourceCommit": "e09e89364b32d2eba10284104f6d4f45e138537b",
+  "images": {
+    "dotnetSdk": "mcr.microsoft.com/dotnet/sdk@sha256:4beef5b8919dcaa2dc924233bd069257e883cc7a061e09088a97d152d6a48510",
+    "dotnetAspNet": "mcr.microsoft.com/dotnet/aspnet@sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c",
+    "dotnetRuntime": "mcr.microsoft.com/dotnet/runtime@sha256:8a153b5889d796b6450295b383596b13308c24c230515f8a7770ce1b94e0c460",
+    "postgres": "postgres@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0",
+    "caddy": "caddy@sha256:ae4458638da8e1a91aafffb231c5f8778e964bca650c8a8cb23a7e8ac557aa3c",
+    "restic": "restic/restic@sha256:4cf4a61ef9786f4de53e9de8c8f5c040f33830eb0a10bf3d614410ee2fcb6120",
+    "optionalBotApi": "aiogram/telegram-bot-api@sha256:16e13777edf491d6b2818bd72a93245364314da1c21113c6b0de24b37f609113"
+  },
+  "mediaTools": {
+    "ytDlpVersion": "2026.09.16.232951",
+    "ytDlpSha256": "f8ca14db511702a5dbfc5a527056312907ddd0914d0b4036f108d6849e17ef61",
+    "ffmpegQualification": "runtime image build installs distro ffmpeg and worker tests full-decode artifacts"
+  },
+  "applicationImages": {
+    "api": null,
+    "worker": null,
+    "status": "BLOCKED_UNTIL_AUTHORIZED_REGISTRY_DIGESTS_EXIST"
+  },
+  "notes": [
+    "optionalBotApi is a third-party image and remains opt-in; official tdlib source should be preferred for production qualification.",
+    "No deployment is authorized by this lock."
+  ]
+}
