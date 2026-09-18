@@ -11,8 +11,10 @@ using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Api.Jobs;
+using VideoGrabber.Platform.Api.Payments;
 using VideoGrabber.Platform.Api.Telegram;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Core.Payments;
 using VideoGrabber.Platform.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -101,6 +103,18 @@ builder.Services.AddSingleton(sp =>
     return CreditLedger.CreateOwned(ledgerDsn, sp.GetRequiredService<TimeProvider>());
 });
 builder.Services.AddSingleton<JobStore>();
+builder.Services.AddSingleton<PaymentStore>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    PaymentCatalog? catalog = null;
+    var catalogPath = configuration["VG_PAYMENT_CATALOG_PATH"];
+    if (!string.IsNullOrWhiteSpace(catalogPath))
+        catalog = PaymentCatalog.Load(catalogPath);
+    return new PaymentStore(
+        sp.GetRequiredService<CreditLedger>(),
+        sp.GetRequiredService<TimeProvider>(),
+        catalog);
+});
 builder.Services.AddSingleton<EgressProxy>();
 builder.Services.AddSingleton<SourceAnalysisService>();
 builder.Services.AddSingleton<ArtifactUploadService>();
@@ -247,6 +261,7 @@ app.MapTelegramAdminLinkEndpoints();
 app.MapDestinationEndpoints();
 app.MapDeliveryEndpoints();
 app.MapRetentionEndpoints();
+app.MapPaymentEndpoints();
 app.MapJobEndpoints();
 app.MapJobEventEndpoints();
 app.MapAttemptEndpoints();

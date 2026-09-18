@@ -350,6 +350,17 @@ internal sealed class PlatformApiFactory(
         return Convert.ToBase64String(key.ExportPkcs8PrivateKey());
     }
 
+    private static string FindRepoRoot()
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "VideoGrabber.slnx")))
+                return current.FullName;
+            current = current.Parent;
+        }
+        throw new DirectoryNotFoundException("VideoGrabber repository root not found.");
+    }
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -377,6 +388,7 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_FFPROBE_PATH", Environment.GetEnvironmentVariable("VG_WORKER_FFPROBE") ?? "ffprobe");
         builder.UseSetting("VG_ARTIFACT_UPLOAD_ROOT", @"C:\Users\Oleg\AppData\Local\Temp\vg-platform-artifact-uploads");
         builder.UseSetting("VG_ARTIFACT_UPLOAD_MAX_BYTES", (64L * 1024 * 1024).ToString());
+        builder.UseSetting("VG_PAYMENT_CATALOG_PATH", Path.Combine(FindRepoRoot(), "tests", "VideoGrabber.Platform.Tests", "Fixtures", "payment-catalog.test.json"));
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<NpgsqlDataSource>();

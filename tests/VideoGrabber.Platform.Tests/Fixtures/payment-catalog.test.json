@@ -1,0 +1,28 @@
+{
+  "version": "test-2026-09-18",
+  "environment": "test",
+  "products": [
+    {
+      "sku": "test.credits3",
+      "kind": "credits",
+      "credits": 3,
+      "days": 0,
+      "recurringAllowed": false,
+      "prices": {
+        "stars": { "minorUnits": 30, "currency": "XTR" },
+        "yookassa": { "minorUnits": 3000, "currency": "RUB" }
+      }
+    },
+    {
+      "sku": "test.time30",
+      "kind": "time",
+      "credits": 0,
+      "days": 30,
+      "recurringAllowed": true,
+      "prices": {
+        "stars": { "minorUnits": 100, "currency": "XTR" },
+        "yookassa": { "minorUnits": 10000, "currency": "RUB" }
+      }
+    }
+  ]
+}
