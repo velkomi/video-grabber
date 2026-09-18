@@ -46,6 +46,8 @@ builder.Services.AddSingleton<IMediaJobExecutor>(sp => new MediaJobExecutor(
     jobRoot,
     proxyUri,
     Environment.GetEnvironmentVariable("VG_WORKER_WHISPER_MODEL")));
+builder.Services.AddSingleton<ArtifactRetentionWorker>();
 builder.Services.AddHostedService<ServerWorkerService>();
+builder.Services.AddHostedService<ArtifactRetentionHostedService>();
 
 await builder.Build().RunAsync();

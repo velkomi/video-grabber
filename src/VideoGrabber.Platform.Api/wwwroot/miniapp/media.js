@@ -207,6 +207,12 @@ async function refreshJobs() {
       cancel.textContent = "Отменить";
       cancel.addEventListener("click", () => mutateJob(job.jobId, "cancel"));
       row.append(cancel);
+    } else if (job.state === "completed" && job.artifactId) {
+      const send = document.createElement("button");
+      send.type = "button";
+      send.textContent = "Отправить";
+      send.addEventListener("click", () => requestDelivery(job));
+      row.append(send);
     } else if (job.state === "failed") {
       const retry = document.createElement("button");
       retry.type = "button";
@@ -218,6 +224,90 @@ async function refreshJobs() {
   }
 }
 
+async function refreshDestinations() {
+  const select = $("#media-destination");
+  const rows = (await api("/v1/destinations")).filter((x) => !x.revoked);
+  select.replaceChildren();
+  for (const destination of rows) {
+    const option = document.createElement("option");
+    option.value = destination.destinationId;
+    option.textContent = destination.kind + " • " + String(destination.chatId);
+    select.append(option);
+  }
+}
+
+function deliveryKey(jobId, destinationId) {
+  const storageKey = "vg_delivery_intent_" + jobId + "_" + destinationId;
+  let value = sessionStorage.getItem(storageKey);
+  if (!value) {
+    value = crypto.randomUUID();
+    sessionStorage.setItem(storageKey, value);
+  }
+  return { storageKey, value };
+}
+
+async function requestDelivery(job) {
+  const destinationId = $("#media-destination").value;
+  if (!destinationId) {
+    status("Сначала добавьте и выберите проверенного получателя.", "error");
+    return;
+  }
+  const key = deliveryKey(job.jobId, destinationId);
+  try {
+    status("Отправляю готовый файл…");
+    const delivery = await api("/v1/deliveries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jobId: job.jobId,
+        artifactId: job.artifactId,
+        destinationId,
+        idempotencyKey: key.value
+      })
+    });
+    if (delivery.state === "delivered") {
+      sessionStorage.removeItem(key.storageKey);
+      status("Файл доставлен. Telegram message: " + String(delivery.messageId), "success");
+    } else if (delivery.state === "delivery_unknown") {
+      status("Telegram мог принять файл, но подтверждение потеряно. Не повторяйте автоматически.", "error");
+    } else {
+      status("Доставка: " + delivery.reason, "error");
+    }
+    await refreshDeliveries();
+  } catch (error) {
+    status("Ошибка доставки: " + error.message, "error");
+  }
+}
+
+async function refreshDeliveries() {
+  const host = $("#media-deliveries");
+  const rows = await api("/v1/deliveries");
+  host.replaceChildren();
+  for (const delivery of rows.slice(-10).reverse()) {
+    const row = document.createElement("div");
+    row.className = "item";
+    const label = document.createElement("span");
+    label.className = "item-text";
+    label.textContent = delivery.deliveryId + " • " + delivery.state + " • " + delivery.reason;
+    row.append(label);
+    if (delivery.state === "delivery_unknown") {
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "Повторить — возможен дубль";
+      retry.addEventListener("click", async () => {
+        if (!confirm("Telegram мог уже получить файл. Повторная отправка может создать дубликат. Продолжить?")) return;
+        await api("/v1/deliveries/" + encodeURIComponent(delivery.deliveryId) + "/retry-unknown", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ acknowledgedWarning: "I understand this may send a duplicate" })
+        });
+        await refreshDeliveries();
+      });
+      row.append(retry);
+    }
+    host.append(row);
+  }
+}
 function connectEvents() {
   const events = new EventSource("/v1/jobs/events");
   const refresh = () => refreshJobs().catch(() => {});
@@ -233,7 +323,9 @@ async function boot() {
   if (!window.VideoGrabberApi) return;
   try {
     await loadCapabilities();
+    await refreshDestinations();
     await refreshJobs();
+    await refreshDeliveries();
     connectEvents();
   } catch (error) {
     status("Media UI недоступен: " + error.message, "error");

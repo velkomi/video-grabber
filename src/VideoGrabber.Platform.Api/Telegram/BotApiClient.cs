@@ -5,12 +5,13 @@ using VideoGrabber.Platform.Contracts;
 namespace VideoGrabber.Platform.Api.Telegram;
 
 public sealed record BotMessage(long ChatId, string Text, JsonElement? ReplyMarkup = null);
-public sealed record BotSentMessage(long ChatId, long MessageId);
+public sealed record BotSentMessage(long ChatId, long MessageId, string? FileId = null);
 
 public interface IBotApiClient
 {
     Task<BotSentMessage> SendMessageAsync(BotMessage message, CancellationToken cancellationToken);
     Task AnswerCallbackAsync(string callbackQueryId, string text, CancellationToken cancellationToken);
+    Task<BotSentMessage> SendDocumentAsync(long chatId, Stream content, string fileName, CancellationToken cancellationToken);
     Task<TelegramChatRights> GetRightsAsync(long chatId, long userId, CancellationToken cancellationToken);
 }
 
@@ -64,6 +65,49 @@ public sealed class BotApiClient(
         return new BotSentMessage(chatId, messageId);
     }
 
+    public async Task<BotSentMessage> SendDocumentAsync(
+        long chatId,
+        Stream content,
+        string fileName,
+        CancellationToken cancellationToken)
+    {
+        if (chatId == 0) throw new ArgumentException("Telegram chat ID is required.", nameof(chatId));
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(chatId.ToString(System.Globalization.CultureInfo.InvariantCulture)), "chat_id");
+        var streamContent = new StreamContent(content);
+        streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        form.Add(streamContent, "document", Path.GetFileName(fileName));
+        using var request = new HttpRequestMessage(HttpMethod.Post, MethodUri("sendDocument"))
+        {
+            Content = form
+        };
+        using var response = await clients.CreateClient("TelegramBotApi")
+            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<TelegramEnvelope>(cancellationToken: cancellationToken)
+            .ConfigureAwait(false) ?? throw new InvalidDataException("Telegram Bot API response was empty.");
+        if (!envelope.Ok || envelope.Result.ValueKind != JsonValueKind.Object)
+            throw new HttpRequestException("Telegram Bot API rejected sendDocument.");
+        var result = envelope.Result;
+        if (!result.TryGetProperty("message_id", out var messageIdElement)
+            || !messageIdElement.TryGetInt64(out var messageId))
+            throw new InvalidDataException("Telegram Bot API response has no message_id.");
+        var returnedChatId = chatId;
+        if (result.TryGetProperty("chat", out var chat)
+            && chat.ValueKind == JsonValueKind.Object
+            && chat.TryGetProperty("id", out var id)
+            && id.TryGetInt64(out var parsedChatId))
+            returnedChatId = parsedChatId;
+        string? fileId = null;
+        if (result.TryGetProperty("document", out var document)
+            && document.ValueKind == JsonValueKind.Object
+            && document.TryGetProperty("file_id", out var fileIdElement)
+            && fileIdElement.ValueKind == JsonValueKind.String)
+            fileId = fileIdElement.GetString();
+        return new BotSentMessage(returnedChatId, messageId, fileId);
+    }
     public async Task AnswerCallbackAsync(
         string callbackQueryId,
         string text,

@@ -78,6 +78,26 @@ public sealed class WorkerApiClient(
         return await response.Content.ReadFromJsonAsync<WorkerArtifactDescriptor[]>(
             cancellationToken: cancellationToken).ConfigureAwait(false) ?? [];
     }
+    public async Task<RetentionCandidate?> ClaimRetentionAsync(
+        CancellationToken cancellationToken)
+    {
+        using var request = Create(HttpMethod.Get, "/v1/worker/retention/claim");
+        using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NoContent) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RetentionCandidate>(
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task AcknowledgeRetentionAsync(
+        RetentionCleanupResult result,
+        CancellationToken cancellationToken)
+    {
+        using var request = Create(HttpMethod.Post, "/v1/worker/retention/ack");
+        request.Content = JsonContent.Create(result);
+        using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
     private HttpRequestMessage Create(HttpMethod method, string path)
     {
         var request = new HttpRequestMessage(method, path);

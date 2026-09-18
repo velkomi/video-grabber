@@ -137,6 +137,9 @@ builder.Services.AddSingleton<BotMediaHandler>();
 builder.Services.AddSingleton<BotCommandHandler>();
 builder.Services.AddSingleton<TelegramInboxWorker>();
 builder.Services.AddSingleton<DestinationService>();
+builder.Services.AddSingleton<ArtifactDeliveryService>();
+builder.Services.AddSingleton<ArtifactRetentionService>();
+builder.Services.AddHostedService<DeliveryWorker>();
 builder.Services.AddHostedService<TelegramInboxHostedService>();
 
 var allowedOrigins = builder.Configuration.GetSection("Security:AllowedOrigins").GetChildren()
@@ -242,6 +245,8 @@ app.MapTelegramWebhookEndpoints();
 app.MapCapabilityEndpoints();
 app.MapTelegramAdminLinkEndpoints();
 app.MapDestinationEndpoints();
+app.MapDeliveryEndpoints();
+app.MapRetentionEndpoints();
 app.MapJobEndpoints();
 app.MapJobEventEndpoints();
 app.MapAttemptEndpoints();

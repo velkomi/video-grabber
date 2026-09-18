@@ -13,6 +13,7 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
     private readonly ConcurrentQueue<TelegramApiRequest> _requests = new();
     private readonly ConcurrentDictionary<long, RightsState> _rights = new();
     public IReadOnlyCollection<TelegramApiRequest> Requests => _requests.ToArray();
+    public bool LoseNextDocumentAck { get; set; }
 
     public void SetRights(long chatId, long userId, bool userCanPublish, bool botCanPublish, string kind)
     {
@@ -35,6 +36,15 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
             return HandleGetChatMember(body);
         if (path.EndsWith("/answerCallbackQuery", StringComparison.Ordinal))
             return Json(new { ok = true, result = true });
+        if (path.EndsWith("/sendDocument", StringComparison.Ordinal))
+        {
+            if (LoseNextDocumentAck)
+            {
+                LoseNextDocumentAck = false;
+                throw new HttpRequestException("synthetic lost ACK after accepted upload");
+            }
+            return Json(new { ok = true, result = new { message_id = 77L, chat = new { id = 1L }, document = new { file_id = "file-77" } } });
+        }
         return Json(new { ok = true, result = new { message_id = 1L, chat = new { id = 1L } } });
     }
 
