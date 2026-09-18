@@ -128,6 +128,7 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("TelegramBotApi").RemoveAllLoggers();
 builder.Services.AddHttpClient("YooKassa").RemoveAllLoggers();
+builder.Services.AddHttpClient("OperationsAlerts").RemoveAllLoggers();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IReadOnlyDictionary<string, BrokerPartitionOptions>>(sp =>
     BrokerPartitionConfiguration.Load(sp.GetRequiredService<IConfiguration>()));
@@ -221,6 +222,19 @@ builder.Services.AddSingleton<TelegramInboxWorker>();
 builder.Services.AddSingleton<DestinationService>();
 builder.Services.AddSingleton<ArtifactDeliveryService>();
 builder.Services.AddSingleton<ArtifactRetentionService>();
+builder.Services.AddSingleton<OperationsDataSource>(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var dsn = configuration.GetConnectionString("PlatformOperations")
+        ?? configuration["VG_PLATFORM_OPERATIONS_DSN"]
+        ?? throw new InvalidOperationException("Platform operations database DSN is not configured.");
+    return OperationsDataSource.CreateOwned(dsn);
+});
+builder.Services.AddSingleton<PlatformOperationalCounters>();
+builder.Services.AddSingleton<PlatformMetrics>();
+builder.Services.AddSingleton<IAlertTransport, HttpAlertTransport>();
+builder.Services.AddSingleton<PlatformAlertDispatcher>();
+builder.Services.AddHostedService<PlatformAlertHostedService>();
 builder.Services.AddHostedService<DeliveryWorker>();
 builder.Services.AddHostedService<TelegramInboxHostedService>();
 
@@ -338,6 +352,7 @@ app.MapAttemptEndpoints();
 app.MapSourceEndpoints();
 app.MapArtifactUploadEndpoints();
 app.MapPlatformHealthEndpoints();
+app.MapOperationsEndpoints();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

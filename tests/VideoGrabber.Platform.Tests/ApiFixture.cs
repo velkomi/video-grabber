@@ -36,6 +36,7 @@ public sealed class ApiFixture : IAsyncDisposable
     private readonly NpgsqlDataSource _adminDataSource;
     private readonly NpgsqlDataSource _ledgerDataSource;
     private readonly NpgsqlDataSource _deviceDataSource;
+    private readonly NpgsqlDataSource _operationsDataSource;
     private readonly string _clusterConnectionString;
     private readonly string _databaseName;
     private PlatformApiFactory _factory;
@@ -47,6 +48,7 @@ public sealed class ApiFixture : IAsyncDisposable
         NpgsqlDataSource adminDataSource,
         NpgsqlDataSource ledgerDataSource,
         NpgsqlDataSource deviceDataSource,
+        NpgsqlDataSource operationsDataSource,
         string clusterConnectionString,
         string databaseName,
         AdjustableTimeProvider clock,
@@ -58,6 +60,7 @@ public sealed class ApiFixture : IAsyncDisposable
         _adminDataSource = adminDataSource;
         _ledgerDataSource = ledgerDataSource;
         _deviceDataSource = deviceDataSource;
+        _operationsDataSource = operationsDataSource;
         _clusterConnectionString = clusterConnectionString;
         _databaseName = databaseName;
         Clock = clock;
@@ -106,7 +109,8 @@ public sealed class ApiFixture : IAsyncDisposable
         var adminDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_admin"));
         var ledgerDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_ledger"));
         var deviceDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_device"));
-        return new ApiFixture(database, apiDataSource, identityDataSource, adminDataSource, ledgerDataSource, deviceDataSource,
+        var operationsDataSource = NpgsqlDataSource.Create(RoleDsn(baseBuilder, "vg_operations"));
+        return new ApiFixture(database, apiDataSource, identityDataSource, adminDataSource, ledgerDataSource, deviceDataSource, operationsDataSource,
             clusterConnectionString, databaseName, new AdjustableTimeProvider(), new BrokerEmulator());
     }
 
@@ -219,6 +223,7 @@ public sealed class ApiFixture : IAsyncDisposable
         Anonymous.Dispose();
         _factory.Dispose();
         Broker.Dispose();
+        await _operationsDataSource.DisposeAsync();
         await _deviceDataSource.DisposeAsync();
         await _ledgerDataSource.DisposeAsync();
         await _adminDataSource.DisposeAsync();
@@ -298,7 +303,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, Clock, Broker, TelegramApi, YooKassaApi, Logs);
+        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, _operationsDataSource, Clock, Broker, TelegramApi, YooKassaApi, Logs);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -326,6 +331,7 @@ internal sealed class PlatformApiFactory(
     NpgsqlDataSource adminDataSource,
     NpgsqlDataSource ledgerDataSource,
     NpgsqlDataSource deviceDataSource,
+    NpgsqlDataSource operationsDataSource,
     AdjustableTimeProvider clock,
     BrokerEmulator broker,
     TelegramApiEmulator telegramApi,
@@ -368,6 +374,7 @@ internal sealed class PlatformApiFactory(
         builder.UseEnvironment("Development");
         builder.UseSetting("Security:AllowedOrigins:0", "https://miniapp.example.test");
         builder.UseSetting("ConnectionStrings:PlatformLedger", ledgerDataSource.ConnectionString);
+        builder.UseSetting("ConnectionStrings:PlatformOperations", operationsDataSource.ConnectionString);
         builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(new CapturingLoggerProvider(logs)); });
         builder.UseSetting("VG_PLATFORM_SESSION_SIGNING_KEY", TestSessionKey);
         builder.UseSetting("VG_PLATFORM_LEASE_KEY_ID", "test-lease-key-1");
@@ -383,6 +390,9 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_DELIVERY_WORKER_ENABLED", "false");
         builder.UseSetting("VG_PAYMENT_RECONCILIATION_ENABLED", "false");
         builder.UseSetting("VG_PAYMENT_SUPPORT_TEXT", "Payment support: support@example.test");
+        builder.UseSetting("VG_OPERATIONS_TOKEN", "test-operations-token");
+        builder.UseSetting("VG_LAST_BACKUP_UTC", clock.GetUtcNow().ToString("O"));
+        builder.UseSetting("VG_LAST_RESTORE_DRILL_UTC", clock.GetUtcNow().ToString("O"));
         builder.UseSetting("VG_YOOKASSA_SHOP_ID", "test-shop-123");
         builder.UseSetting("VG_YOOKASSA_SECRET_KEY", "test-secret-never-production");
         builder.UseSetting("VG_YOOKASSA_RETURN_URL", "https://desktop.example.test/payment-return");
@@ -410,6 +420,8 @@ internal sealed class PlatformApiFactory(
             services.RemoveAll<IBrokerSigningKeySource>();
             services.RemoveAll<IBrokerUserInfoSource>();
             services.AddSingleton(apiDataSource);
+            services.RemoveAll<VideoGrabber.Platform.Api.Operations.OperationsDataSource>();
+            services.AddSingleton(VideoGrabber.Platform.Api.Operations.OperationsDataSource.CreateOwned(operationsDataSource.ConnectionString));
             services.AddSingleton<IAccountStore>(_ => new AccountStore(apiDataSource));
             services.AddSingleton<IIdentityAccountResolver>(
                 _ => new TestIdentityResolver(new AccountStore(identityDataSource)));

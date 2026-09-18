@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "reminderMinutes": 60,
+  "rules": [
+    { "code": "backup_missing", "severity": "critical", "condition": "no successful backup timestamp" },
+    { "code": "backup_old", "severity": "critical", "thresholdSeconds": 900 },
+    { "code": "job_queue_old", "severity": "warning", "thresholdSeconds": 600 },
+    { "code": "worker_stale", "severity": "critical", "thresholdSeconds": 60 },
+    { "code": "disk_low", "severity": "critical", "thresholdFreePercent": 20 },
+    { "code": "database_saturated", "severity": "critical", "thresholdUsedPercent": 80 },
+    { "code": "outbox_backlog", "severity": "warning", "thresholdPending": 1000 },
+    { "code": "restore_drill_missing", "severity": "warning", "condition": "no successful restore-drill timestamp" },
+    { "code": "restore_drill_old", "severity": "warning", "thresholdSeconds": 604800 },
+    { "code": "payment_verification_lag", "severity": "critical", "thresholdSeconds": 300 },
+    { "code": "delivery_unknown", "severity": "warning", "thresholdCount": 1 },
+    { "code": "reservation_review_required", "severity": "warning", "thresholdCount": 1 },
+    { "code": "dependency_failures", "severity": "critical", "thresholdCount": 1 },
+    { "code": "retention_cleanup_failed", "severity": "critical", "thresholdCount": 1 }
+  ],
+  "delivery": {
+    "requiresExplicitAuthorization": true,
+    "authorizationEnvironmentVariable": "VG_ALERT_DELIVERY_AUTHORIZED",
+    "authorizationValue": "YES",
+    "webhookEnvironmentVariable": "VG_ALERT_WEBHOOK_URL"
+  }
+}

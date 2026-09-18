@@ -50,6 +50,7 @@ services:
         export VG_PLATFORM_API_DSN="$$(cat /run/secrets/api_dsn)"
         export VG_PLATFORM_ADMIN_DSN="$$(cat /run/secrets/admin_dsn)"
         export VG_PLATFORM_LEDGER_DSN="$$(cat /run/secrets/ledger_dsn)"
+        export VG_PLATFORM_OPERATIONS_DSN="$$(cat /run/secrets/operations_dsn)"
         export VG_SERVER_WORKER_TOKEN="$$(cat /run/secrets/worker_token)"
         export VG_SESSION_JWT_SIGNING_KEY="$$(cat /run/secrets/session_key)"
         export VG_TELEGRAM_BOT_TOKEN="$$(cat /run/secrets/telegram_bot_token)"
@@ -68,6 +69,7 @@ services:
       - api_dsn
       - admin_dsn
       - ledger_dsn
+      - operations_dsn
       - worker_token
       - session_key
       - telegram_bot_token
@@ -185,6 +187,8 @@ secrets:
     file: ${VG_ADMIN_DSN_FILE:?}
   ledger_dsn:
     file: ${VG_LEDGER_DSN_FILE:?}
+  operations_dsn:
+    file: ${VG_OPERATIONS_DSN_FILE:?}
   worker_token:
     file: ${VG_WORKER_TOKEN_FILE:?}
   session_key:

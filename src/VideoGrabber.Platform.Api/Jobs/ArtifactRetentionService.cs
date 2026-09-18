@@ -1,17 +1,19 @@
 using System.Data;
 using Npgsql;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Api.Operations;
 
 namespace VideoGrabber.Platform.Api.Jobs;
 
 public sealed class ArtifactRetentionService(
     NpgsqlDataSource dataSource,
     IConfiguration configuration,
-    TimeProvider clock)
+    TimeProvider clock,
+    PlatformOperationalCounters counters)
 {
     private readonly string? _root = NormalizeRoot(configuration["VG_RETENTION_ROOT"]);
-    private readonly bool _enabled = string.Equals(
-        configuration["VG_RETENTION_ENABLED"], "true", StringComparison.OrdinalIgnoreCase);
+    private readonly bool _enabled = ActivationQualified(
+        configuration, clock.GetUtcNow());
 
     public async Task<RetentionCandidate?> ClaimExpiredAsync(
         CancellationToken cancellationToken)
@@ -97,6 +99,9 @@ public sealed class ArtifactRetentionService(
         command.Parameters.AddWithValue("reason", reason);
         command.Parameters.AddWithValue("artifact", result.ArtifactId);
         await command.ExecuteNonQueryAsync(cancellationToken);
+        if (!result.Deleted
+            && !string.Equals(result.Reason, "already_missing", StringComparison.Ordinal))
+            counters.RecordRetentionCleanupFailure();
     }
 
     public async Task<IReadOnlyList<RetentionCandidate>> DryRunAsync(
@@ -137,6 +142,74 @@ public sealed class ArtifactRetentionService(
         return result;
     }
 
+    private static bool ActivationQualified(
+        IConfiguration configuration,
+        DateTimeOffset now)
+    {
+        var root = NormalizeRoot(configuration["VG_RETENTION_ROOT"]);
+        var ownedRootQualified = IsQualifiedOwnedRoot(root);
+        var enabled = string.Equals(
+            configuration["VG_RETENTION_ENABLED"],
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        var qualified = string.Equals(
+            configuration["VG_RETENTION_QUALIFIED"],
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        var clean = string.Equals(
+            configuration["VG_RETENTION_DRY_RUN_CLEAN"],
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        var approved = string.Equals(
+            configuration["VG_RETENTION_APPROVED"],
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        var dryRunFresh = TryRecent(
+            configuration["VG_RETENTION_DRY_RUN_UTC"],
+            now,
+            TimeSpan.FromHours(24));
+        var backupCurrent = TryRecent(
+            configuration["VG_LAST_BACKUP_UTC"],
+            now,
+            TimeSpan.FromMinutes(15));
+        return PlatformMetrics.RetentionMayRun(
+            enabled,
+            qualified && ownedRootQualified,
+            clean && dryRunFresh,
+            backupCurrent,
+            approved);
+    }
+
+    private static bool IsQualifiedOwnedRoot(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root)) return false;
+        var full = Path.GetFullPath(root);
+        var driveRoot = Path.GetPathRoot(full);
+        if (string.Equals(
+                full.TrimEnd(Path.DirectorySeparatorChar),
+                driveRoot?.TrimEnd(Path.DirectorySeparatorChar),
+                OperatingSystem.IsWindows()
+                    ? StringComparison.OrdinalIgnoreCase
+                    : StringComparison.Ordinal))
+            return false;
+        return true;
+    }
+
+    private static bool TryRecent(
+        string? raw,
+        DateTimeOffset now,
+        TimeSpan maximumAge)
+    {
+        if (string.IsNullOrWhiteSpace(raw)
+            || !DateTimeOffset.TryParse(
+                raw,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out var timestamp))
+            return false;
+        var age = now - timestamp;
+        return age >= TimeSpan.Zero && age <= maximumAge;
+    }
     private static string? NormalizeRoot(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;

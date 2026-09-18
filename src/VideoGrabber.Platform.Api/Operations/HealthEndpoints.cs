@@ -19,6 +19,8 @@ public static class HealthEndpoints
     private static async Task<IResult> ReadyAsync(
         NpgsqlDataSource database,
         IConfiguration configuration,
+        PlatformMetrics metrics,
+        PlatformOperationalCounters counters,
         CancellationToken cancellationToken)
     {
         try
@@ -35,14 +37,28 @@ public static class HealthEndpoints
                 ?? string.Empty;
 
             var workerTokenReady =
-                !string.IsNullOrWhiteSpace(configuration["VG_SERVER_WORKER_TOKEN"]);
+                !string.IsNullOrWhiteSpace(
+                    configuration["VG_SERVER_WORKER_TOKEN"]);
             var authIssuerReady =
-                !string.IsNullOrWhiteSpace(configuration["Security:SessionJwt:Issuer"])
-                || !string.IsNullOrWhiteSpace(configuration["VG_SESSION_JWT_ISSUER"]);
+                !string.IsNullOrWhiteSpace(
+                    configuration["Security:SessionJwt:Issuer"])
+                || !string.IsNullOrWhiteSpace(
+                    configuration["VG_SESSION_JWT_ISSUER"]);
+
+            var snapshot = await metrics.CaptureAsync(cancellationToken);
+            var workerReady =
+                snapshot.ActiveJobs == 0
+                || snapshot.WorkerHeartbeatAge is null
+                || !PlatformMetrics.WorkerHeartbeatStale(
+                    snapshot.WorkerHeartbeatAge.Value);
+            var diskReady =
+                !PlatformMetrics.DiskTooLow(snapshot.FreeDiskPercent);
 
             if (string.IsNullOrWhiteSpace(latest)
                 || !workerTokenReady
-                || !authIssuerReady)
+                || !authIssuerReady
+                || !workerReady
+                || !diskReady)
             {
                 return Results.Json(
                     new
@@ -50,9 +66,12 @@ public static class HealthEndpoints
                         status = "not_ready",
                         database = !string.IsNullOrWhiteSpace(latest),
                         workerCapability = workerTokenReady,
-                        authIssuer = authIssuerReady
+                        authIssuer = authIssuerReady,
+                        workerHeartbeat = workerReady,
+                        disk = diskReady
                     },
-                    statusCode: StatusCodes.Status503ServiceUnavailable);
+                    statusCode:
+                        StatusCodes.Status503ServiceUnavailable);
             }
 
             return Results.Ok(new
@@ -61,20 +80,25 @@ public static class HealthEndpoints
                 migration = latest,
                 database = true,
                 workerCapability = true,
-                authIssuer = true
+                authIssuer = true,
+                workerHeartbeat = true,
+                disk = true
             });
         }
         catch (Exception ex) when (
             ex is NpgsqlException
-            or InvalidOperationException)
+            or InvalidOperationException
+            or IOException)
         {
+            counters.RecordDependencyFailure();
             return Results.Json(
                 new
                 {
                     status = "not_ready",
                     database = false
                 },
-                statusCode: StatusCodes.Status503ServiceUnavailable);
+                statusCode:
+                    StatusCodes.Status503ServiceUnavailable);
         }
     }
 }

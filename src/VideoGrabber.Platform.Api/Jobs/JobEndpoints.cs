@@ -1,3 +1,4 @@
+using VideoGrabber.Platform.Api.Operations;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
 
@@ -17,6 +18,7 @@ public static class JobEndpoints
 
     private static async Task<IResult> CreateAsync(
         CreateJob request, HttpContext http, JobStore jobs, DeviceStore devices,
+        PlatformOperationalCounters counters,
         CancellationToken cancellationToken)
     {
         if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
@@ -35,9 +37,15 @@ public static class JobEndpoints
         catch (ReservationConflictException)
         { return Results.Conflict(new { code = "reservation_conflict" }); }
         catch (ReservationUnavailableException)
-        { return Results.Conflict(new { code = "access_unavailable" }); }
+        {
+            counters.RecordBlockedAdmission();
+            return Results.Conflict(new { code = "access_unavailable" });
+        }
         catch (LedgerBusyException)
-        { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+        {
+            counters.RecordDependencyFailure();
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
         catch (ArgumentException ex)
         { return Results.BadRequest(new { code = "invalid_job", detail = ex.Message }); }
     }
