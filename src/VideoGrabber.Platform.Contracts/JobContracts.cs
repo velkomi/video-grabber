@@ -62,3 +62,18 @@ public sealed record WorkerSourceDescriptor(
     string MediaType,
     DateTimeOffset ExpiresAt);
 public sealed record AnalyzeSourceRequest(Uri Source);
+
+public sealed record UploadTicketRequest(
+    AttemptLease Lease,
+    long Length,
+    string Sha256,
+    string MediaType);
+
+public sealed record UploadTicket(
+    Guid UploadId,
+    Guid JobId,
+    Guid AttemptId,
+    long Fence,
+    long MaximumBytes,
+    DateTimeOffset ExpiresAt);
+public sealed record DesktopCompletionRequest(AttemptLease Lease, ArtifactReceipt Artifact);

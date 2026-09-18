@@ -208,6 +208,40 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
             job.JobId, attemptId, fence, leaseUntil, capability, job.Work);
     }
 
+    public async Task<bool> ValidateDesktopAttemptAsync(
+        Guid accountId,
+        Guid deviceId,
+        AttemptLease lease,
+        CancellationToken cancellationToken)
+    {
+        if (accountId == Guid.Empty || deviceId == Guid.Empty
+            || lease.JobId == Guid.Empty || lease.AttemptId == Guid.Empty
+            || lease.Fence <= 0 || string.IsNullOrWhiteSpace(lease.CapabilityToken))
+            return false;
+        var now = clock.GetUtcNow();
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select exists(
+              select 1
+              from licensing.jobs j
+              join licensing.job_attempts a on a.job_id=j.job_id
+              where j.job_id=@job and j.account_id=@account
+                and j.executor='desktop_worker' and j.device_id=@device
+                and j.state in ('running','cancel_requested')
+                and j.fence=@fence
+                and a.attempt_id=@attempt and a.fence=@fence
+                and a.state='running' and a.lease_until>@now
+                and a.capability_hash=@capability)
+            """, connection);
+        command.Parameters.AddWithValue("job", lease.JobId);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("device", deviceId);
+        command.Parameters.AddWithValue("fence", lease.Fence);
+        command.Parameters.AddWithValue("attempt", lease.AttemptId);
+        command.Parameters.AddWithValue("now", now);
+        command.Parameters.AddWithValue("capability", Hash(lease.CapabilityToken));
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
     public async Task<bool> HeartbeatAsync(
         AttemptLease lease,
         CancellationToken cancellationToken)

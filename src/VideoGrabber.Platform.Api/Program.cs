@@ -103,6 +103,7 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<JobStore>();
 builder.Services.AddSingleton<EgressProxy>();
 builder.Services.AddSingleton<SourceAnalysisService>();
+builder.Services.AddSingleton<ArtifactUploadService>();
 builder.Services.AddSingleton(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -243,6 +244,7 @@ app.MapDestinationEndpoints();
 app.MapJobEndpoints();
 app.MapAttemptEndpoints();
 app.MapSourceEndpoints();
+app.MapArtifactUploadEndpoints();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

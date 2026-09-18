@@ -69,6 +69,7 @@ public sealed partial class MainWindow
         _accountDevicesPanel.Children.Add(SectionHeading("Компьютеры"));
         _accountDevicesPanel.Children.Add(MutedText("После входа здесь появятся зарегистрированные Windows-устройства."));
         body.Children.Add(Card(_accountDevicesPanel));
+        body.Children.Add(BuildDesktopWorkerCard());
 
         var view = new ScrollViewer { Content = body };
         view.Loaded += (_, _) => StartManagedAccountRestore();
@@ -163,6 +164,7 @@ public sealed partial class MainWindow
         _managedAccountId = null;
         _managedDeviceId = null;
         _managedOfflineCache = null;
+        StopDesktopWorkerLoop();
         _managedRestoredQueue = new SavedQueue(1, Guid.Empty, []);
         RebuildManagedCoordinator();
         SetManagedSignedOut("Вы вышли из аккаунта. Локальные файлы не удалены.");
@@ -203,6 +205,7 @@ public sealed partial class MainWindow
             devices = await ManagedGetAsync<DeviceReceipt[]>("/v1/devices", _windowLifetime.Token);
             await RestoreManagedQueueAsync(profile.AccountId);
             RebuildManagedCoordinator();
+            StartDesktopWorkerIfEnrolled();
 
             AccountUi(() =>
             {
