@@ -94,8 +94,11 @@ $resticCommon=@(
   '-r','/backup/repository'
 )
 
-wsl.exe @($resticCommon + @('snapshots')) | Out-Null
-if($LASTEXITCODE -ne 0){
+$repoConfig=Join-Path $repository 'config'
+if(Test-Path $repoConfig){
+  wsl.exe @($resticCommon + @('snapshots')) | Out-Null
+  if($LASTEXITCODE -ne 0){throw 'Existing restic repository could not be unlocked; refusing to initialize over it.'}
+}else{
   wsl.exe @($resticCommon + @('init')) | Out-Null
   if($LASTEXITCODE -ne 0){throw 'restic init failed.'}
 }
