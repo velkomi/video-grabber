@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using VideoGrabber.Platform.Contracts;
 
 namespace VideoGrabber.Platform.Api.Telegram;
 
@@ -10,6 +11,7 @@ public interface IBotApiClient
 {
     Task<BotSentMessage> SendMessageAsync(BotMessage message, CancellationToken cancellationToken);
     Task AnswerCallbackAsync(string callbackQueryId, string text, CancellationToken cancellationToken);
+    Task<TelegramChatRights> GetRightsAsync(long chatId, long userId, CancellationToken cancellationToken);
 }
 
 public sealed class BotApiClient(
@@ -84,6 +86,62 @@ public sealed class BotApiClient(
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<TelegramChatRights> GetRightsAsync(
+        long chatId,
+        long userId,
+        CancellationToken cancellationToken)
+    {
+        if (chatId == 0 || userId <= 0) throw new ArgumentOutOfRangeException(nameof(chatId));
+        if (!long.TryParse(configuration["VG_TELEGRAM_BOT_USER_ID"], out var botUserId) || botUserId <= 0)
+            throw new InvalidOperationException("Telegram bot numeric user ID is required.");
+        var chat = await CallAsync("getChat", new { chat_id = chatId }, cancellationToken).ConfigureAwait(false);
+        var kind = RequiredString(chat, "type");
+        var user = await CallAsync("getChatMember", new { chat_id = chatId, user_id = userId }, cancellationToken)
+            .ConfigureAwait(false);
+        var botMember = await CallAsync("getChatMember", new { chat_id = chatId, user_id = botUserId }, cancellationToken)
+            .ConfigureAwait(false);
+        var userCanPublish = CanPublish(kind, chatId, userId, user);
+        var botCanPublish = CanPublish(kind, chatId, botUserId, botMember);
+        return new TelegramChatRights(userCanPublish, botCanPublish, kind);
+    }
+
+    private async Task<JsonElement> CallAsync(string method, object payload, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, MethodUri(method))
+        {
+            Content = JsonContent.Create(payload)
+        };
+        using var response = await clients.CreateClient("TelegramBotApi")
+            .SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<TelegramEnvelope>(cancellationToken: cancellationToken)
+            .ConfigureAwait(false) ?? throw new InvalidDataException("Telegram Bot API response was empty.");
+        if (!envelope.Ok || envelope.Result.ValueKind != JsonValueKind.Object)
+            throw new HttpRequestException("Telegram Bot API rejected " + method + ".");
+        return envelope.Result.Clone();
+    }
+
+    private static bool CanPublish(string kind, long chatId, long memberId, JsonElement member)
+    {
+        var status = RequiredString(member, "status");
+        if (kind == "private")
+            return memberId == chatId
+                ? status is "member" or "administrator" or "creator"
+                : status is "member" or "administrator" or "creator";
+        if (status == "creator") return true;
+        if (status != "administrator") return false;
+        if (kind == "channel")
+            return member.TryGetProperty("can_post_messages", out var canPost)
+                && canPost.ValueKind == JsonValueKind.True;
+        return kind is "group" or "supergroup";
+    }
+
+    private static string RequiredString(JsonElement element, string name)
+        => element.TryGetProperty(name, out var value)
+            && value.ValueKind == JsonValueKind.String
+            && value.GetString() is { Length: > 0 } text
+                ? text
+                : throw new InvalidDataException("Telegram Bot API field " + name + " is missing.");
     private Uri MethodUri(string method)
         => new(_baseUri.AbsoluteUri + "bot" + security.BotToken + "/" + method, UriKind.Absolute);
 

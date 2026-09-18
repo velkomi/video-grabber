@@ -20,6 +20,11 @@ public sealed class MiniAppUiTests
         Assert.Contains("/v1/identities", js);
         Assert.Contains("/v1/devices", js);
         Assert.Contains("/v1/capabilities", js);
+        Assert.Contains("/v1/destinations", js);
+        Assert.Contains("/v1/destinations/challenges", js);
+        Assert.Contains("id=\"destination-form\"", html);
+        Assert.Contains("id=\"destination-chat\"", html);
+        Assert.Contains("id=\"destinations\"", html);
         Assert.Contains("credentials: \"same-origin\"", js);
         Assert.Contains("X-CSRF-Token", js);
         Assert.Contains("textContent", js);

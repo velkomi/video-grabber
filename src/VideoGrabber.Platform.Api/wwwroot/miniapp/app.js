@@ -110,6 +110,34 @@ function renderDevices(devices) {
   }
 }
 
+function renderDestinations(destinations) {
+  const host = $("#destinations");
+  host.replaceChildren();
+  const active = destinations.filter((destination) => !destination.revoked);
+  if (active.length === 0) {
+    host.textContent = "Проверенных получателей пока нет.";
+    return;
+  }
+  for (const destination of active) {
+    const { row } = makeItem(destination.kind + " • " + String(destination.chatId));
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Отозвать";
+    button.addEventListener("click", async () => {
+      try {
+        setStatus("Отзываю получателя…");
+        await api("/v1/destinations/" + encodeURIComponent(destination.destinationId) + "/revoke",
+          { method: "POST" });
+        await loadAll();
+        setStatus("Получатель отозван.", "success");
+      } catch (error) {
+        setStatus("Не удалось отозвать получателя: " + error.message, "error");
+      }
+    });
+    row.append(button);
+    host.append(row);
+  }
+}
 function renderCapabilities(capabilities) {
   const mediaButton = $("#media-action");
   if (capabilities.mediaAvailable) {
@@ -124,17 +152,19 @@ function renderCapabilities(capabilities) {
 }
 async function loadAll() {
   setStatus("Обновляю данные…");
-  const [profile, access, identities, devices, capabilities] = await Promise.all([
+  const [profile, access, identities, devices, capabilities, destinations] = await Promise.all([
     api("/v1/me"),
     api("/v1/access"),
     api("/v1/identities"),
     api("/v1/devices"),
-    api("/v1/capabilities")
+    api("/v1/capabilities"),
+    api("/v1/destinations")
   ]);
   renderProfile(profile, access);
   renderIdentities(identities);
   renderDevices(devices);
   renderCapabilities(capabilities);
+  renderDestinations(destinations);
   setStatus("Данные обновлены.", "success");
 }
 
@@ -159,6 +189,38 @@ $("#refresh").addEventListener("click", async () => {
   catch (error) { setStatus("Ошибка: " + error.message, "error"); }
 });
 
+$("#destination-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const chatText = $("#destination-chat").value.trim();
+  const title = $("#destination-title").value.trim();
+  if (!/^-?\d+$/.test(chatText) || !title) {
+    setStatus("Укажите корректный Telegram chat ID и название.", "error");
+    return;
+  }
+  const chatId = Number(chatText);
+  if (!Number.isSafeInteger(chatId) || chatId === 0) {
+    setStatus("Chat ID вне безопасного диапазона JavaScript. Используйте Telegram ID до 2^53-1.", "error");
+    return;
+  }
+  try {
+    setStatus("Проверяю права Telegram…");
+    const challenge = await api("/v1/destinations/challenges", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId })
+    });
+    await api("/v1/destinations", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId, title, proof: challenge.proof })
+    });
+    $("#destination-title").value = "";
+    await loadAll();
+    setStatus("Получатель проверен и привязан.", "success");
+  } catch (error) {
+    setStatus(error.status === 403
+      ? "Нет подтверждённых прав пользователя или бота на этот чат."
+      : "Не удалось привязать получателя: " + error.message, "error");
+  }
+});
 $("#admin-search").addEventListener("submit", async (event) => {
   event.preventDefault();
   const identity = $("#admin-identity").value.trim();

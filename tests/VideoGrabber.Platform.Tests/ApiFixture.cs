@@ -344,6 +344,7 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_TELEGRAM_MINIAPP_URL", "https://miniapp.example.test/");
         builder.UseSetting("VG_PLATFORM_PUBLIC_URL", "https://platform.example.test/");
         builder.UseSetting("VG_TELEGRAM_BOT_USERNAME", "VideoGrabberTestBot");
+        builder.UseSetting("VG_TELEGRAM_BOT_USER_ID", TelegramApiEmulator.BotUserId.ToString());
         builder.UseSetting("VG_TELEGRAM_WORKER_ENABLED", "false");
         builder.ConfigureServices(services =>
         {

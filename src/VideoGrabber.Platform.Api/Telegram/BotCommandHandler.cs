@@ -12,6 +12,7 @@ public sealed class BotCommandHandler(
     IAccountStore accounts,
     GrantStore grants,
     DeviceStore devices,
+    DestinationService destinations,
     AdminService admin,
     BotCallbackStore callbacks,
     IBotApiClient bot,
@@ -76,9 +77,7 @@ public sealed class BotCommandHandler(
                 await SendDevicesAsync(chatId, accountId, cancellationToken);
                 return;
             case "/destinations":
-                await bot.SendMessageAsync(new BotMessage(chatId,
-                    "Получатели доставки настраиваются только после проверки прав пользователя и бота. Откройте Mini App.",
-                    MiniAppMarkup()), cancellationToken);
+                await SendDestinationsAsync(chatId, accountId, cancellationToken);
                 return;
             case "/admin":
                 await HandleAdminAsync(chatId, accountId, args, cancellationToken);
@@ -153,6 +152,15 @@ public sealed class BotCommandHandler(
         await bot.SendMessageAsync(new BotMessage(chatId, text), cancellationToken);
     }
 
+    private async Task SendDestinationsAsync(long chatId, Guid accountId, CancellationToken cancellationToken)
+    {
+        var rows = await destinations.ListAsync(accountId, cancellationToken);
+        var active = rows.Where(x => !x.Revoked).ToArray();
+        var text = active.Length == 0
+            ? "Проверенных получателей пока нет. Добавьте получателя в Mini App."
+            : "Проверенные получатели:\n" + string.Join("\n", active.Select(x => $"• {x.Kind} {x.ChatId}"));
+        await bot.SendMessageAsync(new BotMessage(chatId, text, MiniAppMarkup()), cancellationToken);
+    }
     private async Task HandleAdminAsync(
         long chatId,
         Guid actorId,

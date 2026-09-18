@@ -130,6 +130,7 @@ builder.Services.AddSingleton<BotCallbackStore>();
 builder.Services.AddSingleton<IBotApiClient, BotApiClient>();
 builder.Services.AddSingleton<BotCommandHandler>();
 builder.Services.AddSingleton<TelegramInboxWorker>();
+builder.Services.AddSingleton<DestinationService>();
 builder.Services.AddHostedService<TelegramInboxHostedService>();
 
 var allowedOrigins = builder.Configuration.GetSection("Security:AllowedOrigins").GetChildren()
@@ -234,6 +235,7 @@ app.MapTelegramSessionEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapCapabilityEndpoints();
 app.MapTelegramAdminLinkEndpoints();
+app.MapDestinationEndpoints();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

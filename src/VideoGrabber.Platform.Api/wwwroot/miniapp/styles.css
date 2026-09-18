@@ -50,3 +50,6 @@ label { display: block; margin-bottom: 7px; font-weight: 600; }
   .item { align-items: flex-start; flex-direction: column; }
   button, .button-link { width: 100%; justify-content: center; }
 }
+
+.card form > input { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 10px; }
+.card form > button { margin-top: 2px; }

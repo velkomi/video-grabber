@@ -24,8 +24,15 @@
     <button id="media-action" type="button" disabled>Отправить ссылку</button>
   </section>
   <section class="card"><h2>Получатели</h2>
-    <p>Приватные чаты и каналы появятся после проверки прав в следующем этапе.</p>
-    <button type="button" disabled>Настроить получателя</button>
+    <p>Для привязки сервер заново проверит права вашего Telegram-аккаунта и бота.</p>
+    <form id="destination-form">
+      <label for="destination-chat">Telegram chat ID</label>
+      <input id="destination-chat" inputmode="numeric" autocomplete="off" required>
+      <label for="destination-title">Название</label>
+      <input id="destination-title" maxlength="80" autocomplete="off" required>
+      <button type="submit">Проверить и привязать</button>
+    </form>
+    <div id="destinations" class="list"></div>
   </section>
   <section id="admin" class="card" hidden>
     <h2>Admin</h2>
