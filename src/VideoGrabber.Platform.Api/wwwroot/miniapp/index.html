@@ -21,7 +21,27 @@
   <section class="card"><h2>Компьютеры</h2><div id="devices" class="list"></div></section>
   <section class="card"><h2>Media</h2>
     <p id="capability">Проверяю доступность worker…</p>
-    <button id="media-action" type="button" disabled>Отправить ссылку</button>
+    <form id="media-form">
+      <label for="media-url">URL источника</label>
+      <input id="media-url" type="url" autocomplete="off" required>
+      <button id="media-analyze" type="submit">Анализировать</button>
+    </form>
+    <div id="media-options" hidden>
+      <label for="media-operation">Операция</label>
+      <select id="media-operation"></select>
+      <label for="media-quality">Качество</label>
+      <select id="media-quality"></select>
+      <label for="media-executor">Исполнитель</label>
+      <select id="media-executor"></select>
+      <label for="media-inputs">Artifact ID через запятую (для trim/join/transcribe)</label>
+      <input id="media-inputs" autocomplete="off">
+      <div class="row">
+        <input id="media-trim-start" inputmode="numeric" placeholder="start ms">
+        <input id="media-trim-duration" inputmode="numeric" placeholder="duration ms">
+      </div>
+      <button id="media-create" type="button">Добавить в очередь</button>
+    </div>
+    <div id="media-jobs" class="list"></div>
   </section>
   <section class="card"><h2>Получатели</h2>
     <p>Для привязки сервер заново проверит права вашего Telegram-аккаунта и бота.</p>
@@ -46,5 +66,6 @@
 </main>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script type="module" src="/miniapp/app.js"></script>
+<script type="module" src="/miniapp/media.js"></script>
 </body>
 </html>

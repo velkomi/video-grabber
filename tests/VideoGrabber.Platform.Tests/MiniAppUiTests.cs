@@ -25,6 +25,8 @@ public sealed class MiniAppUiTests
         Assert.Contains("id=\"destination-form\"", html);
         Assert.Contains("id=\"destination-chat\"", html);
         Assert.Contains("id=\"destinations\"", html);
+        Assert.Contains("id=\"media-form\"", html);
+        Assert.Contains("/miniapp/media.js", html);
         Assert.Contains("credentials: \"same-origin\"", js);
         Assert.Contains("X-CSRF-Token", js);
         Assert.Contains("textContent", js);
@@ -40,7 +42,7 @@ public sealed class MiniAppUiTests
     }
 
     [Fact]
-    public async Task Capabilities_are_authenticated_and_media_is_unavailable_before_P5()
+    public async Task Capabilities_are_authenticated_and_media_is_available_after_P5()
     {
         await using var f = await ApiFixture.StartAsync();
         using var anonymous = await f.Anonymous.GetAsync("/v1/capabilities");
@@ -48,7 +50,7 @@ public sealed class MiniAppUiTests
 
         using var miniApp = await f.MiniAppAsync(6601);
         var json = await miniApp.GetStringAsync("/v1/capabilities");
-        Assert.Contains("\"mediaAvailable\":false", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\"mediaAvailable\":true", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

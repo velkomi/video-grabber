@@ -65,7 +65,8 @@ public sealed class ArtifactVerifier(
             Convert.ToHexString(digest).ToLowerInvariant(),
             info.Length,
             mediaType,
-            evidenceId);
+            evidenceId,
+            path);
     }
 
     private static bool IsWithin(string root, string path)

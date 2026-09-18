@@ -47,6 +47,7 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
             IsolationLevel.ReadCommitted, cancellationToken);
         await LockAccountAsync(connection, transaction, accountId, cancellationToken);
         await ValidateSourceAsync(connection, transaction, accountId, request, now, cancellationToken);
+        await ValidateOwnedInputsAsync(connection, transaction, accountId, request, cancellationToken);
 
         var existing = await ReadByIntentAsync(
             connection, transaction, accountId, request.IntentId, cancellationToken);
@@ -242,6 +243,60 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         command.Parameters.AddWithValue("capability", Hash(lease.CapabilityToken));
         return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
+    public async Task<IReadOnlyList<WorkerArtifactDescriptor>> ReadWorkerArtifactsAsync(
+        AttemptLease lease,
+        CancellationToken cancellationToken)
+    {
+        if (lease.JobId == Guid.Empty || lease.AttemptId == Guid.Empty || lease.Fence <= 0
+            || string.IsNullOrWhiteSpace(lease.CapabilityToken))
+            throw new JobFenceConflictException();
+        var now = clock.GetUtcNow();
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var scope = new NpgsqlCommand("""
+            select j.account_id,j.input_artifact_ids
+            from licensing.jobs j
+            join licensing.job_attempts a on a.job_id=j.job_id
+            where j.job_id=@job and j.fence=@fence and j.state in ('running','cancel_requested')
+              and a.attempt_id=@attempt and a.fence=@fence and a.state='running'
+              and a.lease_until>@now and a.capability_hash=@capability
+            """, connection, transaction);
+        scope.Parameters.AddWithValue("job", lease.JobId);
+        scope.Parameters.AddWithValue("attempt", lease.AttemptId);
+        scope.Parameters.AddWithValue("fence", lease.Fence);
+        scope.Parameters.AddWithValue("now", now);
+        scope.Parameters.AddWithValue("capability", Hash(lease.CapabilityToken));
+        await using var reader = await scope.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) throw new JobFenceConflictException();
+        var accountId = reader.GetGuid(0);
+        var ids = reader.GetFieldValue<Guid[]>(1);
+        await reader.DisposeAsync();
+        if (ids.Length == 0)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return [];
+        }
+        await using var command = new NpgsqlCommand("""
+            select artifact_id,storage_path,media_type,sha256,bytes
+            from licensing.artifacts
+            where account_id=@account and artifact_id=any(@ids) and storage_path is not null
+            """, connection, transaction);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("ids", ids);
+        await using var artifacts = await command.ExecuteReaderAsync(cancellationToken);
+        var map = new Dictionary<Guid,WorkerArtifactDescriptor>();
+        while (await artifacts.ReadAsync(cancellationToken))
+        {
+            var item = new WorkerArtifactDescriptor(
+                artifacts.GetGuid(0), artifacts.GetString(1), artifacts.GetString(2),
+                artifacts.GetString(3), artifacts.GetInt64(4));
+            map[item.ArtifactId] = item;
+        }
+        await artifacts.DisposeAsync();
+        await transaction.CommitAsync(cancellationToken);
+        if (map.Count != ids.Length) throw new JobUnavailableException();
+        return ids.Select(id => map[id]).ToArray();
+    }
     public async Task<bool> HeartbeatAsync(
         AttemptLease lease,
         CancellationToken cancellationToken)
@@ -431,6 +486,97 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         return result;
     }
 
+    public async Task<QueueOrderView> ReorderAsync(
+        Guid accountId,
+        QueueOrder request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Version <= 0 || request.JobIds is null
+            || request.JobIds.Length == 0
+            || request.JobIds.Distinct().Count() != request.JobIds.Length)
+            throw new JobRequestConflictException();
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        await LockAccountAsync(connection, transaction, accountId, cancellationToken);
+        await using var read = new NpgsqlCommand("""
+            select job_id,state,queue_version
+            from licensing.jobs
+            where account_id=@account and job_id=any(@ids)
+            order by created_at,job_id
+            for update
+            """, connection, transaction);
+        read.Parameters.AddWithValue("account", accountId);
+        read.Parameters.AddWithValue("ids", request.JobIds);
+        await using var reader = await read.ExecuteReaderAsync(cancellationToken);
+        var states = new Dictionary<Guid,(string State,long Version)>();
+        while (await reader.ReadAsync(cancellationToken))
+            states[reader.GetGuid(0)] = (reader.GetString(1), reader.GetInt64(2));
+        await reader.DisposeAsync();
+        if (states.Count != request.JobIds.Length
+            || states.Values.Any(x => x.State is not ("queued" or "waiting_for_worker"))
+            || states.Values.Any(x => x.Version != request.Version))
+            throw new JobRequestConflictException();
+        var nextVersion = checked(request.Version + 1);
+        for (var i = 0; i < request.JobIds.Length; i++)
+        {
+            await using var update = new NpgsqlCommand("""
+                update licensing.jobs
+                set queue_order=@order,queue_version=@version,updated_at=@now
+                where account_id=@account and job_id=@job
+                  and state in ('queued','waiting_for_worker')
+                """, connection, transaction);
+            update.Parameters.AddWithValue("order", (long)i + 1);
+            update.Parameters.AddWithValue("version", nextVersion);
+            update.Parameters.AddWithValue("now", clock.GetUtcNow());
+            update.Parameters.AddWithValue("account", accountId);
+            update.Parameters.AddWithValue("job", request.JobIds[i]);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new JobRequestConflictException();
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return new QueueOrderView(nextVersion, request.JobIds);
+    }
+
+    public async Task<IReadOnlyList<JobEvent>> ReadEventsAsync(
+        Guid accountId,
+        Guid? afterEventId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        DateTimeOffset? afterCreated = null;
+        if (afterEventId is Guid cursor)
+        {
+            await using var cursorCommand = new NpgsqlCommand(
+                "select created_at from licensing.job_outbox where account_id=@account and event_id=@event",
+                connection);
+            cursorCommand.Parameters.AddWithValue("account", accountId);
+            cursorCommand.Parameters.AddWithValue("event", cursor);
+            var value = await cursorCommand.ExecuteScalarAsync(cancellationToken);
+            if (value is DateTimeOffset timestamp) afterCreated = timestamp;
+        }
+        await using var command = new NpgsqlCommand("""
+            select event_id,job_id,event_type,created_at,payload::text
+            from licensing.job_outbox
+            where account_id=@account
+              and (@after::timestamptz is null or created_at>@after
+                   or (created_at=@after and event_id>@cursor))
+            order by created_at,event_id
+            limit @limit
+            """, connection);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("after", (object?)afterCreated ?? DBNull.Value);
+        command.Parameters.AddWithValue("cursor", (object?)afterEventId ?? Guid.Empty);
+        command.Parameters.AddWithValue("limit", limit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<JobEvent>();
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(new JobEvent(
+                reader.GetGuid(0).ToString("N"), reader.GetGuid(1), reader.GetString(2),
+                reader.GetFieldValue<DateTimeOffset>(3), reader.GetString(4)));
+        return result;
+    }
     public async Task<JobView> CancelAsync(
         Guid accountId,
         Guid jobId,
@@ -621,6 +767,28 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
             : null;
     }
 
+    private static async Task ValidateOwnedInputsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        CreateJob request,
+        CancellationToken cancellationToken)
+    {
+        if (request.InputArtifactIds.Length == 0) return;
+        await using var command = new NpgsqlCommand("""
+            select count(*)
+            from licensing.artifacts a
+            join licensing.jobs j on j.job_id=a.job_id
+            where a.account_id=@account
+              and a.artifact_id=any(@ids)
+              and j.state='completed'
+            """, connection, transaction);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("ids", request.InputArtifactIds);
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        if (count != request.InputArtifactIds.Length)
+            throw new JobUnavailableException();
+    }
     private static async Task ValidateSourceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -842,9 +1010,9 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         await using var command = new NpgsqlCommand("""
             insert into licensing.artifacts(
               artifact_id,account_id,job_id,attempt_id,fence,sha256,bytes,
-              media_type,verification_evidence_id,created_at)
+              media_type,verification_evidence_id,storage_path,created_at)
             values(@id,@account,@job,@attempt,@fence,@sha,@bytes,
-              @media,@evidence,@now)
+              @media,@evidence,@storage,@now)
             """, connection, transaction);
         command.Parameters.AddWithValue("id", artifact.ArtifactId);
         command.Parameters.AddWithValue("account", job.AccountId);
@@ -856,6 +1024,7 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         command.Parameters.AddWithValue("media", artifact.MediaType);
         command.Parameters.AddWithValue(
             "evidence", artifact.VerificationEvidenceId);
+        command.Parameters.AddWithValue("storage", (object?)artifact.StoragePath ?? DBNull.Value);
         command.Parameters.AddWithValue("now", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -965,29 +1134,36 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
     {
         if (request.IntentId == Guid.Empty)
             throw new ArgumentException("Intent id is required.");
-        if (request.Kind != "download")
-            throw new ArgumentException("Task 1 supports download jobs only.");
+        if (request.Kind is not ("download" or "mp3" or "trim" or "join" or "transcribe"))
+            throw new ArgumentException("Unsupported media operation.");
         if (request.Executor is not ("server_worker" or "desktop_worker"))
             throw new ArgumentException("Unsupported executor.");
         if (request.Executor == "server_worker" && request.DeviceId is not null)
-            throw new ArgumentException(
-                "Server worker jobs cannot carry a device id.");
+            throw new ArgumentException("Server worker jobs cannot carry a device id.");
         if (request.Executor == "desktop_worker" && request.DeviceId is null)
-            throw new ArgumentException(
-                "Desktop worker jobs require a device id.");
-        if (string.IsNullOrWhiteSpace(request.SourceId)
-            || request.SourceId.Length > 128)
+            throw new ArgumentException("Desktop worker jobs require a device id.");
+        if (string.IsNullOrWhiteSpace(request.SourceId) || request.SourceId.Length > 128)
             throw new ArgumentException("Source id is invalid.");
-        if (string.IsNullOrWhiteSpace(request.Quality)
-            || request.Quality.Length > 32)
+        if (string.IsNullOrWhiteSpace(request.Quality) || request.Quality.Length > 32)
             throw new ArgumentException("Quality is invalid.");
-        if (request.InputArtifactIds is null
-            || request.InputArtifactIds.Length > 100)
+        if (request.InputArtifactIds is null || request.InputArtifactIds.Length > 100
+            || request.InputArtifactIds.Distinct().Count() != request.InputArtifactIds.Length)
             throw new ArgumentException("Input artifacts are invalid.");
         if (request.TrimStartMs is < 0 || request.TrimDurationMs is <= 0)
             throw new ArgumentException("Trim bounds are invalid.");
+        if (request.Kind == "download" && request.InputArtifactIds.Length != 0)
+            throw new ArgumentException("Download cannot use input artifacts.");
+        if (request.Kind == "mp3" && request.InputArtifactIds.Length > 1)
+            throw new ArgumentException("MP3 accepts at most one input artifact.");
+        if (request.Kind is "trim" or "transcribe" && request.InputArtifactIds.Length != 1)
+            throw new ArgumentException("Operation requires exactly one owned input artifact.");
+        if (request.Kind == "join" && request.InputArtifactIds.Length < 2)
+            throw new ArgumentException("Join requires at least two owned input artifacts.");
+        if (request.Kind == "trim" && (request.TrimStartMs is null || request.TrimDurationMs is null))
+            throw new ArgumentException("Trim requires start and duration.");
+        if (request.Kind != "trim" && (request.TrimStartMs is not null || request.TrimDurationMs is not null))
+            throw new ArgumentException("Trim bounds are only valid for trim jobs.");
     }
-
     private static void ValidateCompletion(AttemptCompletion completion)
     {
         if (completion.JobId == Guid.Empty

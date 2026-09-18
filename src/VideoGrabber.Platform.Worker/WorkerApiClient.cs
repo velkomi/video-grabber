@@ -7,7 +7,7 @@ namespace VideoGrabber.Platform.Worker;
 public sealed class WorkerApiClient(
     HttpClient http,
     Guid workerId,
-    string workerToken) : IWorkerSourceResolver
+    string workerToken) : IWorkerSourceResolver, IWorkerArtifactResolver
 {
     private const string Header = "X-VideoGrabber-Worker-Token";
 
@@ -67,6 +67,17 @@ public sealed class WorkerApiClient(
             source.MediaType);
     }
 
+    public async Task<IReadOnlyList<WorkerArtifactDescriptor>> ResolveArtifactsAsync(
+        AttemptLease lease,
+        CancellationToken cancellationToken)
+    {
+        using var request = Create(HttpMethod.Post, "/v1/worker/jobs/inputs");
+        request.Content = JsonContent.Create(lease);
+        using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<WorkerArtifactDescriptor[]>(
+            cancellationToken: cancellationToken).ConfigureAwait(false) ?? [];
+    }
     private HttpRequestMessage Create(HttpMethod method, string path)
     {
         var request = new HttpRequestMessage(method, path);

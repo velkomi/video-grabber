@@ -120,6 +120,7 @@ public static class ArtifactUploadEndpoints
         HttpContext http,
         DeviceStore devices,
         JobStore jobs,
+        ArtifactUploadService uploads,
         CancellationToken cancellationToken)
     {
         if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
@@ -130,22 +131,25 @@ public static class ArtifactUploadEndpoints
             return Results.NotFound();
         try
         {
+            var artifact = await uploads.ValidateReceiptAsync(
+                accountId, deviceId, request.Lease, request.Artifact, cancellationToken);
             return Results.Ok(await jobs.CompleteAsync(
                 new AttemptCompletion(
                     request.Lease.JobId,
                     request.Lease.AttemptId,
                     request.Lease.Fence,
                     "success",
-                    request.Artifact,
-                    request.Artifact.VerificationEvidenceId),
+                    artifact,
+                    artifact.VerificationEvidenceId),
                 cancellationToken));
         }
+        catch (KeyNotFoundException) { return Results.NotFound(); }
+        catch (UnauthorizedAccessException) { return Results.NotFound(); }
         catch (JobFenceConflictException)
         { return Results.Conflict(new { code = "attempt_fence_stale" }); }
         catch (ReservationConflictException)
         { return Results.Conflict(new { code = "reservation_conflict" }); }
     }
-
     private static bool TryAccount(HttpContext http, out Guid accountId)
         => Guid.TryParse(http.User.FindFirst("account_id")?.Value, out accountId);
 }

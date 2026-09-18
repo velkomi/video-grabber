@@ -47,6 +47,7 @@ public sealed class WorkerHlsProxyIntegrationTests
             var executor = new MediaJobExecutor(
                 runner, tools, new ArtifactVerifier(runner, tools),
                 new StaticSourceResolver(new Uri("http://media.example.test/master.m3u8")),
+                new EmptyArtifactResolver(),
                 Path.Combine(root, "jobs"), proxy.Uri);
 
             var receipt = await executor.ExecuteAsync(lease, CancellationToken.None);
@@ -61,6 +62,12 @@ public sealed class WorkerHlsProxyIntegrationTests
         finally { SafeDelete(root); }
     }
 
+    private sealed class EmptyArtifactResolver : IWorkerArtifactResolver
+    {
+        public Task<IReadOnlyList<WorkerArtifactDescriptor>> ResolveArtifactsAsync(
+            AttemptLease lease, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<WorkerArtifactDescriptor>>([]);
+    }
     private sealed class StaticSourceResolver(Uri source) : IWorkerSourceResolver
     {
         public Task<WorkerResolvedSource> ResolveAsync(

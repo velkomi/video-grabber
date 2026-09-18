@@ -246,6 +246,8 @@ $("#admin-search").addEventListener("submit", async (event) => {
   }
 });
 
+window.VideoGrabberApi = { api, loadAll, setStatus };
+
 async function start() {
   try {
     window.Telegram?.WebApp?.ready();

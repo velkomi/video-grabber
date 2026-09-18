@@ -16,6 +16,7 @@ public sealed class BotCommandHandler(
     AdminService admin,
     BotCallbackStore callbacks,
     IBotApiClient bot,
+    BotMediaHandler media,
     TimeProvider clock,
     IConfiguration configuration)
 {
@@ -51,7 +52,8 @@ public sealed class BotCommandHandler(
             return;
         }
 
-        if (command is "/account" or "/balance" or "/link" or "/devices" or "/destinations" or "/admin")
+        if (command is "/account" or "/balance" or "/link" or "/devices" or "/destinations" or "/admin"
+            or "/media" or "/jobs" or "/download" or "/mp3" or "/trim" or "/join" or "/transcribe")
         {
             if (!string.Equals(chatType, "private", StringComparison.OrdinalIgnoreCase))
             {
@@ -83,6 +85,8 @@ public sealed class BotCommandHandler(
                 await HandleAdminAsync(chatId, accountId, args, cancellationToken);
                 return;
             default:
+                if (await media.HandleAsync(chatId, accountId, command, args, cancellationToken))
+                    return;
                 await bot.SendMessageAsync(new BotMessage(chatId,
                     "Неизвестная команда. Используйте /help."), cancellationToken);
                 return;

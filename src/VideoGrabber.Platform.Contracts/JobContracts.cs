@@ -34,7 +34,8 @@ public sealed record ArtifactReceipt(
     string Sha256,
     long Bytes,
     string MediaType,
-    string VerificationEvidenceId);
+    string VerificationEvidenceId,
+    string? StoragePath = null);
 
 public sealed record AttemptCompletion(
     Guid JobId,
@@ -77,3 +78,27 @@ public sealed record UploadTicket(
     long MaximumBytes,
     DateTimeOffset ExpiresAt);
 public sealed record DesktopCompletionRequest(AttemptLease Lease, ArtifactReceipt Artifact);
+
+public sealed record MediaCapability(
+    string Operation,
+    string[] Executors,
+    bool RequiresSource,
+    int MinimumInputs,
+    bool Available);
+
+public sealed record QueueOrder(Guid[] JobIds, long Version);
+
+public sealed record QueueOrderView(long Version, Guid[] JobIds);
+
+public sealed record JobEvent(
+    string EventId,
+    Guid JobId,
+    string EventType,
+    DateTimeOffset CreatedAt,
+    string Payload);
+public sealed record WorkerArtifactDescriptor(
+    Guid ArtifactId,
+    string StoragePath,
+    string MediaType,
+    string Sha256,
+    long Bytes);

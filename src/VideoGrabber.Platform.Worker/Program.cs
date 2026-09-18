@@ -34,14 +34,18 @@ builder.Services.AddSingleton(sp => new WorkerApiClient(
     workerToken));
 builder.Services.AddSingleton<IWorkerSourceResolver>(
     sp => sp.GetRequiredService<WorkerApiClient>());
+builder.Services.AddSingleton<IWorkerArtifactResolver>(
+    sp => sp.GetRequiredService<WorkerApiClient>());
 builder.Services.AddSingleton<ArtifactVerifier>();
 builder.Services.AddSingleton<IMediaJobExecutor>(sp => new MediaJobExecutor(
     sp.GetRequiredService<BoundedProcessRunner>(),
     sp.GetRequiredService<WorkerToolLocator>(),
     sp.GetRequiredService<ArtifactVerifier>(),
     sp.GetRequiredService<IWorkerSourceResolver>(),
+    sp.GetRequiredService<IWorkerArtifactResolver>(),
     jobRoot,
-    proxyUri));
+    proxyUri,
+    Environment.GetEnvironmentVariable("VG_WORKER_WHISPER_MODEL")));
 builder.Services.AddHostedService<ServerWorkerService>();
 
 await builder.Build().RunAsync();

@@ -53,3 +53,7 @@ label { display: block; margin-bottom: 7px; font-weight: 600; }
 
 .card form > input { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #cbd5e1; border-radius: 10px; }
 .card form > button { margin-top: 2px; }
+
+#media-options { display: grid; gap: 8px; margin-top: 12px; }
+#media-options[hidden] { display: none; }
+select, #media-options input, #media-form input { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 10px; background: var(--tg-theme-secondary-bg-color, #fff); color: inherit; }

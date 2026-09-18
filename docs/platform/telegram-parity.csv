@@ -1,0 +1,13 @@
+feature,desktop_entry,bot_handler,miniapp_control,worker_capability,test,actual_result
+download,"Managed queue/Desktop worker","/download <URL> [quality]","URL + operation + quality + executor","server_worker|desktop_worker","TelegramMediaParityTests; WorkerHlsProxyIntegrationTests","PASS: source-owned admission; real 6-segment HLS proxy/full decode"
+mp3,"Managed local media actions/Desktop worker","/mp3 <URL> [quality]","operation=mp3","server_worker|desktop_worker","TelegramMediaParityTests; WorkerMediaOperationTests","PASS: source/input admission; real FFmpeg MP3 verified"
+trim,"Managed editor/Desktop worker","/trim <artifactId> <URL> <startMs> <durationMs> [quality]","operation=trim + owned artifact + bounds","server_worker|desktop_worker","TelegramMediaParityTests; WorkerMediaOperationTests","PASS: foreign artifact denied; real FFmpeg trim verified"
+join,"Managed editor/Desktop worker","/join <artifactIds> <URL> [quality]","operation=join + >=2 owned artifacts","server_worker|desktop_worker","TelegramMediaParityTests; WorkerMediaOperationTests","PASS: ownership enforced; explicit reencode concat verified"
+transcribe,"Managed ASR/Desktop worker","/transcribe <artifactId> <URL> [quality]","operation=transcribe + owned artifact","desktop_worker; server_worker only with qualified model","TelegramMediaParityTests; WorkerMediaOperationTests","PASS: admission/ownership; server ASR fails closed without model"
+queue,"Managed durable queue","/jobs","media jobs list + cancel/retry","shared JobStore","TelegramMediaParityTests","PASS: optimistic queue version; stale reorder 409"
+events,"Managed status refresh","/jobs","SSE /v1/jobs/events","account-scoped outbox","TelegramMediaParityTests","PASS: A/B event isolation"
+account,"Account page","/account","profile card","n/a","BotAccountWorkflowTests","PASS"
+balance,"Account page","/balance","access card","n/a","BotAccountWorkflowTests","PASS: shared balance"
+linking,"Account page","/link","identity list/unlink","n/a","ManagedIdentityLinkTests; MiniAppUiTests","PASS"
+destinations,"n/a","/destinations","verified destination form","n/a","DestinationAuthorizationTests","PASS: current Telegram rights rechecked"
+payments,"Account page","planned P6","planned P6","n/a","P6 plan","BLOCKED until P6 local implementation"

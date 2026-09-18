@@ -136,7 +136,8 @@ public sealed class ArtifactUploadService : IAsyncDisposable
             await MarkUploadedAsync(uploadId, path, cancellationToken);
             return new ArtifactReceipt(
                 uploadId, digest, total, row.MediaType,
-                "desktop-upload-" + uploadId.ToString("N"));
+                "desktop-upload-" + uploadId.ToString("N"),
+                path);
         }
         catch
         {
@@ -146,6 +147,58 @@ public sealed class ArtifactUploadService : IAsyncDisposable
         }
     }
 
+    public async Task<ArtifactReceipt> ValidateReceiptAsync(
+        Guid accountId,
+        Guid deviceId,
+        AttemptLease lease,
+        ArtifactReceipt supplied,
+        CancellationToken cancellationToken)
+    {
+        if (!await _jobs.ValidateDesktopAttemptAsync(
+                accountId, deviceId, lease, cancellationToken))
+            throw new UnauthorizedAccessException("desktop_attempt_scope_mismatch");
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select declared_length,declared_sha256,media_type,server_path
+            from licensing.artifact_uploads
+            where upload_id=@upload and account_id=@account and device_id=@device
+              and job_id=@job and attempt_id=@attempt and fence=@fence
+              and state='uploaded' and server_path is not null
+            """, connection);
+        command.Parameters.AddWithValue("upload", supplied.ArtifactId);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("device", deviceId);
+        command.Parameters.AddWithValue("job", lease.JobId);
+        command.Parameters.AddWithValue("attempt", lease.AttemptId);
+        command.Parameters.AddWithValue("fence", lease.Fence);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new KeyNotFoundException("Verified upload was not found.");
+        var length = reader.GetInt64(0);
+        var sha = reader.GetString(1);
+        var media = reader.GetString(2);
+        var path = reader.GetString(3);
+        if (supplied.Bytes != length
+            || !string.Equals(supplied.MediaType, media, StringComparison.OrdinalIgnoreCase)
+            || !FixedAsciiEquals(supplied.Sha256, sha))
+            throw new UnauthorizedAccessException("artifact_receipt_mismatch");
+        return new ArtifactReceipt(
+            supplied.ArtifactId, sha, length, media,
+            "desktop-upload-" + supplied.ArtifactId.ToString("N"), path);
+    }
+
+    private static bool FixedAsciiEquals(string left, string right)
+    {
+        if (left.Length != right.Length) return false;
+        var a = Encoding.ASCII.GetBytes(left.ToLowerInvariant());
+        var b = Encoding.ASCII.GetBytes(right.ToLowerInvariant());
+        try { return CryptographicOperations.FixedTimeEquals(a, b); }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(a);
+            CryptographicOperations.ZeroMemory(b);
+        }
+    }
     private async Task<UploadRow?> ClaimUploadAsync(
         Guid accountId,
         Guid deviceId,

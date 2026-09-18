@@ -15,6 +15,7 @@ public static class AttemptEndpoints
         endpoints.MapPost("/v1/worker/jobs/heartbeat", HeartbeatAsync);
         endpoints.MapPost("/v1/worker/jobs/complete", CompleteAsync);
         endpoints.MapGet("/v1/worker/sources/{sourceId}", ResolveSourceAsync);
+        endpoints.MapPost("/v1/worker/jobs/inputs", InputsAsync);
         return endpoints;
     }
 
@@ -73,6 +74,20 @@ public static class AttemptEndpoints
         }
         catch (UnauthorizedAccessException)
         { return Results.StatusCode(StatusCodes.Status403Forbidden); }
+    }
+    private static async Task<IResult> InputsAsync(
+        AttemptLease lease,
+        HttpContext http,
+        IConfiguration configuration,
+        JobStore jobs,
+        CancellationToken cancellationToken)
+    {
+        if (!Authorized(http, configuration)) return Results.Unauthorized();
+        try { return Results.Ok(await jobs.ReadWorkerArtifactsAsync(lease, cancellationToken)); }
+        catch (JobFenceConflictException)
+        { return Results.Conflict(new { code = "attempt_fence_stale" }); }
+        catch (JobUnavailableException)
+        { return Results.Conflict(new { code = "input_artifact_unavailable" }); }
     }
     private static bool Authorized(HttpContext http, IConfiguration configuration)
     {
