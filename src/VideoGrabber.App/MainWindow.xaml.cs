@@ -38,6 +38,9 @@ public sealed partial class MainWindow : Window
     private ScrollViewer _downloadPage = null!;
     private ScrollViewer _editorPage = null!;
     private ScrollViewer _settingsPage = null!;
+#if VIDEOGRABBER_MANAGED
+    private ScrollViewer _accountPage = null!;
+#endif
     private TextBox _urlBox = null!;
     private TextBox _outputFolderBox = null!;
     private ComboBox _qualityBox = null!;
@@ -75,6 +78,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         AppDiagnostics.Write("MainWindow constructor started");
+        InitializeManagedServices();
         _rootHost = new Grid
         {
             Background = RootBackgroundBrush,
@@ -89,6 +93,9 @@ public sealed partial class MainWindow : Window
         var initialTools = new ToolLocator(AppContext.BaseDirectory, componentRoot);
         _componentServices = ComponentServiceFactory.Create(initialTools, _componentRunner, _egressRegistry);
         _rootHost.Children.Add(BuildShell());
+#if VIDEOGRABBER_MANAGED
+        StartManagedAccountRestore();
+#endif
         InitializeTheme();
 
         Title = AppDisplayName;
@@ -184,14 +191,23 @@ public sealed partial class MainWindow : Window
         var downloadItem = NavigationButton("↓  Загрузчик");
         var editorItem = NavigationButton("✂  Редактор");
         var settingsItem = NavigationButton("⚙  Компоненты");
+#if VIDEOGRABBER_MANAGED
+        var accountItem = NavigationButton("👤  Аккаунт");
+#endif
         var infoItem = NavigationButton("ⓘ  Информация");
         downloadItem.Click += (_, _) => ShowPage("download");
         editorItem.Click += (_, _) => ShowPage("editor");
         settingsItem.Click += (_, _) => ShowPage("settings");
+#if VIDEOGRABBER_MANAGED
+        accountItem.Click += (_, _) => ShowPage("account");
+#endif
         infoItem.Click += (_, _) => ShowPage("info");
         navigation.Children.Add(downloadItem);
         navigation.Children.Add(editorItem);
         navigation.Children.Add(settingsItem);
+#if VIDEOGRABBER_MANAGED
+        navigation.Children.Add(accountItem);
+#endif
         navigation.Children.Add(infoItem);
         sidebar.Children.Add(navigation);
         var authorCard = BuildAuthorCard();
@@ -209,13 +225,22 @@ public sealed partial class MainWindow : Window
         _downloadPage = BuildDownloadPage();
         _editorPage = BuildEditorPage();
         _settingsPage = BuildSettingsPage();
+#if VIDEOGRABBER_MANAGED
+        _accountPage = BuildAccountPage();
+#endif
         _infoPage = BuildInformationPage();
         _editorPage.Visibility = Visibility.Collapsed;
         _settingsPage.Visibility = Visibility.Collapsed;
+#if VIDEOGRABBER_MANAGED
+        _accountPage.Visibility = Visibility.Collapsed;
+#endif
         _infoPage.Visibility = Visibility.Collapsed;
         pageHost.Children.Add(_downloadPage);
         pageHost.Children.Add(_editorPage);
         pageHost.Children.Add(_settingsPage);
+#if VIDEOGRABBER_MANAGED
+        pageHost.Children.Add(_accountPage);
+#endif
         pageHost.Children.Add(_infoPage);
         contentArea.Children.Add(pageHost);
         shell.Children.Add(contentArea);
@@ -400,6 +425,9 @@ public sealed partial class MainWindow : Window
         _downloadPage.Visibility = tag is null or "download" ? Visibility.Visible : Visibility.Collapsed;
         _editorPage.Visibility = tag == "editor" ? Visibility.Visible : Visibility.Collapsed;
         _settingsPage.Visibility = tag == "settings" ? Visibility.Visible : Visibility.Collapsed;
+#if VIDEOGRABBER_MANAGED
+        _accountPage.Visibility = tag == "account" ? Visibility.Visible : Visibility.Collapsed;
+#endif
         _infoPage.Visibility = tag == "info" ? Visibility.Visible : Visibility.Collapsed;
     }
 

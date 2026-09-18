@@ -14,3 +14,22 @@ public sealed record MergeRequest(
     string Reason,
     string SourceProof,
     string TargetProof);
+
+public sealed record LinkedIdentity(
+    Guid IdentityId,
+    string Provider,
+    string? VerifiedEmail,
+    DateTimeOffset LinkedAt);
+
+public sealed record BeginIdentityLink(
+    Guid ChallengeId,
+    string Provider,
+    Uri ReturnUri,
+    string ClientChallenge);
+
+public sealed record CompleteIdentityLink(
+    Guid ChallengeId,
+    Guid FlowId,
+    string Code,
+    string State,
+    string ClientVerifier);

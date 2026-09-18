@@ -57,8 +57,23 @@ public sealed class ProviderFlow(
 {
     private static readonly TimeSpan FlowLifetime = TimeSpan.FromMinutes(5);
 
-    public async Task<SignInStart> BeginAsync(
+    public Task<SignInStart> BeginAsync(
         BeginSignIn request,
+        CancellationToken cancellationToken)
+        => BeginCoreAsync(request, null, cancellationToken);
+
+    internal Task<SignInStart> BeginBoundAsync(
+        BeginSignIn request,
+        string boundNonce,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(boundNonce);
+        return BeginCoreAsync(request, boundNonce, cancellationToken);
+    }
+
+    private async Task<SignInStart> BeginCoreAsync(
+        BeginSignIn request,
+        string? boundNonce,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Provider);
@@ -69,7 +84,7 @@ public sealed class ProviderFlow(
             throw new KeyNotFoundException("Unknown identity provider.");
 
         var state = RandomToken();
-        var nonce = RandomToken();
+        var nonce = boundNonce ?? RandomToken();
         var expiresAt = timeProvider.GetUtcNow().Add(FlowLifetime);
         var flowId = await sessions.CreateFlowAsync(
             partition.Provider,
@@ -84,7 +99,6 @@ public sealed class ProviderFlow(
             partition, request.ReturnUri, state, nonce, request.ClientChallenge);
         return new SignInStart(flowId, authorizationUri, expiresAt);
     }
-
     public async Task<VerifiedIdentity> ValidateCompletionAsync(
         CompleteSignIn request,
         CancellationToken cancellationToken)

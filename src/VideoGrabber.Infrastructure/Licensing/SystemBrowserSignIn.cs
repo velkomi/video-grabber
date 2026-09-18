@@ -70,6 +70,42 @@ public sealed class SystemBrowserSignIn
         return session;
     }
 
+    public async Task LinkAsync(Guid challengeId, CancellationToken cancellationToken)
+    {
+        if (challengeId == Guid.Empty) throw new ArgumentException("Link challenge is required.", nameof(challengeId));
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start(1);
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var returnUri = new Uri($"http://127.0.0.1:{port}{CallbackPath}");
+        var verifier = RandomToken();
+        var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
+
+        using var startResponse = await _http.PostAsJsonAsync(
+            "/v1/identities/link/browser/start",
+            new BeginIdentityLink(challengeId, _provider, returnUri, challenge),
+            cancellationToken).ConfigureAwait(false);
+        if (!startResponse.IsSuccessStatusCode)
+            throw new HttpRequestException("Managed identity link start failed.", null, startResponse.StatusCode);
+        var started = await startResponse.Content.ReadFromJsonAsync<SignInStart>(cancellationToken: cancellationToken)
+            .ConfigureAwait(false) ?? throw new InvalidDataException("Identity link start response was empty.");
+        var expectedState = QueryValue(started.AuthorizationUri, "state");
+        if (string.IsNullOrWhiteSpace(expectedState)) throw new InvalidDataException("Identity link state was missing.");
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_timeout);
+        var callbackTask = ReceiveCallbackAsync(listener, timeout.Token);
+        await _launch(started.AuthorizationUri, timeout.Token).ConfigureAwait(false);
+        var callback = await callbackTask.ConfigureAwait(false);
+        if (!FixedEquals(callback.State, expectedState))
+            throw new UnauthorizedAccessException("managed_identity_link_state_mismatch");
+
+        using var complete = await _http.PostAsJsonAsync(
+            "/v1/identities/link/browser/complete",
+            new CompleteIdentityLink(challengeId, started.FlowId, callback.Code, callback.State, verifier),
+            cancellationToken).ConfigureAwait(false);
+        if (!complete.IsSuccessStatusCode)
+            throw new HttpRequestException("Managed identity link failed.", null, complete.StatusCode);
+    }
     public async Task<ApiSession> RefreshAsync(CancellationToken cancellationToken)
     {
         if (_sessionStore is null) throw new InvalidOperationException("Protected session storage is not configured.");

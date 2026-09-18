@@ -20,38 +20,106 @@ public sealed partial class MainWindow
 #endif
 
     private readonly ConditionalWeakTable<BrowserDownloadQueueItem, ManagedIntentHolder> _managedQueueIntents = new();
-    private readonly ManagedOperationCoordinator _managedCoordinator = CreateManagedCoordinator();
+    private ManagedOperationCoordinator _managedCoordinator = null!;
+
+#if VIDEOGRABBER_MANAGED
+    private HttpClient _managedHttp = null!;
+    private WindowsSessionStore _managedSessionStore = null!;
+    private WindowsSessionStore _managedDeviceKeyStore = null!;
+    private WindowsSessionStore _managedLeaseStore = null!;
+    private ManagedQueueStore _managedQueueStore = null!;
+    private OfflineAccessCache? _managedOfflineCache;
+    private string? _managedAccessToken;
+    private Guid? _managedAccountId;
+    private Guid? _managedDeviceId;
+    private SavedQueue _managedRestoredQueue = new(1, Guid.Empty, []);
+    private readonly SemaphoreSlim _managedQueueWriteLock = new(1, 1);
+#endif
 
     private static string AppDataRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppProductName);
 
-    private static ManagedOperationCoordinator CreateManagedCoordinator()
+    private void InitializeManagedServices()
     {
 #if VIDEOGRABBER_MANAGED
-        var http = new HttpClient { BaseAddress = new Uri("https://licensing.invalid/") };
-        return new ManagedOperationCoordinator(new LicensingApiClient(http, () => null, () => null));
+        _managedHttp = new HttpClient { BaseAddress = ResolveManagedApiBaseUri() };
+        var authRoot = Path.Combine(AppDataRoot, "auth");
+        _managedSessionStore = new WindowsSessionStore(authRoot, "refresh.bin");
+        _managedDeviceKeyStore = new WindowsSessionStore(authRoot, "device-key.bin");
+        _managedLeaseStore = new WindowsSessionStore(authRoot, "lease.bin");
+        _managedQueueStore = new ManagedQueueStore(Path.Combine(AppDataRoot, "queue"));
+        RebuildManagedCoordinator();
 #else
-        return new ManagedOperationCoordinator(new LocalAccessClient());
+        _managedCoordinator = new ManagedOperationCoordinator(new LocalAccessClient());
 #endif
     }
+
+#if VIDEOGRABBER_MANAGED
+    private void RebuildManagedCoordinator()
+        => _managedCoordinator = new ManagedOperationCoordinator(new LicensingApiClient(
+            _managedHttp,
+            () => _managedAccessToken,
+            () => _managedDeviceId,
+            _managedOfflineCache));
+
+    private static Uri ResolveManagedApiBaseUri()
+    {
+        var configured = Environment.GetEnvironmentVariable("VIDEOGRABBER_PLATFORM_URL");
+        if (Uri.TryCreate(configured, UriKind.Absolute, out var uri) && IsAllowedManagedApiBase(uri))
+            return EnsureTrailingSlash(uri);
+        return new Uri("https://licensing.invalid/");
+    }
+
+    private static bool IsAllowedManagedApiBase(Uri uri)
+        => uri.Scheme == Uri.UriSchemeHttps
+            || (uri.Scheme == Uri.UriSchemeHttp
+                && string.Equals(uri.Host, "127.0.0.1", StringComparison.Ordinal));
+
+    private static Uri EnsureTrailingSlash(Uri uri)
+        => uri.AbsoluteUri.EndsWith("/", StringComparison.Ordinal)
+            ? uri
+            : new Uri(uri.AbsoluteUri + "/");
+#endif
+
+    private Guid ManagedIntentId(BrowserDownloadQueueItem entry)
+        => ManagedIntent(entry).IntentId;
+
+    private ManagedIntentHolder ManagedIntent(BrowserDownloadQueueItem entry)
+        => _managedQueueIntents.GetValue(entry, _ => new ManagedIntentHolder(
+            Guid.NewGuid(), _audioOnlyBox?.IsChecked == true ? "audio" : "video"));
+
+    private void BindManagedIntent(BrowserDownloadQueueItem entry, Guid intentId, string outputMode = "video")
+    {
+        _managedQueueIntents.Remove(entry);
+        _managedQueueIntents.Add(entry, new ManagedIntentHolder(intentId, outputMode));
+    }
+
     private ManagedOperation CreateDownloadOperation(
         UserDownloadIntent intent,
         string kind,
         BrowserDownloadQueueItem? queuedEntry)
     {
-        var intentId = queuedEntry is null
-            ? Guid.NewGuid()
-            : _managedQueueIntents.GetValue(queuedEntry, _ => new ManagedIntentHolder(Guid.NewGuid())).IntentId;
+        var intentId = queuedEntry is null ? Guid.NewGuid() : ManagedIntentId(queuedEntry);
         var canonical = string.Join("\n",
             intent.SelectedSource.AbsoluteUri,
             intent.Quality,
             intent.AudioOnly ? "audio" : "video",
             kind);
-        return new(intentId, HashManagedRequest(canonical), kind, "desktop_worker", null);
+        return new(intentId, HashManagedRequest(canonical), kind, "desktop_worker", CurrentManagedDeviceId());
     }
 
-    private static ManagedOperation CreateLocalOperation(string kind, params string[] values)
-        => new(Guid.NewGuid(), HashManagedRequest(string.Join("\n", values)), kind, "desktop_worker", null);
+    private ManagedOperation CreateLocalOperation(string kind, params string[] values)
+        => new(Guid.NewGuid(), HashManagedRequest(string.Join("\n", values)),
+            kind, "desktop_worker", CurrentManagedDeviceId());
+
+    private Guid? CurrentManagedDeviceId()
+    {
+#if VIDEOGRABBER_MANAGED
+        return _managedDeviceId;
+#else
+        return null;
+#endif
+    }
 
     private static string HashManagedRequest(string value)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
@@ -63,7 +131,7 @@ public sealed partial class MainWindow
         _ => "failed"
     };
 
-    private sealed record ManagedIntentHolder(Guid IntentId);
+    private sealed record ManagedIntentHolder(Guid IntentId, string OutputMode);
 
     private sealed class LocalAccessClient : IManagedAccessClient
     {

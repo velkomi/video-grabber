@@ -131,6 +131,70 @@ public sealed class IdentityLinkService : IAsyncDisposable
         await AuditAsync(accountId, "identity_unlinked", provider, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<LinkedIdentity>> ListAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _identityDataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await SetAccountAsync(connection, transaction, accountId, cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select identity_id,provider,verified_email,linked_at
+            from licensing.identities
+            where account_id=@account
+            order by linked_at,identity_id
+            """, connection, transaction);
+        command.Parameters.AddWithValue("account", accountId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var identities = new List<LinkedIdentity>();
+        while (await reader.ReadAsync(cancellationToken))
+            identities.Add(new LinkedIdentity(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.GetFieldValue<DateTimeOffset>(3)));
+        await reader.DisposeAsync();
+        await transaction.CommitAsync(cancellationToken);
+        return identities;
+    }
+
+    public async Task EnsureChallengeAvailableAsync(
+        Guid accountId,
+        Guid challengeId,
+        CancellationToken cancellationToken)
+    {
+        var now = _clock.GetUtcNow();
+        await using var connection = await _apiDataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await SetAccountAsync(connection, transaction, accountId, cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select expires_at,consumed_at
+            from licensing.account_links
+            where challenge_id=@id and account_id=@account and purpose='link'
+            """, connection, transaction);
+        command.Parameters.AddWithValue("id", challengeId);
+        command.Parameters.AddWithValue("account", accountId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new LinkChallengeNotFoundException();
+        var expiresAt = reader.GetFieldValue<DateTimeOffset>(0);
+        var consumed = !reader.IsDBNull(1);
+        await reader.DisposeAsync();
+        await transaction.CommitAsync(cancellationToken);
+        if (consumed || expiresAt <= now)
+            throw new LinkChallengeConflictException();
+    }
+
+    public async Task CompleteVerifiedAsync(
+        Guid accountId,
+        Guid challengeId,
+        VerifiedIdentity identity,
+        CancellationToken cancellationToken)
+    {
+        await ClaimChallengeAsync(accountId, challengeId, cancellationToken);
+        await LinkIdentityAsync(accountId, identity, cancellationToken);
+        await AuditAsync(accountId, "identity_linked", identity.Provider, cancellationToken);
+    }
     private async Task ClaimChallengeAsync(
         Guid accountId,
         Guid challengeId,
