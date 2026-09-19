@@ -67,6 +67,7 @@ public sealed class DownloadWorkspace
 
         Directory.CreateDirectory(root);
         RejectReparseComponents(root);
+        TryMarkHidden(root);
         var workspace = new DownloadWorkspace(output, root);
         if (reuseExisting)
             workspace.DiscoverCreatedFiles();
@@ -128,6 +129,24 @@ public sealed class DownloadWorkspace
         // Never recursively delete: an unregistered file or new directory must survive.
         try { ValidateOwnedPath(Root); Directory.Delete(Root, recursive: false); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { }
+    }
+
+    private static void TryMarkHidden(string path)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Hidden) == 0)
+                File.SetAttributes(
+                    path,
+                    attributes | FileAttributes.Hidden);
+        }
+        catch (Exception ex) when (
+            ex is IOException
+                or UnauthorizedAccessException
+                or PlatformNotSupportedException)
+        {
+        }
     }
 
     private static void EnsureContained(string root, string path)

@@ -1,5 +1,16 @@
 # Журнал подготовки релизов
 
+## [0.1.10-preview.23] - 2026-09-19
+
+- Status: unattended auto-recovery candidate
+- Previous version: 0.1.10-preview.22
+- Root cause fixed: a transient selected-interface failure to api2.gcvh.ru bubbled as HttpRequestException and stopped the whole course at 79/161 (~49.1%). Whole-course mode now catches transient HttpRequestException/IOException/socket/timeout failures, persists state, waits with bounded exponential backoff and automatically resumes from the first incomplete lesson.
+- Incomplete-pass retry: after a normal pass, any lesson/video still incomplete is automatically retried in later passes; completed lessons are skipped. This keeps the eight Module 3 fragment-1 failures in the queue without requiring the user to press Continue.
+- Job folders: .vg-job workspaces are marked Hidden on Windows; zero-byte .part plus stale .ytdl metadata are pruned before a fresh retry; verified successful output still triggers normal workspace cleanup/removal.
+- Permanent source errors: attachment HTTP 404/410 and other non-auth permanent 4xx responses create a small safe Недоступно marker instead of blocking the course forever. 401/403 remain authentication errors and are not silently auto-retried.
+- Current evidence: the eight visible job folders contain only zero-byte .part files plus 50-71 byte .ytdl metadata, so deleting those current stale jobs loses no media data.
+- Verification: targeted auto-recovery/resume tests 65/65; Core 32/32; Infrastructure 645 passed / 0 failed / 14 existing live-tool skips; Worker 31/31; Local/Managed/API/Worker Release builds 0 warnings/errors.
+
 ## [0.1.10-preview.22] - 2026-09-19
 
 - Status: course-resume/layout hardening candidate

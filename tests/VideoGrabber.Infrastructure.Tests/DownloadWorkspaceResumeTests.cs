@@ -32,6 +32,10 @@ public sealed class DownloadWorkspaceResumeTests
             Assert.Contains(
                 Path.GetFullPath(partial),
                 second.OwnedFiles);
+            if (OperatingSystem.IsWindows())
+                Assert.True(
+                    (File.GetAttributes(second.Root)
+                     & FileAttributes.Hidden) != 0);
         }
         finally
         {

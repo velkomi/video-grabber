@@ -6,6 +6,7 @@ using Microsoft.Web.WebView2.Core;
 using VideoGrabber.Core.Security;
 using VideoGrabber.Infrastructure.Browser;
 using VideoGrabber.Infrastructure.Diagnostics;
+using VideoGrabber.Infrastructure.Downloads;
 using VideoGrabber.Infrastructure.Networking;
 
 namespace VideoGrabber.App;
@@ -15,7 +16,15 @@ public sealed partial class MainWindow
     private sealed record LessonArchiveResult(
         bool PageSaved,
         int AssetsSaved,
-        int AssetErrors);
+        int AssetErrors,
+        int AssetsUnavailable = 0);
+
+    private enum CourseAssetOutcome
+    {
+        Saved,
+        Unavailable,
+        Failed
+    }
 
     private sealed record CoursePlayerDomItem(
         string? url,
@@ -71,23 +80,38 @@ public sealed partial class MainWindow
             token);
 
         var saved = 0;
+        var unavailable = 0;
         var errors = 0;
         foreach (var asset in snapshot.Assets)
         {
             token.ThrowIfCancellationRequested();
             try
             {
-                if (await DownloadCourseAssetAsync(
-                        asset,
-                        lesson.Uri,
-                        lessonFolder,
-                        token))
+                var outcome = await DownloadCourseAssetAsync(
+                    asset,
+                    lesson.Uri,
+                    lessonFolder,
+                    token);
+                if (outcome == CourseAssetOutcome.Saved)
                     saved++;
+                else if (outcome == CourseAssetOutcome.Unavailable)
+                    unavailable++;
                 else
                     errors++;
             }
-
             catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (HttpRequestException)
+            {
+                throw;
+            }
+            catch (IOException)
+            {
+                throw;
+            }
+            catch (TimeoutException)
             {
                 throw;
             }
@@ -110,9 +134,11 @@ public sealed partial class MainWindow
             "succeeded",
             "page saved; assets saved "
             + saved
+            + "; unavailable "
+            + unavailable
             + "; asset errors "
             + errors);
-        return new(true, saved, errors);
+        return new(true, saved, errors, unavailable);
     }
 
     private async Task<CourseLessonSnapshot?>
@@ -347,7 +373,7 @@ public sealed partial class MainWindow
         }
     }
 
-    private async Task<bool> DownloadCourseAssetAsync(
+    private async Task<CourseAssetOutcome> DownloadCourseAssetAsync(
         CourseLessonAsset asset,
         Uri referer,
         string lessonFolder,
@@ -365,7 +391,7 @@ public sealed partial class MainWindow
                     out var safe,
                     out _)
                 || safe is null)
-                return false;
+                return CourseAssetOutcome.Failed;
             current = safe;
 
             _ = DownloadRouteResolver.ResolveAdapterId(
@@ -447,7 +473,8 @@ public sealed partial class MainWindow
             if (IsCourseRedirect(response.StatusCode))
             {
                 var location = response.Headers.Location;
-                if (location is null) return false;
+                if (location is null)
+                    return CourseAssetOutcome.Failed;
                 current = location.IsAbsoluteUri
                     ? location
                     : new Uri(current, location);
@@ -456,12 +483,45 @@ public sealed partial class MainWindow
 
             if (!response.IsSuccessStatusCode)
             {
+                if (response.StatusCode is HttpStatusCode.Unauthorized
+                    or HttpStatusCode.Forbidden)
+                    throw new HttpRequestException(
+                        "Требуется повторная авторизация GetCourse.",
+                        inner: null,
+                        response.StatusCode);
+
+                if (response.StatusCode is HttpStatusCode.RequestTimeout
+                    or (HttpStatusCode)429
+                    || (int)response.StatusCode >= 500)
+                    throw new HttpRequestException(
+                        "Временная ошибка сервера при загрузке вложения.",
+                        inner: null,
+                        response.StatusCode);
+
+                if (response.StatusCode is HttpStatusCode.NotFound
+                    or HttpStatusCode.Gone
+                    || ((int)response.StatusCode >= 400
+                        && (int)response.StatusCode < 500))
+                {
+                    WriteUnavailableCourseAssetMarker(
+                        lessonFolder,
+                        asset,
+                        current,
+                        response.StatusCode);
+                    DiagnosticHub.Log.Write(
+                        "course.asset",
+                        "unavailable",
+                        "host=" + current.IdnHost
+                        + " HTTP=" + (int)response.StatusCode);
+                    return CourseAssetOutcome.Unavailable;
+                }
+
                 DiagnosticHub.Log.Write(
                     "course.asset",
                     "failed",
                     "host=" + current.IdnHost
                     + " HTTP=" + (int)response.StatusCode);
-                return false;
+                return CourseAssetOutcome.Failed;
             }
 
             var declaredLength =
@@ -474,7 +534,7 @@ public sealed partial class MainWindow
                     "blocked",
                     "host=" + current.IdnHost
                     + " asset exceeds size limit");
-                return false;
+                return CourseAssetOutcome.Failed;
             }
 
             var disposition =
@@ -525,7 +585,7 @@ public sealed partial class MainWindow
             if (File.Exists(target))
             {
                 if (new FileInfo(target).Length > 0)
-                    return true;
+                    return CourseAssetOutcome.Saved;
                 File.Delete(target);
             }
 
@@ -574,7 +634,7 @@ public sealed partial class MainWindow
                     "host=" + current.IdnHost
                     + " kind=" + asset.Kind
                     + " bytes=" + total);
-                return true;
+                return CourseAssetOutcome.Saved;
             }
             catch
             {
@@ -588,7 +648,62 @@ public sealed partial class MainWindow
             }
         }
 
-        return false;
+        return CourseAssetOutcome.Failed;
+    }
+
+    private static void WriteUnavailableCourseAssetMarker(
+        string lessonFolder,
+        CourseLessonAsset asset,
+        Uri source,
+        HttpStatusCode status)
+    {
+        try
+        {
+            var directory = Path.Combine(
+                lessonFolder,
+                asset.Kind == "image"
+                    ? "Изображения"
+                    : "Вложения");
+            Directory.CreateDirectory(directory);
+
+            var originalName =
+                CourseLessonArchive.AssetFileName(
+                    source,
+                    asset.SuggestedName,
+                    asset.Kind == "image"
+                        ? "Изображение"
+                        : "Вложение");
+            var markerName =
+                DownloadFileName.SanitizeBaseName(
+                    "Недоступно - "
+                    + Path.GetFileName(originalName),
+                    170)
+                + ".txt";
+            var markerPath = Path.Combine(
+                directory,
+                markerName);
+
+            var content =
+                "Материал недоступен на стороне источника."
+                + Environment.NewLine
+                + "HTTP: " + (int)status
+                + Environment.NewLine
+                + "Host: " + source.IdnHost
+                + Environment.NewLine
+                + "Проверено: "
+                + DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss zzz");
+
+            File.WriteAllText(
+                markerPath,
+                content,
+                new UTF8Encoding(false));
+        }
+        catch (Exception ex) when (
+            ex is IOException
+                or UnauthorizedAccessException
+                or ArgumentException)
+        {
+        }
     }
 
     private static bool IsCourseRedirect(

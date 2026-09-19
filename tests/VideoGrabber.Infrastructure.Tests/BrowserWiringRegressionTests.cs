@@ -572,3 +572,25 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("прокрутите эту страницу ниже", shell);
     }
 }
+
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Whole_course_automatically_recovers_transient_network_failures()
+    {
+        var root = FindRepoRoot();
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+
+        Assert.Contains("DownloadCoursePlanWithAutomaticRecoveryAsync", course);
+        Assert.Contains("course.auto-resume", course);
+        Assert.Contains("Автопродолжение через", course);
+        Assert.Contains("IsTransientCourseFailure", course);
+        Assert.Contains("HttpStatusCode.Unauthorized", course);
+        Assert.Contains("HttpStatusCode.Forbidden", course);
+        Assert.Contains("5, 10, 20, 30, 60, 120", course);
+        Assert.Contains("name.EndsWith(", course);
+        Assert.Contains("\".ytdl\"", course);
+    }
+}

@@ -774,7 +774,10 @@ public sealed partial class MainWindow
 
             BeginCourseDownloadProgress(plan, resume);
 
-            await DownloadCoursePlanAsync(plan, rootFolder, token);
+            await DownloadCoursePlanWithAutomaticRecoveryAsync(
+                plan,
+                rootFolder,
+                token);
 
             if (_courseCompletedLessons.Count >= plan.Lessons.Length)
             {
@@ -825,6 +828,208 @@ public sealed partial class MainWindow
                 () => _cookiesBox.SelectedIndex = originalCookieIndex);
             UpdateCourseControls();
         }
+    }
+
+    private async Task DownloadCoursePlanWithAutomaticRecoveryAsync(
+        GetCourseCoursePlan plan,
+        string rootFolder,
+        CancellationToken token)
+    {
+        var failureStreak = 0;
+        var completedAtLastAttempt = _courseCompletedLessons.Count;
+
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            try
+            {
+                var completedBeforePass =
+                    _courseCompletedLessons.Count;
+
+                await DownloadCoursePlanAsync(
+                    plan,
+                    rootFolder,
+                    token);
+
+                if (_courseCompletedLessons.Count
+                    >= plan.Lessons.Length)
+                    return;
+
+                var madeProgress =
+                    _courseCompletedLessons.Count
+                    > completedBeforePass;
+                failureStreak = madeProgress
+                    ? 0
+                    : failureStreak + 1;
+                completedAtLastAttempt =
+                    _courseCompletedLessons.Count;
+
+                await WaitForIncompleteCourseRetryAsync(
+                    plan,
+                    failureStreak,
+                    madeProgress,
+                    token);
+            }
+            catch (OperationCanceledException)
+                when (!token.IsCancellationRequested)
+            {
+                failureStreak = await WaitForCourseNetworkRecoveryAsync(
+                    plan,
+                    failureStreak,
+                    completedAtLastAttempt,
+                    new TimeoutException(
+                        "Временная отмена сетевой операции."),
+                    token);
+                completedAtLastAttempt =
+                    _courseCompletedLessons.Count;
+            }
+            catch (Exception ex)
+                when (IsTransientCourseFailure(ex))
+            {
+                failureStreak = await WaitForCourseNetworkRecoveryAsync(
+                    plan,
+                    failureStreak,
+                    completedAtLastAttempt,
+                    ex,
+                    token);
+                completedAtLastAttempt =
+                    _courseCompletedLessons.Count;
+            }
+        }
+    }
+
+    private async Task WaitForIncompleteCourseRetryAsync(
+        GetCourseCoursePlan plan,
+        int failureStreak,
+        bool madeProgress,
+        CancellationToken token)
+    {
+        _courseResumeLessonIndex =
+            FirstIncompleteLessonIndex(plan);
+        await PersistCourseStateSafeAsync();
+
+        var remaining =
+            Math.Max(
+                0,
+                plan.Lessons.Length
+                - _courseCompletedLessons.Count);
+        var delaySeconds = madeProgress
+            ? 10
+            : Math.Min(
+                300,
+                30 * Math.Max(1, failureStreak));
+
+        DiagnosticHub.Log.Write(
+            "course.auto-resume",
+            "observed",
+            $"incomplete-pass remaining={remaining} " +
+            $"delay={delaySeconds}s progress={madeProgress}");
+
+        for (var seconds = delaySeconds;
+             seconds > 0;
+             seconds--)
+        {
+            token.ThrowIfCancellationRequested();
+            _courseStageText.Text =
+                $"Остались незавершённые уроки/видео: {remaining}. " +
+                $"Повтор через {seconds} сек.";
+            _courseCurrentText.Text =
+                $"Готово {_courseCompletedLessons.Count}/{plan.Lessons.Length}. " +
+                $"Первый незавершённый: {_courseResumeLessonIndex + 1}/{plan.Lessons.Length}.";
+            _courseEtaText.Text =
+                "VideoGrabber автоматически повторит только незавершённые элементы.";
+            _browserHint.Text =
+                $"Осталось незавершённых уроков: {remaining}. " +
+                $"Автоматический повтор через {seconds} сек.";
+            await Task.Delay(
+                TimeSpan.FromSeconds(1),
+                token);
+        }
+
+        DiagnosticHub.Log.Write(
+            "course.auto-resume",
+            "started",
+            $"incomplete-retry next={_courseResumeLessonIndex + 1}/{plan.Lessons.Length}");
+    }
+
+    private async Task<int> WaitForCourseNetworkRecoveryAsync(
+        GetCourseCoursePlan plan,
+        int failureStreak,
+        int completedAtLastAttempt,
+        Exception error,
+        CancellationToken token)
+    {
+        if (_courseCompletedLessons.Count > completedAtLastAttempt)
+            failureStreak = 0;
+
+        failureStreak++;
+        var delays = new[] { 5, 10, 20, 30, 60, 120 };
+        var delaySeconds =
+            delays[Math.Min(failureStreak - 1, delays.Length - 1)];
+
+        _courseResumeLessonIndex =
+            FirstIncompleteLessonIndex(plan);
+        await PersistCourseStateSafeAsync();
+
+        var safeError =
+            VideoGrabber.Core.Security.SensitiveDataRedactor.Redact(
+                error.Message);
+        DiagnosticHub.Log.Write(
+            "course.auto-resume",
+            "observed",
+            $"transient={error.GetType().Name} streak={failureStreak} " +
+            $"delay={delaySeconds}s completed={_courseCompletedLessons.Count}/{plan.Lessons.Length}");
+
+        for (var remaining = delaySeconds;
+             remaining > 0;
+             remaining--)
+        {
+            token.ThrowIfCancellationRequested();
+            _courseStageText.Text =
+                $"Временная ошибка сети. Автопродолжение через {remaining} сек.";
+            _courseCurrentText.Text =
+                $"Готово {_courseCompletedLessons.Count}/{plan.Lessons.Length}. " +
+                $"Следующий урок: {_courseResumeLessonIndex + 1}/{plan.Lessons.Length}.";
+            _courseEtaText.Text =
+                "VideoGrabber сам повторит текущий урок; нажимать «Продолжить» не нужно.";
+            _browserHint.Text =
+                "Временная ошибка соединения: " + safeError
+                + $". Автоматический повтор через {remaining} сек.";
+            await Task.Delay(
+                TimeSpan.FromSeconds(1),
+                token);
+        }
+
+        DiagnosticHub.Log.Write(
+            "course.auto-resume",
+            "started",
+            $"retry={failureStreak} next={_courseResumeLessonIndex + 1}/{plan.Lessons.Length}");
+
+        return failureStreak;
+    }
+
+    private static bool IsTransientCourseFailure(Exception ex)
+    {
+        if (ex is HttpRequestException http)
+        {
+            if (http.StatusCode is System.Net.HttpStatusCode.Unauthorized
+                or System.Net.HttpStatusCode.Forbidden)
+                return false;
+            return true;
+        }
+
+        if (ex is IOException
+            or TimeoutException
+            or System.Net.Sockets.SocketException)
+            return true;
+
+        if (ex is TaskCanceledException
+            or OperationCanceledException)
+            return true;
+
+        return ex.InnerException is not null
+            && !ReferenceEquals(ex.InnerException, ex)
+            && IsTransientCourseFailure(ex.InnerException);
     }
 
     private async Task<GetCourseCoursePlan> BuildCoursePlanAsync(
@@ -934,6 +1139,18 @@ public sealed partial class MainWindow
                     token);
             }
             catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (HttpRequestException)
+            {
+                throw;
+            }
+            catch (IOException)
+            {
+                throw;
+            }
+            catch (TimeoutException)
             {
                 throw;
             }
@@ -2134,16 +2351,48 @@ public sealed partial class MainWindow
         if (!Directory.Exists(jobDirectory))
             return;
 
-        foreach (var file in Directory.EnumerateFiles(
-                     jobDirectory,
-                     "*",
-                     SearchOption.TopDirectoryOnly))
+        string[] files;
+        try
+        {
+            files = Directory.EnumerateFiles(
+                    jobDirectory,
+                    "*",
+                    SearchOption.TopDirectoryOnly)
+                .ToArray();
+        }
+        catch (Exception ex) when (
+            ex is IOException
+                or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        var partFiles = files
+            .Where(path => Path.GetFileName(path)
+                .EndsWith(".part", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        var hasNonEmptyPart = partFiles.Any(path =>
+        {
+            try { return new FileInfo(path).Length > 0; }
+            catch (IOException) { return false; }
+        });
+
+        foreach (var file in files)
         {
             if (!IsCourseTemporaryFile(file))
                 continue;
+
             try
             {
-                if (new FileInfo(file).Length == 0)
+                var name = Path.GetFileName(file);
+                var length = new FileInfo(file).Length;
+
+                if (length == 0
+                    || (!hasNonEmptyPart
+                        && name.EndsWith(
+                            ".ytdl",
+                            StringComparison.OrdinalIgnoreCase)))
                     File.Delete(file);
             }
             catch (Exception ex) when (
