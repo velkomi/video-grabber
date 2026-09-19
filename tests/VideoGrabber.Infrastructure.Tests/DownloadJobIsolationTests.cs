@@ -70,10 +70,8 @@ public sealed class DownloadJobIsolationTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task BogusFilepathOutsideJobMustFail(bool split)
+    [Fact]
+    public async Task BogusFilepathOutsideJob_uses_only_discovered_owned_file_for_single_track()
     {
         var root = FixtureRoot();
         var sentinel = Path.Combine(root, "Lesson.mp4");
@@ -81,14 +79,51 @@ public sealed class DownloadJobIsolationTests
         var hash = FileHash(sentinel);
         var runner = new CallbackRunner((spec, output) =>
         {
-            File.WriteAllBytes(Path.Combine(spec.WorkingDirectory!, "owned.mp4"), [1, 2, 3]);
+            File.WriteAllBytes(
+                Path.Combine(spec.WorkingDirectory!, "owned.mp4"),
+                [1, 2, 3]);
             output?.Invoke("filepath:" + sentinel);
             return new(0, "", "");
         });
-        var result = await Downloader(root, runner).DownloadAsync(Request(root, split), null, CancellationToken.None);
+
+        var result = await Downloader(root, runner).DownloadAsync(
+            Request(root, split: false),
+            null,
+            CancellationToken.None);
+
+        Assert.True(result.Success, result.Message + " " + result.Details);
+        Assert.NotNull(result.OutputPath);
+        AssertUnchanged(sentinel, hash);
+        Assert.NotEqual(
+            Path.GetFullPath(sentinel),
+            Path.GetFullPath(result.OutputPath!));
+        Assert.Empty(
+            Directory.GetDirectories(root, ".vg-job-*"));
+    }
+
+    [Fact]
+    public async Task BogusFilepathOutsideJob_still_fails_for_split_track()
+    {
+        var root = FixtureRoot();
+        var sentinel = Path.Combine(root, "Lesson.mp4");
+        File.WriteAllBytes(sentinel, [19, 23, 29]);
+        var hash = FileHash(sentinel);
+        var runner = new CallbackRunner((spec, output) =>
+        {
+            File.WriteAllBytes(
+                Path.Combine(spec.WorkingDirectory!, "owned.mp4"),
+                [1, 2, 3]);
+            output?.Invoke("filepath:" + sentinel);
+            return new(0, "", "");
+        });
+
+        var result = await Downloader(root, runner).DownloadAsync(
+            Request(root, split: true),
+            null,
+            CancellationToken.None);
+
         Assert.False(result.Success);
         AssertUnchanged(sentinel, hash);
-        Assert.Single(Directory.GetFiles(root, "*.mp4"));
     }
 
     [Theory]

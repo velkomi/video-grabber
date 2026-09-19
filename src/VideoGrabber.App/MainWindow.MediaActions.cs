@@ -59,7 +59,7 @@ public sealed partial class MainWindow
         _textButton = SecondaryButton("Получить текст + SRT");
         _mp3Button.Click += async (_, _) => await RunLocalMediaAsync(false);
         _textButton.Click += async (_, _) => await RunLocalMediaAsync(true);
-        var cancel = SecondaryButton("Отменить обработку");
+        var cancel = DangerButton("Отменить всё");
         cancel.Click += (_, _) => CancelOperation();
         _localMediaStatus = MutedText("Для текста сначала укажите whisper.cpp и модель в разделе «Компоненты». Передачи аудио в облако нет.");
         panel.Children.Add(TwoColumn(_localMediaBox, choose, secondAuto: true));

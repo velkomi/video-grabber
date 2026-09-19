@@ -8,7 +8,8 @@ public sealed partial class MainWindow
 {
     // WebView2/UI adaptation only; operation, cancellation and completion policy live in Infrastructure/Core.
     private sealed class BrowserDownloadPreparation(MainWindow window, MediaCandidate? selectedCandidate = null, int ordinal = 1,
-        BrowserQueueContext? queueContext = null, string? suggestedBaseNameOverride = null)
+        BrowserQueueContext? queueContext = null, string? suggestedBaseNameOverride = null,
+        string? resumeKeyOverride = null)
         : IBrowserDownloadPreparation
     {
         public async Task<PreparedBrowserDownload> PrepareAsync(UserDownloadIntent intent, BrowserPageLease lease, CancellationToken token)
@@ -59,7 +60,8 @@ public sealed partial class MainWindow
                     UserAgent = agent,
                     LocalProxy = egress.ProxyUri.AbsoluteUri,
                     EgressCapabilityId = egress.Id,
-                    EgressEndpoint = egress.ProxyUri
+                    EgressEndpoint = egress.ProxyUri,
+                    ResumeKey = resumeKeyOverride
                 }, cookieFile is null ? [routeScope] : [routeScope, cookieFile]);
             }
             catch

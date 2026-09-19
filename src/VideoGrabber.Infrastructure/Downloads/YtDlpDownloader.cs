@@ -61,7 +61,10 @@ public sealed class YtDlpDownloader(
         var suggestedBase = string.IsNullOrWhiteSpace(request.SuggestedBaseName)
             ? null
             : DownloadFileName.SanitizeBaseName(request.SuggestedBaseName);
-        var workspace = DownloadWorkspace.Create(request.OutputDirectory, request.JobDirectory);
+        var workspace = DownloadWorkspace.Create(
+            request.OutputDirectory,
+            request.JobDirectory,
+            request.ResumeKey);
         var jobRoot = workspace.Root;
         string? outputPath = null;
         try
@@ -72,7 +75,7 @@ public sealed class YtDlpDownloader(
 
         var arguments = new List<string>
         {
-            "--ignore-config", "--no-overwrites", "--abort-on-unavailable-fragment",
+            "--ignore-config", "--no-overwrites", "--continue", "--abort-on-unavailable-fragment",
             "--retries", "3", "--fragment-retries", "3", "--socket-timeout", "25",
             "--newline",
             "--no-playlist",
@@ -154,8 +157,19 @@ public sealed class YtDlpDownloader(
         cancellationToken.ThrowIfCancellationRequested();
         if (!result.IsSuccess)
             return Fail(DownloadFailureFormatter.Create(request.Source, result.StandardError), workspace, result.ExitCode);
-        if (!string.IsNullOrWhiteSpace(outputPath) && !workspace.Owns(outputPath))
-            return Fail(new(false, "Загрузчик вернул файл вне рабочей папки задания."), workspace);
+        if (!string.IsNullOrWhiteSpace(outputPath)
+            && !Path.IsPathRooted(outputPath))
+            outputPath = Path.Combine(jobRoot, outputPath);
+
+        if (!string.IsNullOrWhiteSpace(outputPath)
+            && !workspace.Owns(outputPath))
+        {
+            DiagnosticHub.Log.Write(
+                "download.output",
+                "observed",
+                "yt-dlp reported an untrusted output path; using discovered owned output instead");
+            outputPath = null;
+        }
         if (string.IsNullOrWhiteSpace(outputPath) || !File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
             outputPath = workspace.OwnedFiles.Where(IsMediaOutput)
                 .Where(path => workspace.Owns(path) && new FileInfo(path).Length > 0)
@@ -198,7 +212,10 @@ public sealed class YtDlpDownloader(
         if (!IsSafeHttp(videoSource) || !IsSafeHttp(audioSource))
             return new(false, "Некорректные HLS-ссылки.");
 
-        var workspace = DownloadWorkspace.Create(request.OutputDirectory, request.JobDirectory);
+        var workspace = DownloadWorkspace.Create(
+            request.OutputDirectory,
+            request.JobDirectory,
+            request.ResumeKey);
         var tempRoot = workspace.Root;
         try
         {
@@ -279,7 +296,7 @@ public sealed class YtDlpDownloader(
     {
         var args = new List<string>
         {
-            "--ignore-config", "--no-overwrites", "--abort-on-unavailable-fragment", "--retries", "3", "--fragment-retries", "3", "--socket-timeout", "25",
+            "--ignore-config", "--no-overwrites", "--continue", "--abort-on-unavailable-fragment", "--retries", "3", "--fragment-retries", "3", "--socket-timeout", "25",
             "--newline", "--no-playlist", "--progress", "--progress-delta", "0.25",
             "--progress-template", "download:videograbber:%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s|%(progress.fragment_index)s|%(progress.fragment_count)s|%(progress._speed_str)s|%(progress._eta_str)s",
             "--print", "after_move:filepath:%(filepath)s", "--no-remote-components",

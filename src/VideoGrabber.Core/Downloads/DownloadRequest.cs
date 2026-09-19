@@ -19,4 +19,5 @@ public sealed record DownloadRequest(
     bool? ExpectedAudio = null,
     bool ResolvedHlsLeaf = false,
     Guid? EgressCapabilityId = null,
-    Uri? EgressEndpoint = null);
+    Uri? EgressEndpoint = null,
+    string? ResumeKey = null);

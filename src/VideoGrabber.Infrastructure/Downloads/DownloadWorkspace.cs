@@ -1,4 +1,6 @@
 using System.Collections.Frozen;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace VideoGrabber.Infrastructure.Downloads;
 
@@ -17,21 +19,58 @@ public sealed class DownloadWorkspace
     public string Root { get; }
     public IReadOnlySet<string> OwnedFiles => ownedFiles.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    public static DownloadWorkspace Create(string outputDirectory, string? requestedParent)
+    public static DownloadWorkspace Create(
+        string outputDirectory,
+        string? requestedParent,
+        string? resumeKey = null)
     {
         var output = Path.GetFullPath(outputDirectory);
-        var parent = string.IsNullOrWhiteSpace(requestedParent) ? output : Path.GetFullPath(requestedParent);
+        var parent = string.IsNullOrWhiteSpace(requestedParent)
+            ? output
+            : Path.GetFullPath(requestedParent);
         EnsureContained(output, parent);
         RejectReparseComponents(output);
         RejectReparseComponents(parent);
         Directory.CreateDirectory(parent);
         RejectReparseComponents(parent);
+
         string root;
-        do { root = Path.Combine(parent, ".vg-job-" + Guid.NewGuid().ToString("N")); }
-        while (Path.Exists(root));
+        var reuseExisting = false;
+        if (string.IsNullOrWhiteSpace(resumeKey))
+        {
+            do
+            {
+                root = Path.Combine(
+                    parent,
+                    ".vg-job-" + Guid.NewGuid().ToString("N"));
+            }
+            while (Path.Exists(root));
+        }
+        else
+        {
+            if (resumeKey.Length is < 8 or > 64
+                || resumeKey.Any(ch =>
+                    !char.IsAsciiLetterOrDigit(ch)
+                    && ch is not '-' and not '_'))
+                throw new ArgumentException(
+                    "Некорректный ключ продолжения загрузки.",
+                    nameof(resumeKey));
+
+            root = Path.Combine(
+                parent,
+                ".vg-job-" + resumeKey);
+            if (File.Exists(root))
+                throw new InvalidOperationException(
+                    "Рабочий путь продолжения занят файлом.");
+            reuseExisting = Directory.Exists(root);
+        }
+
         Directory.CreateDirectory(root);
         RejectReparseComponents(root);
-        return new DownloadWorkspace(output, root);
+        var workspace = new DownloadWorkspace(output, root);
+        if (reuseExisting)
+            workspace.DiscoverCreatedFiles();
+        return workspace;
     }
 
     public void RegisterCreatedFile(string path)

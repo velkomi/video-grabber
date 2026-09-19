@@ -45,7 +45,15 @@ public static partial class GetCourseCourseStructure
         PagePayload? payload;
         try
         {
-            payload = JsonSerializer.Deserialize<PagePayload>(json);
+            var source = json;
+            using (var document = JsonDocument.Parse(json))
+            {
+                if (document.RootElement.ValueKind == JsonValueKind.String)
+                    source = document.RootElement.GetString() ?? string.Empty;
+                else if (document.RootElement.ValueKind == JsonValueKind.Null)
+                    return false;
+            }
+            payload = JsonSerializer.Deserialize<PagePayload>(source);
         }
         catch (JsonException)
         {
@@ -112,6 +120,11 @@ public static partial class GetCourseCourseStructure
     public static string CourseFolder(string? title) =>
         CleanFolder(title, "GetCourse курс", 80);
 
+    public static string CourseArchiveFolder(string? title)
+        => DownloadFileName.SanitizeBaseName(
+            CourseFolder(title) + " - Полный архив",
+            110);
+
     public static string OrderedFolder(
         int ordinal,
         string? title,
@@ -171,8 +184,9 @@ public static partial class GetCourseCourseStructure
 
         link = new GetCourseCourseLink(
             actualKind,
-            CleanTitle(
+            CleanLinkTitle(
                 payload.title,
+                actualKind,
                 actualKind == "lesson" ? "Урок" : "Модуль"),
             safe,
             Math.Max(0, payload.order));
@@ -197,6 +211,35 @@ public static partial class GetCourseCourseStructure
         return null;
     }
 
+    private static string CleanLinkTitle(
+        string? value,
+        string kind,
+        string fallback)
+    {
+        var text = CleanTitle(value, fallback);
+        if (string.Equals(kind, "training", StringComparison.OrdinalIgnoreCase))
+        {
+            text = Regex.Replace(
+                text,
+                @"\s+\d+\s+урок(?:ов|а)?(?:\.\s*.*)?$",
+                string.Empty,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Trim();
+        }
+        else
+        {
+            text = Regex.Replace(
+                text,
+                @"^Необходимо\s+выполнить\s+задание\s+",
+                string.Empty,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Trim();
+            text = Regex.Replace(
+                text,
+                @"\s+Просмотрено\b.*$",
+                string.Empty,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Trim();
+        }
+        return string.IsNullOrWhiteSpace(text) ? fallback : text;
+    }
     private static string CleanTitle(
         string? value,
         string fallback)

@@ -30,4 +30,35 @@ public sealed class GetCoursePlayerConfigParserTests
     public void Rejects_missing_malformed_or_unsafe_config(string html)
         => Assert.False(GetCoursePlayerConfigParser.TryExtractMasterPlaylist(
             html, new Uri("https://api3.gcvh.ru/sign-player/?json=x"), out _));
-}
+
+    [Fact]
+    public void Extracts_master_playlist_from_nested_json()
+    {
+        var player = new Uri("https://api2.gcvh.ru/sign-player/?json=secret");
+        const string body = """
+        {"data":{"media":{"masterPlaylistUrl":"https://gc77.vhcdn.com/path/master.m3u8?token=abc"}}}
+        """;
+        Assert.True(GetCoursePlayerConfigParser.TryExtractMasterPlaylist(body, player, out var playlist));
+        Assert.Equal("gc77.vhcdn.com", playlist!.IdnHost);
+    }
+
+    [Fact]
+    public void Extracts_escaped_playlist_url_from_javascript_body()
+    {
+        var player = new Uri("https://api2.gcvh.ru/sign-player/?json=secret");
+        const string body = "<script>var cfg={masterPlaylistUrl:\"https:\\/\\/gc88.vhcdn.com\\/hls\\/master.m3u8?token=x\\u0026a=1\"};</script>";
+        Assert.True(GetCoursePlayerConfigParser.TryExtractMasterPlaylist(body, player, out var playlist));
+        Assert.Equal("gc88.vhcdn.com", playlist!.IdnHost);
+        Assert.Contains("a=1", playlist.Query);
+    }
+    [Fact]
+    public void Extracts_extensionless_GetCourse_master_endpoint()
+    {
+        var player = new Uri("https://api2.gcvh.ru/sign-player/?json=secret");
+        const string body = """
+        <script>window.configs={"masterPlaylistUrl":"https:\/\/api1.gcvh.ru\/api\/playlist\/master\/abc\/def?jwt=secret"};</script>
+        """;
+        Assert.True(GetCoursePlayerConfigParser.TryExtractMasterPlaylist(body, player, out var playlist));
+        Assert.Equal("api1.gcvh.ru", playlist!.IdnHost);
+        Assert.Contains("/api/playlist/master/", playlist.AbsolutePath);
+    }}

@@ -64,8 +64,54 @@ public sealed partial class MainWindow
         panel.Children.Add(SectionHeading("Весь курс GetCourse"));
         _courseDownloadButton = PrimaryButton("Скачать весь курс");
         _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
-        panel.Children.Add(_courseDownloadButton);
-        panel.Children.Add(MutedText("Отдельная функция: проходит доступные модули и уроки текущего GetCourse-тренинга, создаёт папки по структуре курса и скачивает видео по порядку. Используется только ваша текущая авторизованная сессия."));
+
+        _courseResumeButton = SecondaryButton("Продолжить / открыть папку курса");
+        _courseResumeButton.IsEnabled = true;
+        _courseResumeButton.Click += async (_, _) => await ResumeWholeGetCourseAsync();
+
+        _courseClearCacheButton = SecondaryButton("Очистить кэш / временные файлы");
+        _courseClearCacheButton.Click += (_, _) => ClearCourseTemporaryFiles();
+
+        panel.Children.Add(Horizontal(
+            _courseDownloadButton,
+            _courseResumeButton,
+            _courseClearCacheButton));
+
+        _courseStageText = new TextBlock
+        {
+            Text = "Курс ещё не запущен.",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+        _courseCurrentText = MutedText(" ");
+        _courseEtaText = MutedText(" ");
+        _courseElapsedText = MutedText("Прошло с начала: 00:00:00");
+        _courseProgressTrack = new Grid
+        {
+            Height = 8,
+            Background = ProgressTrackBrush,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        _courseProgressFill = new Border
+        {
+            Background = AccentBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(4),
+            Width = 0
+        };
+        _courseProgressTrack.Children.Add(_courseProgressFill);
+        _courseProgressTrack.SizeChanged += (_, _) =>
+            UpdateCourseProgressWidth();
+        _courseProgressPercent = MutedText("0%");
+
+        panel.Children.Add(_courseStageText);
+        panel.Children.Add(_courseProgressTrack);
+        panel.Children.Add(_courseProgressPercent);
+        panel.Children.Add(_courseCurrentText);
+        panel.Children.Add(_courseEtaText);
+        panel.Children.Add(_courseElapsedText);
+
+        panel.Children.Add(MutedText("Проходит доступные модули и уроки текущего GetCourse-тренинга. Для каждого урока создаётся отдельная папка: Word + HTML страницы, доступные изображения и вложения (PDF/Office/архивы) и найденные видео. Урок без видео всё равно сохраняется. Используется только ваша текущая авторизованная сессия."));
 
         panel.Children.Add(SectionHeading("После скачивания"));
         _transcribeDownloadedButton = SecondaryButton("Транскрибировать скачанное");
@@ -140,7 +186,36 @@ public sealed partial class MainWindow
                 core.Settings.IsPasswordAutosaveEnabled = false;
                 core.Settings.IsGeneralAutofillEnabled = false;
                 core.PermissionRequested += (_, args) => args.State = CoreWebView2PermissionState.Deny;
-                core.DownloadStarting += (_, args) => args.Cancel = true;
+                core.DownloadStarting += (_, args) =>
+                {
+                    try
+                    {
+                        var uri = new Uri(args.DownloadOperation.Uri);
+                        var extension = Path.GetExtension(uri.AbsolutePath);
+                        DiagnosticHub.Log.Write(
+                            "browser.manual-download",
+                            "observed",
+                            "host=" + uri.IdnHost
+                            + " extension=" + extension
+                            + " fileservice="
+                            + uri.AbsolutePath.Contains(
+                                "/fileservice/",
+                                StringComparison.OrdinalIgnoreCase));
+                    }
+                    catch (Exception ex) when (
+                        ex is UriFormatException
+                            or ArgumentException)
+                    {
+                        DiagnosticHub.Log.Write(
+                            "browser.manual-download",
+                            "observed",
+                            "download request observed");
+                    }
+
+                    // Browser downloads are kept fail-closed; course mode uses the
+                    // authenticated attachment pipeline and chooses the lesson folder.
+                    args.Cancel = true;
+                };
                 core.NewWindowRequested += (sender, args) =>
                 {
                     args.Handled = true;

@@ -60,7 +60,7 @@ public sealed class GetCourseCoursePlannerTests
         Assert.Equal(1, plan.Lessons[1].LessonOrdinal);
 
         Assert.Equal(lessonRoot, plan.Lessons[2].Uri);
-        Assert.Empty(plan.Lessons[2].ModuleFolders);
+        Assert.Equal(["00 - Вводные материалы"], plan.Lessons[2].ModuleFolders);
         Assert.Equal(1, plan.Lessons[2].LessonOrdinal);
 
         Assert.Equal(lessonThree, plan.Lessons[3].Uri);

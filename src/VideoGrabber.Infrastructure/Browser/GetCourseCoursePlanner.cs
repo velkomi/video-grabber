@@ -83,10 +83,13 @@ public static class GetCourseCoursePlanner
                     GetCourseCourseStructure.CanonicalKey(link.Uri);
                 if (!visitedLessons.Add(lessonKey)) continue;
                 lessonOrdinal++;
+                var lessonFolders = depth == 0 && moduleFolders.Length == 0
+                    ? new[] { "00 - Вводные материалы" }
+                    : moduleFolders.ToArray();
                 lessons.Add(new GetCourseLessonPlan(
                     link.Uri,
                     link.Title,
-                    moduleFolders.ToArray(),
+                    lessonFolders,
                     lessonOrdinal));
                 continue;
             }

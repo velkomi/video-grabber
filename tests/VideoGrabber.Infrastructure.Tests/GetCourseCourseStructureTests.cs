@@ -84,6 +84,10 @@ public sealed class GetCourseCourseStructureTests
             "Курс 2026",
             GetCourseCourseStructure.CourseFolder(
                 "Курс: 2026"));
+        Assert.Equal(
+            "Курс 2026 - Полный архив",
+            GetCourseCourseStructure.CourseArchiveFolder(
+                "Курс: 2026"));
     }
 
     [Fact]
@@ -118,5 +122,49 @@ public sealed class GetCourseCourseStructureTests
                 2,
                 3,
                 "720p"));
+    }
+    [Fact]
+    public void Parse_accepts_WebView_JSON_encoded_string_result()
+    {
+        var inner = "{\"pageTitle\":\"Курс\",\"links\":[{\"kind\":\"training\",\"title\":\"Модуль 1\",\"url\":\"https://school.example/teach/control/stream/view/id/20\",\"order\":1}]}";
+        var wrapped = System.Text.Json.JsonSerializer.Serialize(inner);
+
+        Assert.True(GetCourseCourseStructure.TryParsePage(
+            wrapped,
+            new Uri("https://school.example/teach/control/stream/view/id/10"),
+            out var page));
+        Assert.Single(page!.Trainings);
+        Assert.Equal("Модуль 1", page.Trainings[0].Title);
+    }
+
+    [Fact]
+    public void Parse_cleans_GetCourse_status_and_training_metadata_from_titles()
+    {
+        const string json = """
+        {
+          "pageTitle":"Курс",
+          "links":[
+            {
+              "kind":"training",
+              "title":"МОДУЛЬ №1 14 уроков. Тамара Хестанова",
+              "url":"https://school.example/teach/control/stream/view/id/20",
+              "order":1
+            },
+            {
+              "kind":"lesson",
+              "title":"День 2 Просмотрено Для служебного описания",
+              "url":"https://school.example/teach/control/lesson/view/id/101",
+              "order":2
+            }
+          ]
+        }
+        """;
+
+        Assert.True(GetCourseCourseStructure.TryParsePage(
+            json,
+            new Uri("https://school.example/teach/control/stream/view/id/10"),
+            out var page));
+        Assert.Equal("МОДУЛЬ №1", page!.Trainings[0].Title);
+        Assert.Equal("День 2", page.Lessons[0].Title);
     }
 }

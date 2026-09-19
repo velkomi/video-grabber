@@ -53,18 +53,20 @@ public sealed partial class BrowserWiringRegressionTests
         var browser = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
         var devtools = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
         Assert.DoesNotContain("new MediaCandidate(playlist, candidate.Source", browser);
-        Assert.Contains("new MediaCandidate(playlist, player.Referer", devtools);
+        Assert.Contains("player.Referer", devtools);
+        Assert.Contains("QueueMediaCandidate(new MediaCandidate(", devtools);
         Assert.Contains("QueueMediaCandidate", devtools);
     }
 
     [Fact]
-    public void DevTools_loading_failed_cleans_all_pending_request_state()
+    public void DevTools_loading_failed_retains_GetCourse_player_retry_but_cleans_other_pending_state()
     {
         var root = FindRepoRoot();
         var devtools = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
         Assert.Contains("Network.loadingFailed", devtools);
         Assert.Contains("OnDevToolsLoadingFailed", devtools);
-        Assert.Contains("_pendingGetCoursePlayers.TryRemove(key", devtools);
+        Assert.Contains("_pendingGetCoursePlayers.ContainsKey(key)", devtools);
+        Assert.Contains("response-body retry retained", devtools);
         Assert.Contains("_pendingHlsManifests.TryRemove(key", devtools);
         Assert.Contains("_networkRequestContexts.TryRemove(key", devtools);
     }
@@ -384,5 +386,162 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("RunDownloadOperationAsync", batch);
         Assert.Contains("Весь курс GetCourse", browser);
         Assert.Contains("Скачать весь курс", browser);
+    }
+}
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Whole_course_navigation_waits_through_GetCourse_redirect_abort()
+    {
+        var root = FindRepoRoot();
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App",
+            "MainWindow.CourseDownload.cs"));
+
+        Assert.Contains(
+            "CoreWebView2WebErrorStatus.ConnectionAborted",
+            course);
+        Assert.Contains(
+            "Transient redirect navigation",
+            course);
+        Assert.Contains(
+            "completion.TrySetResult(args);",
+            course);
+    }
+}
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void GetCourse_player_response_starts_body_retry_without_waiting_for_loading_finished()
+    {
+        var root = FindRepoRoot();
+        var devtools = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.DevTools.cs"));
+        var responseStart = devtools.IndexOf("private void OnDevToolsResponse", StringComparison.Ordinal);
+        var requestStart = devtools.IndexOf("private void OnDevToolsRequest", responseStart, StringComparison.Ordinal);
+        var response = devtools[responseStart..requestStart];
+        Assert.Contains("ResolveGetCoursePlayerWithRetryAsync", response);
+        Assert.Contains("_playerBodyResolvers.TryAdd", devtools);
+        Assert.Contains("attempt < 40", devtools);
+        Assert.Contains("Network.getResponseBody", devtools);
+    }
+}
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Whole_course_archives_page_before_media_and_no_video_is_not_a_lesson_failure()
+    {
+        var root = FindRepoRoot();
+        var course = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+        var archive = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.CourseArchive.cs"));
+        var save = course.IndexOf("SaveCourseLessonArchiveAsync", StringComparison.Ordinal);
+        var media = course.IndexOf("WaitForCourseMediaAsync", save, StringComparison.Ordinal);
+        Assert.True(save >= 0 && media > save);
+        Assert.Contains("Lesson archived without downloadable video", course);
+        Assert.Contains("CourseLessonArchive.WriteDocx", archive);
+        Assert.Contains("CookieManager", archive);
+        Assert.Contains("Страница.html", archive);
+        Assert.Contains("Изображения", archive);
+        Assert.Contains("Вложения", archive);
+    }
+}
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Whole_course_prefers_dom_player_resolver_and_uses_direct_routed_assets()
+    {
+        var root = FindRepoRoot();
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+        var media = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseMedia.cs"));
+        var archive = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseArchive.cs"));
+
+        var domResolve = course.IndexOf(
+            "DiscoverCourseMediaFromDomAsync", StringComparison.Ordinal);
+        var fallback = course.IndexOf(
+            "WaitForCourseMediaAsync", domResolve, StringComparison.Ordinal);
+        Assert.True(domResolve >= 0 && fallback > domResolve);
+
+        Assert.Contains("data-iframe-src", media);
+        Assert.Contains("GetCoursePlayerConfigParser.TryExtractMasterPlaylist", media);
+        Assert.Contains("HlsManifestParser.TryParse", media);
+        Assert.Contains("new RouteConnector(_routePolicy)", media);
+        Assert.Contains("ConnectCallback", media);
+
+        Assert.Contains(".lite-page.block-set", archive);
+        Assert.Contains(".o-lt-lesson-comment-block", archive);
+        Assert.Contains("style,link,script", archive);
+        Assert.Contains("new RouteConnector(_routePolicy)", archive);
+        Assert.DoesNotContain("new WebProxy(", archive);
+    }
+}
+
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Course_ui_exposes_overall_progress_resume_cache_and_global_cancel()
+    {
+        var root = FindRepoRoot();
+        var browser = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+        var main = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
+
+        Assert.Contains("Продолжить", browser);
+        Assert.Contains("Очистить кэш / временные файлы", browser);
+        Assert.Contains("_courseProgressTrack = new Grid", browser);
+        Assert.Contains("_courseProgressFill = new Border", browser);
+        Assert.DoesNotContain("new ProgressBar", browser);
+        Assert.Contains("Этап 1 из 2", course);
+        Assert.Contains("Этап 2 из 2", course);
+        Assert.Contains("ориентировочно", course);
+        Assert.Contains("Прошло с начала", course);
+        Assert.Contains("StartCourseElapsedTimer", course);
+        Assert.Contains("RecoverCompletedCourseJobsAsync", course);
+        Assert.Contains("DangerButton(\"Отменить всё\")", main);
+        Assert.Contains("_courseCancellation?.Cancel()", File.ReadAllText(
+            Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs")));
+    }
+}
+
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Course_crash_resume_is_persistent_and_failed_video_is_retried()
+    {
+        var root = FindRepoRoot();
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+        var preparation = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "BrowserDownloadPreparation.cs"));
+        var downloader = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Infrastructure",
+            "Downloads", "YtDlpDownloader.cs"));
+
+        Assert.Contains("VideoGrabber.course.json", File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Infrastructure",
+            "Browser", "CourseDownloadStateStore.cs")));
+        Assert.Contains("PersistCourseStateAsync", course);
+        Assert.Contains("LoadCourseResumeProjectAsync", course);
+        Assert.Contains("Продолжить / открыть папку курса", File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Browser.cs")));
+        Assert.Contains("StableMediaResumeKey", course);
+        Assert.Contains("resumeKeyOverride", preparation);
+        Assert.Contains("request.ResumeKey", downloader);
+        Assert.Contains("\"--continue\"", downloader);
+
+        Assert.Contains("const int maxAttempts = 4", course);
+        Assert.Contains("course.video.retry", course);
+        Assert.Contains("DiscoverCourseMediaFromDomAsync", course);
+        Assert.Contains("Обновляю ссылку", course);
     }
 }

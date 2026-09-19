@@ -24,6 +24,7 @@ public sealed partial class MainWindow
     private Windows.Foundation.TypedEventHandler<CoreWebView2, CoreWebView2DevToolsProtocolEventReceivedEventArgs>? _targetDetachedHandler;
     private readonly ConcurrentDictionary<string, byte> _devToolsSessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DevToolsGetCourseResponse> _pendingGetCoursePlayers = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _playerBodyResolvers = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, DevToolsRequestContext> _networkRequestContexts = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingHlsManifest> _pendingHlsManifests = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Microsoft.UI.Xaml.Controls.ComboBoxItem> _mediaCandidateItems = new(StringComparer.Ordinal);
@@ -32,6 +33,7 @@ public sealed partial class MainWindow
     private readonly BrowserPageLifetime _browserPages = new();
     private IReadOnlyList<DevToolsFrameInfo> _browserFrames = [];
     private long _browserDiscoveryGeneration;
+    private long _lastGetCoursePlayerGeneration = -1;
     private const string AutoAttachJson = "{\"autoAttach\":true,\"waitForDebuggerOnStart\":true,\"flatten\":true}";
 
     private async Task EnableDevToolsMediaDiscoveryAsync(CoreWebView2 core)
@@ -83,8 +85,11 @@ public sealed partial class MainWindow
 
         if (DevToolsGetCourseResponseParser.TryParsePlayerResponse(json, page, out var player) && player is not null)
         {
-            _pendingGetCoursePlayers[RequestKey(sessionId, player.RequestId)] = player;
+            var key = RequestKey(sessionId, player.RequestId);
+            _pendingGetCoursePlayers[key] = player;
+            Interlocked.Exchange(ref _lastGetCoursePlayerGeneration, lease.Generation);
             DiagnosticHub.Log.Write("browser.player", "observed", player.SafeDisplay + " waiting for response body");
+            _ = ResolveGetCoursePlayerWithRetryAsync(core, player, player.RequestId, sessionId, lease, key);
             return;
         }
 
@@ -133,8 +138,8 @@ public sealed partial class MainWindow
             || !IsCurrentBrowserPage(lease, core)) return;
         try
         {
-            if (_pendingGetCoursePlayers.TryRemove(key, out var player))
-                await ResolveGetCoursePlayerAsync(core, player, requestId, sessionId, lease);
+            if (_pendingGetCoursePlayers.TryGetValue(key, out var player))
+                await ResolveGetCoursePlayerWithRetryAsync(core, player, requestId, sessionId, lease, key);
             if (!IsCurrentBrowserPage(lease, core)) return;
             if (_pendingHlsManifests.TryRemove(key, out var pending))
                 await ResolveHlsManifestAsync(core, pending, requestId, sessionId, lease);
@@ -150,44 +155,114 @@ public sealed partial class MainWindow
     {
         if (!DevToolsGetCourseResponseParser.TryParseLoadingFailed(json, out var requestId) || requestId is null) return;
         var key = RequestKey(sessionId, requestId);
-        if (!_browserPages.TryGetRequestLease(key, null, out var lease)
-            || !_browserPages.ForgetRequest(key, lease)) return;
-        _pendingGetCoursePlayers.TryRemove(key, out _);
+        if (!_browserPages.TryGetRequestLease(key, null, out var lease)) return;
+        if (_pendingGetCoursePlayers.ContainsKey(key))
+        {
+            DiagnosticHub.Log.Write(
+                "browser.player",
+                "observed",
+                "GetCourse player loading failed; response-body retry retained");
+            return;
+        }
+        if (!_browserPages.ForgetRequest(key, lease)) return;
         _pendingHlsManifests.TryRemove(key, out _);
         _networkRequestContexts.TryRemove(key, out _);
     }
-
     private void TrimPendingStateIfNeeded()
     {
         if (_pendingGetCoursePlayers.Count <= 2048 && _pendingHlsManifests.Count <= 2048 && _networkRequestContexts.Count <= 4096) return;
-        _pendingGetCoursePlayers.Clear(); _pendingHlsManifests.Clear(); _networkRequestContexts.Clear();
+        _pendingGetCoursePlayers.Clear();
+        _playerBodyResolvers.Clear();
+        Interlocked.Exchange(ref _lastGetCoursePlayerGeneration, -1); _pendingHlsManifests.Clear(); _networkRequestContexts.Clear();
         DiagnosticHub.Log.Write("browser.devtools", "observed", "Pending network state reset after safety limit");
     }
 
-    private async Task ResolveGetCoursePlayerAsync(CoreWebView2 core, DevToolsGetCourseResponse player, string requestId, string? sessionId, BrowserPageLease lease)
+    private async Task ResolveGetCoursePlayerWithRetryAsync(
+        CoreWebView2 core,
+        DevToolsGetCourseResponse player,
+        string requestId,
+        string? sessionId,
+        BrowserPageLease lease,
+        string key)
     {
+        if (!_playerBodyResolvers.TryAdd(key, 0)) return;
+        Exception? lastError = null;
         try
         {
-            var bodyJson = await GetResponseBodyAsync(core, requestId, sessionId);
-            if (!IsCurrentBrowserPage(lease, core)) return;
-            if (DevToolsGetCourseResponseParser.TryDecodeBody(bodyJson, out var body)
-                && body is not null
-                && GetCoursePlayerConfigParser.TryExtractMasterPlaylist(body, player.PlayerUri, out var playlist)
-                && playlist is not null)
+            for (var attempt = 0; attempt < 40; attempt++)
             {
-                QueueMediaCandidate(new MediaCandidate(playlist, player.Referer, "HLS", "master [GetCourse fallback]",
-                    FrameId: player.FrameId), lease, core);
-                DiagnosticHub.Log.Write("browser.player", "succeeded", "master HLS announced on " + playlist.IdnHost + "; waiting for HLS network response");
+                if (!IsCurrentBrowserPage(lease, core)
+                    || !_pendingGetCoursePlayers.ContainsKey(key)) return;
+                try
+                {
+                    var bodyJson = await GetResponseBodyAsync(core, requestId, sessionId);
+                    if (!IsCurrentBrowserPage(lease, core)) return;
+                    if (!DevToolsGetCourseResponseParser.TryDecodeBody(bodyJson, out var body)
+                        || body is null)
+                        throw new InvalidDataException("GetCourse player body is not available yet.");
+
+                    _pendingGetCoursePlayers.TryRemove(key, out _);
+                    if (GetCoursePlayerConfigParser.TryExtractMasterPlaylist(
+                            body, player.PlayerUri, out var playlist)
+                        && playlist is not null)
+                    {
+                        QueueMediaCandidate(new MediaCandidate(
+                            playlist,
+                            player.Referer,
+                            "HLS",
+                            "master [GetCourse fallback]",
+                            FrameId: player.FrameId), lease, core);
+                        DiagnosticHub.Log.Write(
+                            "browser.player",
+                            "succeeded",
+                            "master HLS announced on " + playlist.IdnHost + "; waiting for HLS network response");
+                    }
+                    else
+                    {
+                        DiagnosticHub.Log.Write(
+                            "browser.player",
+                            "observed",
+                            player.SafeDisplay
+                            + " body received without a supported master playlist; m3u8="
+                            + (body.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ? "present" : "absent")
+                            + "; master-key="
+                            + (body.Contains("masterPlaylistUrl", StringComparison.OrdinalIgnoreCase) ? "present" : "absent"));
+                    }
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                }
+
+                try
+                {
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(100 + Math.Min(attempt * 50, 400)),
+                        lease.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
             }
-            else
-                DiagnosticHub.Log.Write("browser.player", "observed", player.SafeDisplay + " without master playlist");
+
+            _pendingGetCoursePlayers.TryRemove(key, out _);
+            DiagnosticHub.Log.Write(
+                "browser.player",
+                "failed",
+                player.SafeDisplay + " response body unavailable after retry: "
+                + (lastError?.GetType().Name ?? "unknown"));
         }
-        catch (Exception ex)
+        finally
         {
-            DiagnosticHub.Log.Write("browser.player", "failed", player.SafeDisplay + " " + ex.GetType().Name);
+            _playerBodyResolvers.TryRemove(key, out _);
         }
     }
-
     private async Task ResolveHlsManifestAsync(CoreWebView2 core, PendingHlsManifest pending, string requestId, string? sessionId, BrowserPageLease lease)
     {
         var fallback = new MediaCandidate(pending.Response.Source, pending.Referer, "HLS", FrameId: pending.Response.FrameId);
@@ -448,6 +523,8 @@ public sealed partial class MainWindow
         Interlocked.Increment(ref _bindingRefreshVersion);
         _durationProbeInFlight.Clear();
         _pendingGetCoursePlayers.Clear();
+        _playerBodyResolvers.Clear();
+        Interlocked.Exchange(ref _lastGetCoursePlayerGeneration, -1);
         _pendingHlsManifests.Clear();
         _networkRequestContexts.Clear();
         _verifiedClearHls.Clear();

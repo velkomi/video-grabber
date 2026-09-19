@@ -278,7 +278,7 @@ public sealed partial class MainWindow : Window
         _audioOnlyBox = new CheckBox { Content = "Скачать MP3 (только звук)" };
         _downloadButton = PrimaryButton("Скачать");
         _downloadButton.Click += Download_Click;
-        _cancelButton = SecondaryButton("Отменить");
+        _cancelButton = DangerButton("Отменить всё");
         _cancelButton.IsEnabled = false;
         _cancelButton.Click += (_, _) => CancelOperation();
         var browserButton = SecondaryButton("Открыть во встроенном браузере");
@@ -385,7 +385,7 @@ public sealed partial class MainWindow : Window
         _editorInfo = Card(_editorInfoText);
         _editorInfo.Visibility = Visibility.Collapsed;
         body.Children.Add(_editorInfo);
-        var cancelEdit = SecondaryButton("Отменить обработку");
+        var cancelEdit = DangerButton("Отменить всё");
         cancelEdit.Click += (_, _) => CancelOperation();
         body.Children.Add(cancelEdit);
         return new ScrollViewer { Content = body };
@@ -751,10 +751,26 @@ public sealed partial class MainWindow : Window
             }
         }
 
+        UpdateCourseFileProgress(value.Percent);
+
         var details = string.Join(
             "  •  ",
-            new[] { value.Speed, value.Eta }.Where(item => !string.IsNullOrWhiteSpace(item)));
-        SetDownloadState(value.Status, details);
+            new[]
+            {
+                _courseDownloadActive && !string.IsNullOrWhiteSpace(_courseCurrentVideoName)
+                    ? "Файл: " + _courseCurrentVideoName
+                    : null,
+                value.Speed,
+                value.Eta
+            }.Where(item => !string.IsNullOrWhiteSpace(item)));
+
+        var status =
+            _courseDownloadActive
+            && !string.IsNullOrWhiteSpace(_courseCurrentVideoName)
+            && string.Equals(value.Status, "Загрузка", StringComparison.OrdinalIgnoreCase)
+                ? "Скачиваю видео"
+                : value.Status;
+        SetDownloadState(status, details);
     }
 
     private static void AttachPasteContextMenu(TextBox textBox)
@@ -881,6 +897,15 @@ public sealed partial class MainWindow : Window
     private static Button SecondaryButton(string text) => new()
     {
         Content = text,
+        Padding = new Thickness(16, 8, 16, 8),
+        CornerRadius = new CornerRadius(8)
+    };
+
+    private static Button DangerButton(string text) => new()
+    {
+        Content = text,
+        Background = new SolidColorBrush(Colors.IndianRed),
+        Foreground = new SolidColorBrush(Colors.White),
         Padding = new Thickness(16, 8, 16, 8),
         CornerRadius = new CornerRadius(8)
     };
