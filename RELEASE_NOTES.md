@@ -1,5 +1,16 @@
 # Журнал подготовки релизов
 
+## [0.1.10-preview.24] - 2026-09-19
+
+- Status: GetCourse CDN routing fix
+- Previous version: 0.1.10-preview.23
+- Root cause: GetCourse player/master hosts were routed through the selected Ethernet session, but HLS segments on `vh-*.servicecdn.ru` were not part of the session family and therefore used the Windows/VPN route. Live diagnostics on all seven currently missing videos showed system route timeout (HTTP 000) and direct Ethernet success (HTTP 206).
+- Fixed: `servicecdn.ru` is now a GetCourse session family and an HLS provider family, so all its subdomains inherit the same route as the course.
+- Portable routing: new `auto-physical` mode dynamically discovers physical Ethernet/Wi-Fi, excludes common VPN/Tunnel/WSL/virtual adapters, tries physical interfaces first and then the system route only as a last fallback.
+- Portability: settings store `auto-physical`, not a machine IP. Existing unavailable adapter GUIDs are automatically converted to Auto on another computer. The displayed IPv4 address is only the current address of the adapter and is never the portable identity.
+- Current missing media: Day 1 videos 03/16/21 and Day 2 videos 01/06/12/16. Their fresh 1080p first segments are reachable over Ethernet; automatic retry can now fetch them through the corrected session route.
+- Verification: live auto-route probe succeeded through Ethernet with VPN adapters excluded; Core 32/32; Infrastructure 650 passed / 0 failed / 14 existing live-tool skips; Worker 31/31; Local/Managed/API/Worker Release builds 0 warnings/errors.
+
 ## [0.1.10-preview.23] - 2026-09-19
 
 - Status: unattended auto-recovery candidate

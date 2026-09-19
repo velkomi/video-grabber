@@ -10,6 +10,8 @@ public sealed record RouteAdapter(string Id, string Name, int Index, IPAddress A
 
 public sealed class RouteConnector
 {
+    public const string AutoPhysicalAdapterId = "auto-physical";
+
     private readonly SiteRoutePolicy _policy;
     private readonly Func<string, CancellationToken, Task<IPAddress[]>> _dnsResolver;
 
@@ -26,7 +28,11 @@ public sealed class RouteConnector
         var result = new List<RouteAdapter>();
         foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
         {
-            if (ni.OperationalStatus != OperationalStatus.Up || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel) continue;
+            if (ni.OperationalStatus != OperationalStatus.Up
+                || ni.NetworkInterfaceType is NetworkInterfaceType.Loopback
+                    or NetworkInterfaceType.Tunnel
+                || LooksVirtualOrVpn(ni))
+                continue;
             var props = ni.GetIPProperties();
             var ipv4 = props.UnicastAddresses.FirstOrDefault(a => a.Address.AddressFamily == AddressFamily.InterNetwork
                 && !IPAddress.IsLoopback(a.Address) && !a.Address.ToString().StartsWith("169.254.", StringComparison.Ordinal))?.Address;
@@ -69,12 +75,85 @@ public sealed class RouteConnector
         if (port == 3001 && !_policy.IsActiveSessionHost(host))
             throw new InvalidOperationException("Порт 3001 разрешён только внутри активной маршрутизируемой GetCourse-сессии.");
 
-        var adapter = adapterId is null ? null : GetAdapters().FirstOrDefault(a => a.Id.Equals(adapterId, StringComparison.OrdinalIgnoreCase));
-        if (adapterId is not null && adapter is null)
-            throw new InvalidOperationException("Выбранный адаптер недоступен. Автоматическая смена подключения запрещена.");
-        if (adapter is not null && !OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Выбор адаптера требует Windows.");
+        if (string.Equals(
+                adapterId,
+                AutoPhysicalAdapterId,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (!OperatingSystem.IsWindows())
+                return await ConnectAsync(
+                    host,
+                    port,
+                    addresses,
+                    adapter: null,
+                    cancellationToken).ConfigureAwait(false);
 
-        return await ConnectAsync(host, port, addresses, adapter, cancellationToken).ConfigureAwait(false);
+            Exception? last = null;
+            foreach (var candidate in GetAdapters())
+            {
+                try
+                {
+                    var stream = await ConnectAsync(
+                        host,
+                        port,
+                        addresses,
+                        candidate,
+                        cancellationToken).ConfigureAwait(false);
+                    DiagnosticHub.Log.Write(
+                        "network.auto-route",
+                        "succeeded",
+                        "host=" + host
+                        + " adapter=" + candidate.Name);
+                    return stream;
+                }
+                catch (IOException ex)
+                {
+                    last = ex;
+                }
+            }
+
+            try
+            {
+                var stream = await ConnectAsync(
+                    host,
+                    port,
+                    addresses,
+                    adapter: null,
+                    cancellationToken).ConfigureAwait(false);
+                DiagnosticHub.Log.Write(
+                    "network.auto-route",
+                    "succeeded",
+                    "host=" + host
+                    + " adapter=system-fallback");
+                return stream;
+            }
+            catch (IOException ex)
+            {
+                throw new IOException(
+                    "Автоматический маршрут не установил соединение ни через физический адаптер, ни через системный маршрут.",
+                    last ?? ex);
+            }
+        }
+
+        var adapter = adapterId is null
+            ? null
+            : GetAdapters().FirstOrDefault(
+                a => a.Id.Equals(
+                    adapterId,
+                    StringComparison.OrdinalIgnoreCase));
+        if (adapterId is not null && adapter is null)
+            throw new InvalidOperationException(
+                "Выбранный адаптер недоступен. Выберите режим «Авто — физический интернет» или другой адаптер.");
+        if (adapter is not null && !OperatingSystem.IsWindows())
+            throw new PlatformNotSupportedException(
+                "Выбор адаптера требует Windows.");
+
+        return await ConnectAsync(
+            host,
+            port,
+            addresses,
+            adapter,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<Stream> ConnectAsync(string host, int port, IEnumerable<IPAddress> addresses, RouteAdapter? adapter, CancellationToken cancellationToken)
@@ -147,6 +226,26 @@ public sealed class RouteConnector
             throw new ArgumentException("Некорректное имя узла.");
     }
 
-    public static bool IsPublic(IPAddress address) => UrlPolicy.IsPublicAddress(address);
+    public static bool IsPublic(IPAddress address)
+        => UrlPolicy.IsPublicAddress(address);
 
+    private static bool LooksVirtualOrVpn(NetworkInterface ni)
+    {
+        var text = (ni.Name + " " + ni.Description).ToLowerInvariant();
+        string[] markers =
+        [
+            "vpn",
+            "openvpn",
+            "wireguard",
+            "tailscale",
+            "tap-windows",
+            "wsl",
+            "hyper-v",
+            "virtual ethernet",
+            "virtualbox",
+            "vmware",
+            "loopback"
+        ];
+        return markers.Any(text.Contains);
+    }
 }

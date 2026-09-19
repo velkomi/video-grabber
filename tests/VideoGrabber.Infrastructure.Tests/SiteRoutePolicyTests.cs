@@ -18,6 +18,8 @@ public sealed partial class SiteRoutePolicyTests
     [InlineData("api3.gcvh.ru")]
     [InlineData("v02.getcourse.ru")]
     [InlineData("vh-79-integros.kinescopecdn.net")]
+    [InlineData("vh-22.servicecdn.ru")]
+    [InlineData("vh-25.servicecdn.ru")]
     [InlineData("gc79.vhcdn.com")]
     [InlineData("hcndwxefvi.a.trbcdn.net")]
     [InlineData("vhapi02.gcfiles.net")]
@@ -29,6 +31,26 @@ public sealed partial class SiteRoutePolicyTests
         Assert.Equal("ethernet", policy.ResolveAdapterId(host));
         Assert.Null(policy.ResolveAdapterId("example.com"));
         Assert.Null(policy.ResolveAdapterId("evilgetcourse.ru"));
+    }
+
+    [Fact]
+    public void Auto_physical_route_is_inherited_by_GetCourse_servicecdn()
+    {
+        var policy = new SiteRoutePolicy(
+            new SiteRouteSettings(
+            [
+                new(
+                    "iglyrazuma.ru",
+                    RouteConnector.AutoPhysicalAdapterId)
+            ]));
+
+        Assert.True(
+            policy.ConfigureSession(
+                "iglyrazuma.ru",
+                RouteConnector.AutoPhysicalAdapterId));
+        Assert.Equal(
+            RouteConnector.AutoPhysicalAdapterId,
+            policy.ResolveAdapterId("vh-23.servicecdn.ru"));
     }
 
     [Fact]

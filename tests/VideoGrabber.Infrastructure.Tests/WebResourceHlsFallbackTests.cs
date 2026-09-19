@@ -21,6 +21,18 @@ public sealed class WebResourceHlsFallbackTests
     }
 
     [Fact]
+    public void Servicecdn_playlist_is_inspected_as_GetCourse_media()
+    {
+        var source = new Uri(
+            "https://vh-23.servicecdn.ru/path/playlist/1080");
+        Assert.True(
+            HlsResponseCandidateResolver.ShouldInspectBody(
+                source,
+                "application/vnd.apple.mpegurl",
+                1200));
+    }
+
+    [Fact]
     public void Encrypted_HLS_body_is_detected_but_not_queueable()
     {
         const string body = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:5,\nseg.ts\n";

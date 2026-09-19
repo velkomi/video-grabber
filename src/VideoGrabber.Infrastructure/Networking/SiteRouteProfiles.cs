@@ -19,7 +19,17 @@ public static class SiteRouteProfiles
     private static readonly IReadOnlyDictionary<string, string[]> SessionFamilies =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
-            ["iglyrazuma.ru"] = ["getcourse.ru", "gcvh.ru", "kinescopecdn.net", "vhcdn.com", "trbcdn.net", "gcfiles.net", "kinescope.io"]
+            ["iglyrazuma.ru"] =
+            [
+                "getcourse.ru",
+                "gcvh.ru",
+                "kinescopecdn.net",
+                "servicecdn.ru",
+                "vhcdn.com",
+                "trbcdn.net",
+                "gcfiles.net",
+                "kinescope.io"
+            ]
         };
 
     public static IReadOnlyList<string> GetSessionFamilies(string host)

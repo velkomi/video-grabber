@@ -5,7 +5,7 @@ public static class HlsResponseCandidateResolver
     private static readonly string[] ProviderFamilies =
     [
         "getcourse.ru", "gcvh.ru", "gcfiles.net", "vhcdn.com", "trbcdn.net",
-        "kinescope.io", "kinescopecdn.net"
+        "kinescope.io", "kinescopecdn.net", "servicecdn.ru"
     ];
 
     public static bool ShouldInspectBody(Uri source, string? mime, long contentLength)

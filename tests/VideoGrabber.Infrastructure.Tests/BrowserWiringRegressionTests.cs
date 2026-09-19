@@ -594,3 +594,26 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("\".ytdl\"", course);
     }
 }
+
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Network_ui_prefers_portable_auto_route_and_GetCourse_CDN_family()
+    {
+        var root = FindRepoRoot();
+        var network = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Network.cs"));
+        var profiles = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Infrastructure", "Networking", "SiteRouteProfiles.cs"));
+        var connector = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Infrastructure", "Networking", "RouteConnector.cs"));
+
+        Assert.Contains("Авто — физический интернет", network);
+        Assert.Contains("AutoPhysicalAdapterId", network);
+        Assert.Contains("servicecdn.ru", profiles);
+        Assert.Contains("AutoPhysicalAdapterId = \"auto-physical\"", connector);
+        Assert.Contains("system-fallback", connector);
+        Assert.Contains("LooksVirtualOrVpn", connector);
+    }
+}

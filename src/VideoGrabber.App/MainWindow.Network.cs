@@ -24,7 +24,7 @@ public sealed partial class MainWindow
     {
         var panel = Vertical(12);
         panel.Children.Add(SectionHeading("Подключение для отдельных сайтов"));
-        panel.Children.Add(MutedText("Выбранный сайт будет выходить через указанный адаптер, например Ethernet без VPN. Сайт увидит IP этого подключения. Остальные сайты — по маршруту Windows. Настройки VPN и других программ не меняются."));
+        panel.Children.Add(MutedText("Рекомендуемый режим «Авто — физический интернет» сам находит Ethernet/Wi‑Fi на этом компьютере, исключает VPN/Tunnel/WSL и использует его для сайта и связанных GetCourse/CDN-доменов. Если физический путь недоступен, используется системный маршрут. Можно также закрепить конкретный адаптер вручную."));
         _routeHost = new TextBox { Header = "Домен или ссылка для правила", PlaceholderText = "iglyrazuma.ru" };
         AttachPasteContextMenu(_routeHost);
         _routeAdapter = new ComboBox { Header = "Подключение для этого сайта", HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -42,13 +42,15 @@ public sealed partial class MainWindow
         panel.Children.Add(Horizontal(save, refresh));
         panel.Children.Add(_routeList); panel.Children.Add(remove); panel.Children.Add(check);
         panel.Children.Add(_routeStatus);
-        panel.Children.Add(MutedText("Правила сохраняются автоматически. При изменении правила встроенный браузер закрывается: потребуется повторный вход. Если адаптер недоступен, скрытого переключения на другой маршрут нет. Внешние домены видеосервера добавляются отдельными правилами."));
+        panel.Children.Add(MutedText("Правила сохраняются автоматически. При изменении правила встроенный браузер закрывается: потребуется повторный вход. Для GetCourse связанные домены видео/CDN наследуют тот же маршрут автоматически; вручную добавлять api*.gcvh.ru, servicecdn.ru или kinescopecdn.net не нужно."));
         panel.Children.Add(MutedText("Прямой режим: IPv4. При включённых правилах работает локальный прокси VideoGrabber; системные HTTP/PAC-прокси не наследуются. Это не настройка VPN для всего компьютера."));
         try
         {
             var loaded = SiteRouteSettings.Load(RoutesPath);
-            _routes = SiteRouteProfiles.NormalizePersisted(loaded);
-            if (_routes.Rules.Count != loaded.Rules.Count) _routes.Save(RoutesPath);
+            var normalized = SiteRouteProfiles.NormalizePersisted(loaded);
+            _routes = MakeRoutesPortable(normalized);
+            if (!loaded.Rules.SequenceEqual(_routes.Rules))
+                _routes.Save(RoutesPath);
         }
         catch (Exception ex) { _routeReadError = SensitiveDataRedactor.Redact(ex.Message); }
         _routePolicy.Update(_routes);
@@ -56,14 +58,48 @@ public sealed partial class MainWindow
         _routeStatus.Text = _routeReadError ?? "Нет автоматического обхода: действуют только сохранённые правила.";
         return Card(panel);
     }
+    private static SiteRouteSettings MakeRoutesPortable(
+        SiteRouteSettings settings)
+    {
+        var available = RouteConnector.GetAdapters()
+            .Select(adapter => adapter.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var rules = settings.Rules
+            .Select(rule =>
+                string.Equals(
+                    rule.AdapterId,
+                    RouteConnector.AutoPhysicalAdapterId,
+                    StringComparison.OrdinalIgnoreCase)
+                || available.Contains(rule.AdapterId)
+                    ? rule
+                    : rule with
+                    {
+                        AdapterId =
+                            RouteConnector.AutoPhysicalAdapterId
+                    })
+            .ToArray();
+
+        return new SiteRouteSettings(rules);
+    }
+
     private void RefreshRouteAdapters()
     {
         try
         {
             _routeAdapter.Items.Clear();
+            _routeAdapter.Items.Add(new ComboBoxItem
+            {
+                Content = "Авто — физический интернет (рекомендуется)",
+                Tag = RouteConnector.AutoPhysicalAdapterId
+            });
             foreach (var item in RouteConnector.GetAdapters())
-                _routeAdapter.Items.Add(new ComboBoxItem { Content = item.Name + " — " + item.Address, Tag = item.Id });
-            if (_routeAdapter.Items.Count > 0) _routeAdapter.SelectedIndex = 0;
+                _routeAdapter.Items.Add(new ComboBoxItem
+                {
+                    Content = item.Name + " — " + item.Address,
+                    Tag = item.Id
+                });
+            _routeAdapter.SelectedIndex = 0;
         }
         catch (Exception ex) { _routeStatus.Text = SensitiveDataRedactor.Redact(ex.Message); }
     }
@@ -71,7 +107,24 @@ public sealed partial class MainWindow
     {
         _routeList.Items.Clear();
         foreach (var rule in _routes.Rules)
-            _routeList.Items.Add(new ComboBoxItem { Content = rule.Host + (rule.IncludeSubdomains ? " (+ поддомены)" : " (точно)") + " → выбранный адаптер", Tag = rule });
+        {
+            var routeLabel = string.Equals(
+                    rule.AdapterId,
+                    RouteConnector.AutoPhysicalAdapterId,
+                    StringComparison.OrdinalIgnoreCase)
+                ? "Авто — физический интернет"
+                : "конкретный адаптер";
+            _routeList.Items.Add(new ComboBoxItem
+            {
+                Content = rule.Host
+                    + (rule.IncludeSubdomains
+                        ? " (+ поддомены)"
+                        : " (точно)")
+                    + " → "
+                    + routeLabel,
+                Tag = rule
+            });
+        }
         if (_routeList.Items.Count > 0) _routeList.SelectedIndex = 0;
     }
     private bool RoutingBusy()
