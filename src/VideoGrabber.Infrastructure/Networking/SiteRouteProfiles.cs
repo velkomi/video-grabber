@@ -16,6 +16,17 @@ public static class SiteRouteProfiles
             ]
         };
 
+    private static readonly string[] GenericGetCourseFamilies =
+    [
+        "getcourse.ru",
+        "gcvh.ru",
+        "kinescopecdn.net",
+        "servicecdn.ru",
+        "vhcdn.com",
+        "trbcdn.net",
+        "gcfiles.net",
+        "kinescope.io"
+    ];
     private static readonly IReadOnlyDictionary<string, string[]> SessionFamilies =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
@@ -32,10 +43,25 @@ public static class SiteRouteProfiles
             ]
         };
 
-    public static IReadOnlyList<string> GetSessionFamilies(string host)
+    public static IReadOnlyList<string> GetSessionFamilies(string host, bool allowCustomRoot = false)
     {
         host = SiteRouteSettings.NormalizeHost(host);
-        return SessionFamilies.TryGetValue(host, out var families) ? families : Array.Empty<string>();
+        if (SessionFamilies.TryGetValue(host, out var families))
+            return families;
+
+        // Provider/CDN hosts are children of an active GetCourse session and must
+        // never become a new root session themselves.
+        if (GenericGetCourseFamilies.Any(family =>
+                host.Equals(family, StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith("." + family, StringComparison.OrdinalIgnoreCase)))
+            return Array.Empty<string>();
+
+        // GetCourse schools commonly use their own domains. Once the user starts
+        // a routed course session on that custom host, inherit the same route for
+        // the known GetCourse/Kinescope delivery families.
+        return allowCustomRoot && !string.IsNullOrWhiteSpace(host)
+            ? GenericGetCourseFamilies
+            : Array.Empty<string>();
     }
 
     public static SiteRouteSettings Merge(SiteRouteSettings current, string host, string adapterId)

@@ -51,6 +51,7 @@ public sealed partial class MainWindow
             }
             else _browserHint.Text = "Выберите найденное видео в списке.";
         };
+        var selectedPauseButton = PauseButton();
         var addQueue = SecondaryButton("Добавить в очередь");
         addQueue.Click += (_, _) => QueueSelectedCandidate();
         var downloadAll = SecondaryButton("Скачать все найденные");
@@ -60,7 +61,7 @@ public sealed partial class MainWindow
 
         panel.Children.Add(_browserAddress);
         panel.Children.Add(TwoColumn(_mediaCandidatesBox, _mediaQualityBox));
-        panel.Children.Add(Horizontal(download, addQueue, downloadAll, howTo));
+        panel.Children.Add(Horizontal(download, selectedPauseButton, addQueue, downloadAll, howTo));
         panel.Children.Add(SectionHeading("Весь курс GetCourse"));
         panel.Children.Add(new TextBlock
         {
@@ -69,12 +70,25 @@ public sealed partial class MainWindow
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = TextBrush
         });
+        _courseQualityBox = new ComboBox
+        {
+            Header = "Качество видео для всего курса",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            SelectedIndex = 3
+        };
+        _courseQualityBox.Items.Add(ComboItem("Низкое — до 360p", "360p"));
+        _courseQualityBox.Items.Add(ComboItem("Среднее — до 480p", "480p"));
+        _courseQualityBox.Items.Add(ComboItem("Высокое — до 720p", "720p"));
+        _courseQualityBox.Items.Add(ComboItem("Лучшее доступное", "best"));
+        panel.Children.Add(_courseQualityBox);
         _courseDownloadButton = PrimaryButton("Скачать весь курс");
         _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
 
         _courseResumeButton = SecondaryButton("Продолжить / открыть папку курса");
         _courseResumeButton.IsEnabled = true;
         _courseResumeButton.Click += async (_, _) => await ResumeWholeGetCourseAsync();
+
+        var coursePauseButton = PauseButton();
 
         _courseClearCacheButton = SecondaryButton("Очистить кэш / временные файлы");
         _courseClearCacheButton.Click += (_, _) => ClearCourseTemporaryFiles();

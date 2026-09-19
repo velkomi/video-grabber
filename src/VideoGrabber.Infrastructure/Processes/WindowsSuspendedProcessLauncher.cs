@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -261,6 +261,7 @@ internal sealed class NativeChildProcessHandle : INativeChildProcessHandle
     private nint _processHandle;
     private WindowsProcessJob? _job;
     private int _disposed;
+    private int _suspended;
 
     public NativeChildProcessHandle(int id, nint processHandle, WindowsProcessJob job,
         nint stdoutRead, nint stderrRead)
@@ -305,6 +306,30 @@ internal sealed class NativeChildProcessHandle : INativeChildProcessHandle
             await Task.Delay(20, token).ConfigureAwait(false);
     }
 
+    public void Suspend()
+    {
+        ThrowIfDisposed();
+        if (Interlocked.Exchange(ref _suspended, 1) != 0) return;
+        var status = NtSuspendProcess(_processHandle);
+        if (status < 0)
+        {
+            Interlocked.Exchange(ref _suspended, 0);
+            throw new Win32Exception(status);
+        }
+    }
+
+    public void Resume()
+    {
+        ThrowIfDisposed();
+        if (Interlocked.Exchange(ref _suspended, 0) == 0) return;
+        var status = NtResumeProcess(_processHandle);
+        if (status < 0)
+        {
+            Interlocked.Exchange(ref _suspended, 1);
+            throw new Win32Exception(status);
+        }
+    }
+
     public void TerminateOwnedTree()
     {
         ThrowIfDisposed();
@@ -347,6 +372,12 @@ internal sealed class NativeChildProcessHandle : INativeChildProcessHandle
     }
 
     private const uint STILL_ACTIVE = 259;
+
+    [DllImport("ntdll.dll")]
+    private static extern int NtSuspendProcess(nint processHandle);
+
+    [DllImport("ntdll.dll")]
+    private static extern int NtResumeProcess(nint processHandle);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetExitCodeProcess(nint processHandle, out uint exitCode);

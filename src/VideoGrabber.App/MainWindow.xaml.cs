@@ -48,6 +48,8 @@ public sealed partial class MainWindow : Window
     private CheckBox _audioOnlyBox = null!;
     private Button _downloadButton = null!;
     private Button _cancelButton = null!;
+    private readonly List<Button> _pauseButtons = [];
+    private bool _operationPaused;
     private Grid _downloadProgressTrack = null!;
     private Border _downloadProgressFill = null!;
     private TextBlock _downloadProgressLabel = null!;
@@ -290,7 +292,8 @@ public sealed partial class MainWindow : Window
             Foreground = MutedBrush,
             Margin = new Thickness(2, 4, 2, 0)
         };
-        var openFolderButton = SecondaryButton("Открыть папку загрузок");
+        var openFolderButton = PrimaryButton("Открыть папку загрузок");
+        var topPauseButton = PauseButton();
         openFolderButton.Click += OpenOutputFolder_Click;
 
         var downloadForm = Vertical(14);
@@ -298,7 +301,7 @@ public sealed partial class MainWindow : Window
         downloadForm.Children.Add(TwoColumn(_outputFolderBox, chooseFolder, secondAuto: true));
         downloadForm.Children.Add(TwoColumn(_qualityBox, _cookiesBox));
         downloadForm.Children.Add(_audioOnlyBox);
-        downloadForm.Children.Add(Horizontal(_downloadButton, _cancelButton, openFolderButton));
+        downloadForm.Children.Add(Horizontal(_downloadButton, topPauseButton, _cancelButton, openFolderButton));
         downloadForm.Children.Add(browserButton);
         downloadForm.Children.Add(browserButtonHint);
         body.Children.Add(Card(downloadForm));
@@ -892,6 +895,67 @@ public sealed partial class MainWindow : Window
         Foreground = MutedBrush
     };
 
+    private Button PauseButton()
+    {
+        var button = SecondaryButton("⏸ Пауза");
+        button.IsEnabled = false;
+        button.Click += (_, _) => TogglePause();
+        _pauseButtons.Add(button);
+        UpdatePauseButtonVisual(button);
+        return button;
+    }
+
+    private void TogglePause()
+    {
+        _operationPaused = !_operationPaused;
+        if (_operationPaused)
+            ProcessPauseRegistry.PauseAll();
+        else
+            ProcessPauseRegistry.ResumeAll();
+        foreach (var button in _pauseButtons)
+            UpdatePauseButtonVisual(button);
+    }
+
+    private void ResetPauseState()
+    {
+        _operationPaused = false;
+        ProcessPauseRegistry.ResumeAll();
+        foreach (var button in _pauseButtons)
+            UpdatePauseButtonVisual(button);
+    }
+
+    private void UpdatePauseButtonsAvailability(bool busy)
+    {
+        foreach (var button in _pauseButtons)
+            button.IsEnabled = busy;
+        if (!busy && _operationPaused)
+            ResetPauseState();
+    }
+
+    private static void UpdatePauseButtonVisual(Button button)
+    {
+        if (ProcessPauseRegistry.IsPaused)
+        {
+            button.Content = "▶ Продолжить";
+            button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 22, 163, 74));
+            button.Foreground = new SolidColorBrush(Colors.White);
+        }
+        else
+        {
+            button.Content = "⏸ Пауза";
+            button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 241, 245, 249));
+            button.Foreground = TextBrush;
+        }
+    }
+
+    private async Task WaitIfPausedAsync(CancellationToken token)
+    {
+        while (_operationPaused)
+        {
+            token.ThrowIfCancellationRequested();
+            await Task.Delay(120, token);
+        }
+    }
     private static Button PrimaryButton(string text) => new()
     {
         Content = text,

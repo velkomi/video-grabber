@@ -16,9 +16,11 @@ public static class DownloadRouteResolver
         var exact = sourceRule ?? refererRule;
         if (exact is not null)
         {
-            var sessionHost = sourceRule is not null ? source.IdnHost : referer!.IdnHost;
-            if (sessionScope is null) policy.ConfigureSession(sessionHost, exact.AdapterId);
-            else sessionScope.ConfigureSession(sessionHost, exact.AdapterId);
+            var sessionUri = sourceRule is not null ? source : referer!;
+            var sessionHost = sessionUri.IdnHost;
+            var allowCustomRoot = LooksLikeGetCoursePage(sessionUri);
+            if (sessionScope is null) policy.ConfigureSession(sessionHost, exact.AdapterId, allowCustomRoot);
+            else sessionScope.ConfigureSession(sessionHost, exact.AdapterId, allowCustomRoot);
             return exact.AdapterId;
         }
 
@@ -38,11 +40,17 @@ public static class DownloadRouteResolver
     {
         ArgumentNullException.ThrowIfNull(saved);
         ArgumentNullException.ThrowIfNull(source);
-        if (saved.Find(source.IdnHost) is not null && SiteRouteProfiles.GetSessionFamilies(source.IdnHost).Count > 0) return true;
-        return referer is not null && saved.Find(source.IdnHost) is null
+        if (saved.Find(source.IdnHost) is not null
+            && SiteRouteProfiles.GetSessionFamilies(source.IdnHost, LooksLikeGetCoursePage(source)).Count > 0)
+            return true;
+        return referer is not null
+            && saved.Find(source.IdnHost) is null
             && saved.Find(referer.IdnHost) is not null
-            && SiteRouteProfiles.GetSessionFamilies(referer.IdnHost).Count > 0;
+            && SiteRouteProfiles.GetSessionFamilies(referer.IdnHost, LooksLikeGetCoursePage(referer)).Count > 0;
     }
+
+    private static bool LooksLikeGetCoursePage(Uri uri)
+        => uri.AbsolutePath.Contains("/teach/control/", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class DownloadRouteScope : IDisposable

@@ -19,7 +19,10 @@ public sealed record CourseDownloadState(
     DateTimeOffset UpdatedUtc,
     int NextLessonIndex,
     string[] CompletedLessonKeys,
-    CourseDownloadLessonState[] Lessons);
+    CourseDownloadLessonState[] Lessons)
+{
+    public string Quality { get; init; } = "best";
+}
 
 public static class CourseDownloadStateStore
 {
@@ -37,7 +40,8 @@ public static class CourseDownloadStateStore
         GetCourseCoursePlan plan,
         IEnumerable<string>? completedLessonKeys = null,
         int nextLessonIndex = 0,
-        DateTimeOffset? createdUtc = null)
+        DateTimeOffset? createdUtc = null,
+        string? quality = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         var completed = (completedLessonKeys ?? [])
@@ -56,7 +60,10 @@ public static class CourseDownloadStateStore
                 lesson.Uri.AbsoluteUri,
                 lesson.Title,
                 lesson.ModuleFolders.ToArray(),
-                lesson.LessonOrdinal)).ToArray());
+                lesson.LessonOrdinal)).ToArray())
+        {
+            Quality = string.IsNullOrWhiteSpace(quality) ? "best" : quality.Trim()
+        };
     }
 
     public static string StatePath(string courseRoot)

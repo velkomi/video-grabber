@@ -29,9 +29,9 @@ public sealed class SiteRoutePolicy
         ClearSession();
     }
 
-    public bool ConfigureSession(string sourceHost, string adapterId)
+    public bool ConfigureSession(string sourceHost, string adapterId, bool allowCustomRoot = false)
     {
-        var families = SiteRouteProfiles.GetSessionFamilies(sourceHost);
+        var families = SiteRouteProfiles.GetSessionFamilies(sourceHost, allowCustomRoot);
         if (families.Count == 0) return false;
         if (string.IsNullOrWhiteSpace(adapterId)) throw new ArgumentException("Adapter is required.", nameof(adapterId));
         lock (_sessionGate)
@@ -126,14 +126,14 @@ public sealed class SiteRoutePolicy
 
         internal SessionScope(SiteRoutePolicy policy) => _policy = policy;
 
-        public bool ConfigureSession(string sourceHost, string adapterId)
+        public bool ConfigureSession(string sourceHost, string adapterId, bool allowCustomRoot = false)
         {
             lock (_policy._sessionGate)
             {
                 ObjectDisposedException.ThrowIf(_disposed, this);
                 // A browser or another owner may already hold (or replace) the session.
                 if (_policy._session is { } current && current.Version != _ownedVersion) return false;
-                if (!_policy.ConfigureSession(sourceHost, adapterId)) return false;
+                if (!_policy.ConfigureSession(sourceHost, adapterId, allowCustomRoot)) return false;
                 _ownedVersion = _policy._session!.Version;
                 return true;
             }

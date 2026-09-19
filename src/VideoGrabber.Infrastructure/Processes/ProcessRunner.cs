@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text;
@@ -29,7 +29,7 @@ public sealed class ProcessRunner : IProcessRunner
         DiagnosticHub.Log.Write(stage, "started", "processId=" + childId, jobId: jobId);
         try
         {
-            try { process = WindowsSuspendedProcessLauncher.Start(spec); }
+            try { process = WindowsSuspendedProcessLauncher.Start(spec); ProcessPauseRegistry.Register(process); }
             catch (Exception ex) when (ex is Win32Exception or IOException)
             {
                 DiagnosticHub.Log.Write(stage, "failed", ex.GetType().Name, jobId: jobId);
@@ -86,6 +86,8 @@ public sealed class ProcessRunner : IProcessRunner
         }
         finally
         {
+            if (process is not null)
+                ProcessPauseRegistry.Unregister(process);
             if (process is not null && !disposedByCleanup)
             {
                 try { process.TerminateOwnedTree(); }

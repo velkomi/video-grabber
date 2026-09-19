@@ -14,6 +14,7 @@ public sealed partial class MainWindow
     private Button _courseDownloadButton = null!;
     private Button _courseResumeButton = null!;
     private Button _courseClearCacheButton = null!;
+    private ComboBox _courseQualityBox = null!;
     private Grid _courseProgressTrack = null!;
     private Border _courseProgressFill = null!;
     private TextBlock _courseProgressPercent = null!;
@@ -32,6 +33,7 @@ public sealed partial class MainWindow
     private string? _cachedCourseRootFolder;
     private Uri? _cachedCourseRoot;
     private DateTimeOffset _courseStateCreatedUtc;
+    private string _courseActiveQuality = "best";
     private int _courseResumeLessonIndex;
     private readonly HashSet<string> _courseCompletedLessons = new(StringComparer.Ordinal);
     private DateTimeOffset _courseWorkStartedUtc;
@@ -249,6 +251,8 @@ public sealed partial class MainWindow
         if (_courseDownloadActive || _browserPageUri is null)
             return false;
 
+        SetCourseQualitySelection(_courseActiveQuality);
+
         var originalCookieIndex = _cookiesBox.SelectedIndex;
         SelectEmbeddedBrowserSession();
         _courseDownloadActive = true;
@@ -325,6 +329,7 @@ public sealed partial class MainWindow
         {
             StopCourseElapsedTimer();
             UpdateCourseElapsed();
+            ResetPauseState();
             _courseCancellation?.Dispose();
             _courseCancellation = null;
             _courseDownloadActive = false;
@@ -350,6 +355,8 @@ public sealed partial class MainWindow
             _outputFolderBox.Text = parent;
         _courseStateCreatedUtc = state.CreatedUtc;
         _courseProcessStartedUtc = state.CreatedUtc;
+        _courseActiveQuality = string.IsNullOrWhiteSpace(state.Quality) ? "best" : state.Quality;
+        SetCourseQualitySelection(_courseActiveQuality);
         _courseCompletedLessons.Clear();
 
         var knownCompleted = new HashSet<string>(
@@ -475,7 +482,8 @@ public sealed partial class MainWindow
             _cachedCoursePlan,
             _courseCompletedLessons,
             _courseResumeLessonIndex,
-            _courseStateCreatedUtc);
+            _courseStateCreatedUtc,
+            _courseActiveQuality);
         await CourseDownloadStateStore.SaveAtomicAsync(
             _cachedCourseRootFolder,
             state,
@@ -555,6 +563,63 @@ public sealed partial class MainWindow
             $"disk-complete={_courseCompletedLessons.Count}/{plan.Lessons.Length} added={_courseCompletedLessons.Count - before}");
     }
 
+    private async Task<bool> FinalVerifyCourseAsync(
+        GetCourseCoursePlan plan,
+        string rootFolder,
+        CancellationToken token)
+    {
+        await WaitIfPausedAsync(token);
+        _courseStageText.Text = "Финальная перепроверка курса…";
+        _browserHint.Text = "Перепроверяю все уроки, видео, изображения и вложения по сохранённым manifest-файлам.";
+
+        var normalizedImages = NormalizeCourseImageExtensionsUnderRoot(rootFolder);
+        var recovered = await RecoverCompletedCourseJobsAsync(rootFolder, token);
+        _courseCompletedLessons.Clear();
+        ReconcileCompletedLessonsFromDisk(plan, rootFolder);
+        _courseResumeLessonIndex = FirstIncompleteLessonIndex(plan);
+        await PersistCourseStateSafeAsync();
+
+        if (_courseCompletedLessons.Count < plan.Lessons.Length)
+        {
+            var missing = plan.Lessons.Length - _courseCompletedLessons.Count;
+            _courseStageText.Text = $"После перепроверки обнаружено незавершённых уроков: {missing}. Идёт повторное скачивание.";
+            _courseCurrentText.Text = $"Первый незавершённый урок: {_courseResumeLessonIndex + 1}/{plan.Lessons.Length}.";
+            _browserHint.Text = $"Финальная проверка нашла {missing} незавершённых уроков. VideoGrabber продолжает скачивание автоматически.";
+            DiagnosticHub.Log.Write("course.final-verify", "observed",
+                $"missing={missing} normalizedImages={normalizedImages} recovered={recovered}");
+            return false;
+        }
+
+        var removed = PurgeVerifiedCourseCache(rootFolder);
+        DiagnosticHub.Log.Write("course.final-verify", "succeeded",
+            $"lessons={plan.Lessons.Length} normalizedImages={normalizedImages} recovered={recovered} cacheRemoved={removed}");
+        _browserHint.Text = $"Финальная проверка завершена: все {plan.Lessons.Length} уроков подтверждены, временный кэш очищен.";
+        return true;
+    }
+
+    private static int PurgeVerifiedCourseCache(string rootFolder)
+    {
+        if (!Directory.Exists(rootFolder)) return 0;
+        var removed = 0;
+        foreach (var job in Directory.EnumerateDirectories(rootFolder, ".vg-job-*", SearchOption.AllDirectories)
+                     .OrderByDescending(path => path.Length).ToArray())
+        {
+            try
+            {
+                Directory.Delete(job, recursive: true);
+                removed++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+
+        foreach (var file in Directory.EnumerateFiles(rootFolder, "*", SearchOption.AllDirectories).ToArray())
+        {
+            if (!IsCourseTemporaryFile(file)) continue;
+            try { File.Delete(file); removed++; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        }
+        return removed;
+    }
     private static bool CourseLessonLooksCompleteOnDisk(
         string courseRoot,
         GetCourseLessonPlan lesson)
@@ -596,69 +661,49 @@ public sealed partial class MainWindow
                 .Any(IsCourseTemporaryFile))
                 return false;
 
-            var htmlPath = Path.Combine(
-                folder,
-                "Страница.html");
-            var htmlInfo = new FileInfo(htmlPath);
-            if (htmlInfo.Length > 8_000_000)
+            if (!CourseLessonVerificationManifestStore.TryLoad(folder, out var manifest)
+                || manifest is null)
                 return false;
 
-            var html = File.ReadAllText(htmlPath);
-            var expectedVideoSources =
-                System.Text.RegularExpressions.Regex.Matches(
-                    html,
-                    @"data-iframe-src *= *[""'](?<url>[^""']*/sign-player/[^""']*)[""']",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
-                    | System.Text.RegularExpressions.RegexOptions.CultureInvariant)
-                .Select(match =>
-                    match.Groups["url"].Value)
-                .Distinct(StringComparer.Ordinal)
-                .Count();
+            if (!Uri.TryCreate(manifest.LessonUrl, UriKind.Absolute, out var manifestLesson)
+                || !string.Equals(
+                    GetCourseCourseStructure.CanonicalKey(manifestLesson),
+                    GetCourseCourseStructure.CanonicalKey(lesson.Uri),
+                    StringComparison.Ordinal))
+                return false;
 
             var mediaExtensions = new HashSet<string>(
-                [".mp4", ".mkv", ".webm", ".mov",
-                 ".m4a", ".mp3", ".aac", ".opus", ".ts"],
+                [".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3", ".aac", ".opus", ".ts"],
                 StringComparer.OrdinalIgnoreCase);
-            var readyMedia = Directory.EnumerateFiles(
-                    folder,
-                    "*",
-                    SearchOption.TopDirectoryOnly)
-                .Count(path =>
-                    mediaExtensions.Contains(
-                        Path.GetExtension(path))
-                    && new FileInfo(path).Length > 0);
-
-            if (readyMedia < expectedVideoSources)
+            var readyMedia = Directory.EnumerateFiles(folder, "*", SearchOption.TopDirectoryOnly)
+                .Where(path => mediaExtensions.Contains(Path.GetExtension(path))
+                    && new FileInfo(path).Length > 0)
+                .ToArray();
+            if (readyMedia.Length < manifest.ExpectedVideoCount)
                 return false;
 
-            var expectedAttachments =
-                System.Text.RegularExpressions.Regex.Matches(
-                    html,
-                    @"href *= *[""'](?<url>[^""']+[.](?:pdf|docx?|xlsx?|pptx?|zip|rar|7z|txt|csv|rtf|odt|ods|epub)(?:[?][^""']*)?)[""']",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
-                    | System.Text.RegularExpressions.RegexOptions.CultureInvariant)
-                .Select(match =>
-                    match.Groups["url"].Value)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Count();
-
-            if (expectedAttachments > 0)
+            if (manifest.ExpectedVideoCount > 1)
             {
-                var attachments = Path.Combine(
-                    folder,
-                    "Вложения");
-                var readyAttachments =
-                    Directory.Exists(attachments)
-                        ? Directory.EnumerateFiles(
-                                attachments,
-                                "*",
-                                SearchOption.TopDirectoryOnly)
-                            .Count(path =>
-                                new FileInfo(path).Length > 0)
-                        : 0;
-                if (readyAttachments < expectedAttachments)
-                    return false;
+                for (var ordinal = 1; ordinal <= manifest.ExpectedVideoCount; ordinal++)
+                {
+                    var marker = $" - Видео {ordinal:00} - ";
+                    if (!readyMedia.Any(path =>
+                            Path.GetFileNameWithoutExtension(path)
+                                .Contains(marker, StringComparison.OrdinalIgnoreCase)))
+                        return false;
+                }
             }
+
+            var readyAssets = 0;
+            foreach (var assetFolderName in new[] { "Изображения", "Вложения" })
+            {
+                var assetFolder = Path.Combine(folder, assetFolderName);
+                if (!Directory.Exists(assetFolder)) continue;
+                readyAssets += Directory.EnumerateFiles(assetFolder, "*", SearchOption.TopDirectoryOnly)
+                    .Count(path => !IsCourseTemporaryFile(path) && new FileInfo(path).Length > 0);
+            }
+            if (readyAssets < manifest.ExpectedAssetCount)
+                return false;
 
             return true;
         }
@@ -705,6 +750,10 @@ public sealed partial class MainWindow
             _browserHint.Text = "Страница курса ещё не открыта.";
             return;
         }
+
+        if (!resume)
+            _courseActiveQuality = SelectedCourseQuality();
+        SetCourseQualitySelection(_courseActiveQuality);
 
         var originalCookieIndex = _cookiesBox.SelectedIndex;
         SelectEmbeddedBrowserSession();
@@ -768,9 +817,14 @@ public sealed partial class MainWindow
             var recovered = await RecoverCompletedCourseJobsAsync(
                 rootFolder,
                 token);
-            if (recovered > 0)
+            var normalizedImages = NormalizeCourseImageExtensionsUnderRoot(rootFolder);
+            _courseCompletedLessons.Clear();
+            ReconcileCompletedLessonsFromDisk(plan, rootFolder);
+            _courseResumeLessonIndex = FirstIncompleteLessonIndex(plan);
+            await PersistCourseStateSafeAsync();
+            if (recovered > 0 || normalizedImages > 0)
                 _browserHint.Text =
-                    $"Восстановлено готовых видео из старых рабочих папок: {recovered}.";
+                    $"Перед запуском перепроверен архив: восстановлено видео {recovered}, исправлено расширений изображений {normalizedImages}.";
 
             BeginCourseDownloadProgress(plan, resume);
 
@@ -821,6 +875,7 @@ public sealed partial class MainWindow
             StopCourseElapsedTimer();
             UpdateCourseElapsed();
             await PersistCourseStateSafeAsync();
+            ResetPauseState();
             _courseCancellation?.Dispose();
             _courseCancellation = null;
             _courseDownloadActive = false;
@@ -841,6 +896,7 @@ public sealed partial class MainWindow
         while (true)
         {
             token.ThrowIfCancellationRequested();
+            await WaitIfPausedAsync(token);
             try
             {
                 var completedBeforePass =
@@ -853,7 +909,10 @@ public sealed partial class MainWindow
 
                 if (_courseCompletedLessons.Count
                     >= plan.Lessons.Length)
-                    return;
+                {
+                    if (await FinalVerifyCourseAsync(plan, rootFolder, token))
+                        return;
+                }
 
                 var madeProgress =
                     _courseCompletedLessons.Count
@@ -1081,6 +1140,7 @@ public sealed partial class MainWindow
              lessonIndex++)
         {
             token.ThrowIfCancellationRequested();
+            await WaitIfPausedAsync(token);
             var lesson = plan.Lessons[lessonIndex];
             var lessonKey = GetCourseCourseStructure.CanonicalKey(lesson.Uri);
             if (_courseCompletedLessons.Contains(lessonKey))
@@ -1180,8 +1240,21 @@ public sealed partial class MainWindow
             if (candidates.Count == 0)
                 candidates = await WaitForCourseMediaAsync(token);
 
+            var quality = CourseQuality();
+            await CourseLessonVerificationManifestStore.SaveAtomicAsync(
+                lessonFolder,
+                new CourseLessonVerificationManifest(
+                    CourseLessonVerificationManifestStore.CurrentSchemaVersion,
+                    lesson.Uri.AbsoluteUri,
+                    candidates.Count,
+                    archive.ExpectedAssets,
+                    quality,
+                    DateTimeOffset.UtcNow),
+                token);
+
             if (candidates.Count == 0)
             {
+
                 if (archive.PageSaved && archive.AssetErrors == 0)
                     await MarkCourseLessonCompletedAsync(
                         lessonKey,
@@ -1195,13 +1268,13 @@ public sealed partial class MainWindow
                 continue;
             }
 
-            var quality = CourseQuality();
             var lessonVideoErrors = 0;
             for (var videoIndex = 0;
                  videoIndex < candidates.Count;
                  videoIndex++)
             {
                 token.ThrowIfCancellationRequested();
+                await WaitIfPausedAsync(token);
                 var candidate = candidates[videoIndex];
                 var baseName =
                     GetCourseCourseStructure.VideoBaseName(
@@ -1410,12 +1483,20 @@ public sealed partial class MainWindow
         string requestedQuality,
         int attempt)
     {
-        if (!string.Equals(
-                requestedQuality,
-                "best",
-                StringComparison.Ordinal)
-            || attempt < 3
-            || candidate.HlsManifest is not { IsMaster: true } info)
+        if (candidate.HlsManifest is not { IsMaster: true } info)
+            return requestedQuality;
+
+        if (!string.Equals(requestedQuality, "best", StringComparison.Ordinal))
+        {
+            // Course quality is a ceiling, not an exact-height requirement.
+            // Example: "до 480p" accepts 360p when 480p is absent.
+            var selected = HlsTrackSelector.Select(info, requestedQuality);
+            return selected?.Video.Height is > 0
+                ? selected.Video.Height.Value + "p"
+                : requestedQuality;
+        }
+
+        if (attempt < 3)
             return requestedQuality;
 
         var heights = info.Variants
@@ -2210,10 +2291,25 @@ public sealed partial class MainWindow
         }
     }
 
-    private string CourseQuality()
-        => (_qualityBox.SelectedItem as ComboBoxItem)?
-               .Tag?.ToString()
-           ?? "best";
+    private string SelectedCourseQuality()
+        => (_courseQualityBox?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "best";
+
+    private string CourseQuality() => _courseActiveQuality;
+
+    private void SetCourseQualitySelection(string quality)
+    {
+        if (_courseQualityBox is null) return;
+        for (var index = 0; index < _courseQualityBox.Items.Count; index++)
+        {
+            if (_courseQualityBox.Items[index] is ComboBoxItem item
+                && string.Equals(item.Tag?.ToString(), quality, StringComparison.OrdinalIgnoreCase))
+            {
+                _courseQualityBox.SelectedIndex = index;
+                return;
+            }
+        }
+        _courseQualityBox.SelectedIndex = Math.Max(0, _courseQualityBox.Items.Count - 1);
+    }
 
     private void SelectEmbeddedBrowserSession()
     {
@@ -2422,6 +2518,9 @@ public sealed partial class MainWindow
         if (_courseDownloadButton is not null)
             _courseDownloadButton.IsEnabled = !busy;
 
+        if (_courseQualityBox is not null)
+            _courseQualityBox.IsEnabled = !busy;
+
         if (_courseResumeButton is not null)
             _courseResumeButton.IsEnabled = !busy;
 
@@ -2438,5 +2537,7 @@ public sealed partial class MainWindow
         if (_cancelButton is not null)
             _cancelButton.IsEnabled =
                 busy || _isInstallingComponents;
+
+        UpdatePauseButtonsAvailability(busy || _isInstallingComponents);
     }
 }

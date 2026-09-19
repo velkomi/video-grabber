@@ -34,7 +34,7 @@ public sealed partial class MainWindow
 
         var capabilities = Vertical(8);
         capabilities.Children.Add(SectionHeading("Что умеет VideoGrabber"));
-        capabilities.Children.Add(MutedText("• GetCourse / iglyrazuma.ru: поиск HLS master, выбор качества и загрузка через встроенный браузер."));
+        capabilities.Children.Add(MutedText("• GetCourse, включая школы на собственных доменах: поиск HLS master, выбор качества и загрузка через встроенный браузер."));
         capabilities.Children.Add(MutedText("• Kinescope и обычный HLS/DASH/MP4 без DRM; split video/audio объединяется FFmpeg."));
         capabilities.Children.Add(MutedText("• Другие сайты, которые поддерживает установленный yt-dlp, если у пользователя есть доступ к видео."));
         capabilities.Children.Add(MutedText("• MP3, быстрая обрезка/склейка, локальная расшифровка Whisper и точечная маршрутизация сайтов."));
@@ -44,9 +44,9 @@ public sealed partial class MainWindow
         getCourse.Children.Add(MutedText("1. Вставьте ссылку на урок и нажмите «Открыть во встроенном браузере»."));
         getCourse.Children.Add(MutedText("2. Если сайт просит вход, введите логин и пароль прямо на странице GetCourse. VideoGrabber пароль не получает."));
         getCourse.Children.Add(MutedText("3. Дождитесь списка «Видео 01, Видео 02…». Запускать каждое видео вручную не требуется."));
-        getCourse.Children.Add(MutedText("4. Выберите нужное качество: 360p, 480p, 720p и выше, если оно есть в master-потоке."));
+        getCourse.Children.Add(MutedText("4. Для отдельного видео выберите нужное качество. Для всего курса есть отдельный предел: до 360p, до 480p, до 720p или лучшее доступное; если точной высоты нет, берётся ближайшая доступная ниже предела."));
         getCourse.Children.Add(MutedText("5. Нажмите «Скачать выбранное видео» или «Скачать все найденные». Перед загрузкой выбранная HLS-дорожка автоматически проверяется."));
-        getCourse.Children.Add(MutedText("6. Если открыта общая страница тренинга/курса, отдельная кнопка «Скачать весь курс» проходит доступные модули и уроки, создаёт папки по структуре курса и не заменяет обычное скачивание текущей страницы."));
+        getCourse.Children.Add(MutedText("6. «Скачать весь курс» проходит модули и уроки, сохраняет Word/HTML/изображения/вложения/видео, перед запуском сверяет уже скачанное, а в конце выполняет полную проверку и автоматически повторяет пропуски. Кнопка «Пауза» не отменяет работу и превращается в «Продолжить»."));
         getCourse.Children.Add(MutedText("Если master получить не удалось, запустите ролик на несколько секунд: это включает резервное обнаружение media-потока."));
         body.Children.Add(Card(getCourse));
 

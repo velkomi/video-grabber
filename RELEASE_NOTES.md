@@ -1,4 +1,17 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.25] - 2026-09-19
+
+- Status: course integrity / pause / quality / archive portability candidate.
+- Previous version: 0.1.10-preview.24.
+- Image repair: malformed image names that looked like extensions are normalized from MIME/file signatures. Existing archive audit found 11 such files; all 11 were confirmed JPEG/JFIF and safely renamed to `.jpg` with no collisions. Seven existing lesson HTML files were augmented with local image references.
+- Pause/resume: shared `⏸ Пауза` / green `▶ Продолжить` control is exposed in the main downloader, selected browser video area, whole-course area and audio/text area. Active owned child processes and logical course/archive loops are paused and resumed without treating pause as cancellation.
+- Course quality: whole-course UI now offers 360p ceiling, 480p ceiling, 720p ceiling and best available. The selected tier persists in course state; HLS course downloads choose the best available track not exceeding the selected ceiling.
+- Integrity manifests: every visited lesson writes `VideoGrabber.lesson.json` from the live page with expected video/material counts and selected quality. A lesson with multiple videos is complete only when every `Видео 01…NN` file is present and non-empty.
+- Pre-run reconciliation: every whole-course start checks the saved files against lesson manifests. Legacy lessons without manifests are intentionally revisited once to rebuild authoritative expectations instead of being trusted from stale HTML.
+- Final verification: after an apparently complete pass the entire course is reconciled again. If anything is missing the UI reports that final verification found incomplete content and automatic downloading continues. `.vg-job-*` and course temporary files are purged only after the final verification confirms all lessons.
+- Module 3 audit at packaging time: Day 1 currently lacks videos 03/16/21; Day 2 lacks 01/06/12/16. These seven are therefore not considered complete by the new numbered-video verification.
+- GetCourse portability: standard course traversal is already host-agnostic; custom-domain GetCourse pages now also receive GetCourse/Kinescope CDN route inheritance when the source page is a real `/teach/control/` page. Provider/CDN hosts cannot become a root session, and ordinary routed sites remain isolated.
+- Verification: targeted new-feature suite 67/67; route regression recheck 28/28; full gate Core 32/32, Infrastructure 660 passed / 0 failed / 14 existing live-tool skips, Worker 31/31; Local/Managed/API/Worker Release builds 0 warnings/errors before final packaging.
 
 ## [0.1.10-preview.24] - 2026-09-19
 

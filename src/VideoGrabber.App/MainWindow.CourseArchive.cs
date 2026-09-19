@@ -17,7 +17,8 @@ public sealed partial class MainWindow
         bool PageSaved,
         int AssetsSaved,
         int AssetErrors,
-        int AssetsUnavailable = 0);
+        int AssetsUnavailable = 0,
+        int ExpectedAssets = 0);
 
     private enum CourseAssetOutcome
     {
@@ -85,6 +86,7 @@ public sealed partial class MainWindow
         foreach (var asset in snapshot.Assets)
         {
             token.ThrowIfCancellationRequested();
+            await WaitIfPausedAsync(token);
             try
             {
                 var outcome = await DownloadCourseAssetAsync(
@@ -129,6 +131,12 @@ public sealed partial class MainWindow
             }
         }
 
+        await File.WriteAllTextAsync(
+            html,
+            BuildOfflineCourseHtml(snapshot.Html, lessonFolder),
+            new UTF8Encoding(false),
+            token);
+
         DiagnosticHub.Log.Write(
             "course.archive",
             "succeeded",
@@ -138,7 +146,7 @@ public sealed partial class MainWindow
             + unavailable
             + "; asset errors "
             + errors);
-        return new(true, saved, errors, unavailable);
+        return new(true, saved, errors, unavailable, snapshot.Assets.Count);
     }
 
     private async Task<CourseLessonSnapshot?>
@@ -554,8 +562,7 @@ public sealed partial class MainWindow
                     fallback,
                     serverName);
 
-            if (string.IsNullOrWhiteSpace(
-                    Path.GetExtension(fileName)))
+            if (!HasKnownAssetExtension(fileName))
             {
                 var inferred = ExtensionForContentType(
                     response.Content.Headers.ContentType?.MediaType);
@@ -585,7 +592,11 @@ public sealed partial class MainWindow
             if (File.Exists(target))
             {
                 if (new FileInfo(target).Length > 0)
+                {
+                    if (asset.Kind == "image")
+                        _ = NormalizeCourseImageFile(target, response.Content.Headers.ContentType?.MediaType);
                     return CourseAssetOutcome.Saved;
+                }
                 File.Delete(target);
             }
 
@@ -606,6 +617,7 @@ public sealed partial class MainWindow
                     var buffer = new byte[131072];
                     while (true)
                     {
+                        await WaitIfPausedAsync(token);
                         var read = await input.ReadAsync(
                             buffer,
                             token);
@@ -628,6 +640,8 @@ public sealed partial class MainWindow
                 if (File.Exists(target))
                     File.Delete(target);
                 File.Move(temp, target);
+                if (asset.Kind == "image")
+                    target = NormalizeCourseImageFile(target, response.Content.Headers.ContentType?.MediaType);
                 DiagnosticHub.Log.Write(
                     "course.asset",
                     "succeeded",
@@ -740,6 +754,137 @@ public sealed partial class MainWindow
             "Слишком много файлов с одинаковым именем.");
     }
 
+    private static bool HasKnownAssetExtension(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        return extension is ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif" or ".svg"
+            or ".pdf" or ".zip" or ".rar" or ".7z" or ".txt" or ".csv" or ".rtf"
+            or ".doc" or ".docx" or ".xls" or ".xlsx" or ".ppt" or ".pptx"
+            or ".odt" or ".ods" or ".epub";
+    }
+
+    private static bool HasKnownImageExtension(string path)
+    {
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        return extension is ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif" or ".svg";
+    }
+
+    private static string NormalizeCourseImageFile(string path, string? mediaType)
+    {
+        if (!File.Exists(path)) return path;
+        var desired = ExtensionForContentType(mediaType);
+        if (desired is not (".jpg" or ".png" or ".webp" or ".gif" or ".svg"))
+            desired = DetectImageExtension(path);
+        if (desired is null) return path;
+
+        var current = Path.GetExtension(path).ToLowerInvariant();
+        if (current == desired || (current == ".jpeg" && desired == ".jpg")) return path;
+        var target = HasKnownImageExtension(path)
+            ? Path.ChangeExtension(path, desired)
+            : path + desired;
+        if (string.Equals(target, path, StringComparison.OrdinalIgnoreCase)) return path;
+        if (File.Exists(target))
+        {
+            try
+            {
+                if (new FileInfo(target).Length == new FileInfo(path).Length)
+                {
+                    File.Delete(path);
+                    return target;
+                }
+            }
+            catch (IOException) { }
+            target = AvailableCourseAssetPath(Path.GetDirectoryName(path)!, Path.GetFileName(target));
+        }
+        File.Move(path, target);
+        return target;
+    }
+
+    private static string? DetectImageExtension(string path)
+    {
+        try
+        {
+            Span<byte> header = stackalloc byte[16];
+            using var stream = File.OpenRead(path);
+            var read = stream.Read(header);
+            if (read >= 3 && header[0] == 0xff && header[1] == 0xd8 && header[2] == 0xff) return ".jpg";
+            if (read >= 8 && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4e && header[3] == 0x47) return ".png";
+            if (read >= 12 && Encoding.ASCII.GetString(header[..4]) == "RIFF" && Encoding.ASCII.GetString(header.Slice(8, 4)) == "WEBP") return ".webp";
+            if (read >= 6 && Encoding.ASCII.GetString(header[..3]) == "GIF") return ".gif";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        return null;
+    }
+
+    private static int NormalizeCourseImageExtensionsUnderRoot(string root)
+    {
+        if (!Directory.Exists(root)) return 0;
+        var renamed = 0;
+        foreach (var directory in Directory.EnumerateDirectories(root, "Изображения", SearchOption.AllDirectories))
+        {
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly).ToArray())
+            {
+                if (HasKnownImageExtension(file)) continue;
+                try
+                {
+                    var normalized = NormalizeCourseImageFile(file, null);
+                    if (!string.Equals(normalized, file, StringComparison.OrdinalIgnoreCase)) renamed++;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        return renamed;
+    }
+
+    private static string BuildOfflineCourseHtml(string sourceHtml, string lessonFolder)
+    {
+        var imagesDirectory = Path.Combine(lessonFolder, "Изображения");
+        var attachmentsDirectory = Path.Combine(lessonFolder, "Вложения");
+        var images = Directory.Exists(imagesDirectory)
+            ? Directory.EnumerateFiles(imagesDirectory, "*", SearchOption.TopDirectoryOnly)
+                .Where(path => HasKnownImageExtension(path) && new FileInfo(path).Length > 0).ToArray()
+            : [];
+        var attachments = Directory.Exists(attachmentsDirectory)
+            ? Directory.EnumerateFiles(attachmentsDirectory, "*", SearchOption.TopDirectoryOnly)
+                .Where(path => new FileInfo(path).Length > 0).ToArray()
+            : [];
+        if (images.Length == 0 && attachments.Length == 0) return sourceHtml;
+
+        var builder = new StringBuilder();
+        builder.Append("<section id=\"videograbber-offline-assets\" style=\"padding:16px;margin:12px 0;border:1px solid #d8e0ea;border-radius:10px;background:#fff\">");
+        builder.Append("<h2>Сохранённые материалы урока</h2>");
+        foreach (var image in images)
+        {
+            var name = Path.GetFileName(image);
+            var relative = "Изображения/" + name;
+            builder.Append("<figure><img loading=\"lazy\" style=\"max-width:100%;height:auto\" src=\"")
+                .Append(WebUtility.HtmlEncode(relative)).Append("\" alt=\"")
+                .Append(WebUtility.HtmlEncode(name)).Append("\"><figcaption>")
+                .Append(WebUtility.HtmlEncode(name)).Append("</figcaption></figure>");
+        }
+        if (attachments.Length > 0)
+        {
+            builder.Append("<h3>Вложения</h3><ul>");
+            foreach (var attachment in attachments)
+            {
+                var name = Path.GetFileName(attachment);
+                var relative = "Вложения/" + name;
+                builder.Append("<li><a href=\"").Append(WebUtility.HtmlEncode(relative)).Append("\">")
+                    .Append(WebUtility.HtmlEncode(name)).Append("</a></li>");
+            }
+            builder.Append("</ul>");
+        }
+        builder.Append("</section>");
+
+        var html = sourceHtml ?? string.Empty;
+        var body = html.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
+        if (body >= 0)
+        {
+            var end = html.IndexOf('>', body);
+            if (end >= 0) return html.Insert(end + 1, builder.ToString());
+        }
+        return builder + html;
+    }
     private static string? ExtensionForContentType(
         string? mediaType)
         => mediaType?.ToLowerInvariant() switch

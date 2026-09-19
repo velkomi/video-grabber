@@ -12,5 +12,7 @@ internal interface INativeChildProcessHandle : IDisposable
     bool HasExited { get; }
     int ExitCode { get; }
     Task WaitForExitAsync(CancellationToken token);
+    void Suspend();
+    void Resume();
     void TerminateOwnedTree();
 }

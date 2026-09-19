@@ -164,6 +164,7 @@ public sealed partial class MainWindow
 
     private void CancelOperation()
     {
+        ResetPauseState();
         _progressOwner = null;
         _courseCancellation?.Cancel();
         _operations.Cancel();
@@ -175,12 +176,14 @@ public sealed partial class MainWindow
     {
         _downloadButton.IsEnabled = _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive;
         _cancelButton.IsEnabled = busy || _courseDownloadActive;
+        UpdatePauseButtonsAvailability(busy || _courseDownloadActive);
         UpdateCourseControls();
     }
 
     // The service or local operation has already computed completion exactly once.
     private void CompleteOperation(OperationCompletion completion)
     {
+        ResetPauseState();
         _operation = null;
         SetOperationControls(false);
         switch (completion)

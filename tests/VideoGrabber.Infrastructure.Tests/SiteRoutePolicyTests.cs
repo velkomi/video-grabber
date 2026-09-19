@@ -129,3 +129,29 @@ public sealed partial class SiteRoutePolicyTests
         Assert.Equal("ethernet-b", policy.ResolveAdapterId("gc79.vhcdn.com"));
     }
 }
+
+public sealed partial class SiteRoutePolicyTests
+{
+    [Fact]
+    public void Custom_domain_GetCourse_session_routes_known_media_families()
+    {
+        var policy = new SiteRoutePolicy(new SiteRouteSettings([new("academy.example", "ethernet")]));
+        Assert.True(policy.ConfigureSession("academy.example", "ethernet", allowCustomRoot: true));
+        Assert.Equal("ethernet", policy.ResolveAdapterId("api3.gcvh.ru"));
+        Assert.Equal("ethernet", policy.ResolveAdapterId("vh-23.servicecdn.ru"));
+        Assert.Equal("ethernet", policy.ResolveAdapterId("vh-79-integros.kinescopecdn.net"));
+    }
+
+    [Theory]
+    [InlineData("api2.gcvh.ru")]
+    [InlineData("vhapi02.gcfiles.net")]
+    [InlineData("vh-23.servicecdn.ru")]
+    [InlineData("kinescope.io")]
+    public void Provider_hosts_cannot_replace_custom_course_root_session(string host)
+    {
+        var policy = new SiteRoutePolicy(new SiteRouteSettings([new("academy.example", "ethernet")]));
+        Assert.True(policy.ConfigureSession("academy.example", "ethernet", allowCustomRoot: true));
+        Assert.False(policy.ConfigureSession(host, "vpn"));
+        Assert.Equal("ethernet", policy.ResolveAdapterId("vh-23.servicecdn.ru"));
+    }
+}

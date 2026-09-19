@@ -122,3 +122,23 @@ public sealed partial class DownloadRouteResolverOwnershipTests
         Assert.True(policy.IsLeaseCurrent(newer, mediaHost));
     }
 }
+
+public sealed partial class DownloadRouteResolverOwnershipTests
+{
+    [Fact]
+    public void Custom_domain_GetCourse_page_enables_family_routing_but_ordinary_page_does_not()
+    {
+        var saved = new SiteRouteSettings([new("academy.example", "ethernet")]);
+        var policy = new SiteRoutePolicy(saved);
+        var lesson = new Uri("https://academy.example/teach/control/lesson/view/id/42");
+        Assert.True(DownloadRouteResolver.WouldConfigureSession(saved, lesson, null));
+        Assert.Equal("ethernet", DownloadRouteResolver.ResolveAdapterId(policy, saved, lesson, null));
+        Assert.Equal("ethernet", policy.ResolveAdapterId("vh-23.servicecdn.ru"));
+
+        policy.ClearSession();
+        var ordinary = new Uri("https://academy.example/video/page");
+        Assert.False(DownloadRouteResolver.WouldConfigureSession(saved, ordinary, null));
+        Assert.Equal("ethernet", DownloadRouteResolver.ResolveAdapterId(policy, saved, ordinary, null));
+        Assert.Null(policy.ResolveAdapterId("vh-23.servicecdn.ru"));
+    }
+}
