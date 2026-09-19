@@ -1,5 +1,16 @@
 # Журнал подготовки релизов
 
+## [0.1.10-preview.21] - 2026-09-19
+
+- Status: persistent crash-resume candidate
+- Previous version: 0.1.10-preview.20
+- Legacy reconcile: after the one-time structure scan, existing lesson folders are checked locally for non-empty DOCX/HTML, temp files, archived sign-player count versus ready media count, and saved attachment links versus ready attachments. Clearly completed lessons are immediately marked completed and skipped.
+- Resume accuracy: the next index is the first locally incomplete lesson rather than lesson 1, so an existing large archive resumes near the actual interruption point without reopening every completed lesson.
+- Video safety: fallback qualities use their own deterministic resume keys, preventing partial fragments from different HLS qualities from sharing one .part file.
+- CDN resilience: the eight observed failed jobs are Module 3 / Test lessons Day 1 videos 02,03,16,21 and Day 2 videos 01,06,12,16. All failed with fragment 1 not found and contain only tiny .part/.ytdl metadata; they remain incomplete and are retried with a refreshed signed master on every Continue until successful.
+- Current archive evidence: 75.24 GiB ready media, 148 media files, 58 DOCX, 9 PDF, 78 images, 57 HTML pages, 16 partial files in 9 job directories.
+- Verification: crash-resume targeted tests 49/49; Core 32/32; Infrastructure 642 passed / 0 failed / 14 existing live-tool skips; Worker 31/31; Local/Managed/API/Worker Release builds 0 warnings/errors. DB-backed Platform tests remain environment-blocked because local PostgreSQL cannot bind a socket after this Windows reboot.
+
 ## [0.1.10-preview.20] - 2026-09-19
 
 - Status: crash-resume candidate

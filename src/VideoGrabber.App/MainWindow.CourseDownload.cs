@@ -177,12 +177,24 @@ public sealed partial class MainWindow
             _cachedCourseRoot = plan.Root;
             _cachedCourseRootFolder =
                 Path.GetFullPath(selectedRoot);
+            var createdUtc = Directory.GetCreationTimeUtc(
+                _cachedCourseRootFolder);
             _courseStateCreatedUtc =
-                DateTimeOffset.UtcNow;
+                createdUtc > DateTime.UnixEpoch
+                    && createdUtc <= DateTime.UtcNow
+                    ? new DateTimeOffset(createdUtc, TimeSpan.Zero)
+                    : DateTimeOffset.UtcNow;
+            _courseProcessStartedUtc = _courseStateCreatedUtc;
+
             _courseCompletedLessons.Clear();
-            _courseResumeLessonIndex = 0;
+            ReconcileCompletedLessonsFromDisk(
+                plan,
+                _cachedCourseRootFolder);
+            _courseResumeLessonIndex =
+                FirstIncompleteLessonIndex(plan);
             _courseTotalLessons = plan.Lessons.Length;
-            _courseResumeAvailable = true;
+            _courseResumeAvailable =
+                _courseResumeLessonIndex < plan.Lessons.Length;
 
             await PersistCourseStateAsync(token);
             _browserHint.Text =
@@ -232,35 +244,29 @@ public sealed partial class MainWindow
             && Path.GetDirectoryName(_cachedCourseRootFolder) is { } parent)
             _outputFolderBox.Text = parent;
         _courseStateCreatedUtc = state.CreatedUtc;
+        _courseProcessStartedUtc = state.CreatedUtc;
         _courseCompletedLessons.Clear();
 
-        var lessonsByKey = plan.Lessons.ToDictionary(
-            lesson =>
-                GetCourseCourseStructure.CanonicalKey(
-                    lesson.Uri),
+        var knownCompleted = new HashSet<string>(
+            state.CompletedLessonKeys,
             StringComparer.Ordinal);
-
-        foreach (var key in state.CompletedLessonKeys)
+        foreach (var lesson in plan.Lessons)
         {
-            if (!lessonsByKey.TryGetValue(
-                    key,
-                    out var lesson))
-                continue;
-            if (CourseLessonLooksCompleteOnDisk(
+            var key =
+                GetCourseCourseStructure.CanonicalKey(
+                    lesson.Uri);
+            if ((knownCompleted.Contains(key)
+                    || CourseLessonLooksCompleteOnDisk(
+                        _cachedCourseRootFolder,
+                        lesson))
+                && CourseLessonLooksCompleteOnDisk(
                     _cachedCourseRootFolder,
                     lesson))
                 _courseCompletedLessons.Add(key);
         }
 
-        var firstIncomplete = Array.FindIndex(
-            plan.Lessons,
-            lesson => !_courseCompletedLessons.Contains(
-                GetCourseCourseStructure.CanonicalKey(
-                    lesson.Uri)));
         _courseResumeLessonIndex =
-            firstIncomplete < 0
-                ? plan.Lessons.Length
-                : firstIncomplete;
+            FirstIncompleteLessonIndex(plan);
         _courseTotalLessons =
             plan.Lessons.Length;
         _courseResumeAvailable =
@@ -334,15 +340,11 @@ public sealed partial class MainWindow
             }
         }
 
-        var firstIncomplete = Array.FindIndex(
-            plan.Lessons,
-            lesson => !_courseCompletedLessons.Contains(
-                GetCourseCourseStructure.CanonicalKey(
-                    lesson.Uri)));
+        ReconcileCompletedLessonsFromDisk(
+            plan,
+            _cachedCourseRootFolder);
         _courseResumeLessonIndex =
-            firstIncomplete < 0
-                ? plan.Lessons.Length
-                : firstIncomplete;
+            FirstIncompleteLessonIndex(plan);
         _courseTotalLessons =
             plan.Lessons.Length;
         _courseResumeAvailable =
@@ -413,6 +415,41 @@ public sealed partial class MainWindow
                 lesson.Title));
     }
 
+    private int FirstIncompleteLessonIndex(
+        GetCourseCoursePlan plan)
+    {
+        var index = Array.FindIndex(
+            plan.Lessons,
+            lesson => !_courseCompletedLessons.Contains(
+                GetCourseCourseStructure.CanonicalKey(
+                    lesson.Uri)));
+        return index < 0
+            ? plan.Lessons.Length
+            : index;
+    }
+
+    private void ReconcileCompletedLessonsFromDisk(
+        GetCourseCoursePlan plan,
+        string courseRoot)
+    {
+        var before = _courseCompletedLessons.Count;
+        foreach (var lesson in plan.Lessons)
+        {
+            if (!CourseLessonLooksCompleteOnDisk(
+                    courseRoot,
+                    lesson))
+                continue;
+            _courseCompletedLessons.Add(
+                GetCourseCourseStructure.CanonicalKey(
+                    lesson.Uri));
+        }
+
+        DiagnosticHub.Log.Write(
+            "course.state.reconcile",
+            "succeeded",
+            $"disk-complete={_courseCompletedLessons.Count}/{plan.Lessons.Length} added={_courseCompletedLessons.Count - before}");
+    }
+
     private static bool CourseLessonLooksCompleteOnDisk(
         string courseRoot,
         GetCourseLessonPlan lesson)
@@ -447,15 +484,83 @@ public sealed partial class MainWindow
 
         try
         {
-            return !Directory.EnumerateFiles(
+            if (Directory.EnumerateFiles(
                     folder,
                     "*",
                     SearchOption.AllDirectories)
-                .Any(IsCourseTemporaryFile);
+                .Any(IsCourseTemporaryFile))
+                return false;
+
+            var htmlPath = Path.Combine(
+                folder,
+                "Страница.html");
+            var htmlInfo = new FileInfo(htmlPath);
+            if (htmlInfo.Length > 8_000_000)
+                return false;
+
+            var html = File.ReadAllText(htmlPath);
+            var expectedVideoSources =
+                System.Text.RegularExpressions.Regex.Matches(
+                    html,
+                    @"data-iframe-src *= *[""'](?<url>[^""']*/sign-player/[^""']*)[""']",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    | System.Text.RegularExpressions.RegexOptions.CultureInvariant)
+                .Select(match =>
+                    match.Groups["url"].Value)
+                .Distinct(StringComparer.Ordinal)
+                .Count();
+
+            var mediaExtensions = new HashSet<string>(
+                [".mp4", ".mkv", ".webm", ".mov",
+                 ".m4a", ".mp3", ".aac", ".opus", ".ts"],
+                StringComparer.OrdinalIgnoreCase);
+            var readyMedia = Directory.EnumerateFiles(
+                    folder,
+                    "*",
+                    SearchOption.TopDirectoryOnly)
+                .Count(path =>
+                    mediaExtensions.Contains(
+                        Path.GetExtension(path))
+                    && new FileInfo(path).Length > 0);
+
+            if (readyMedia < expectedVideoSources)
+                return false;
+
+            var expectedAttachments =
+                System.Text.RegularExpressions.Regex.Matches(
+                    html,
+                    @"href *= *[""'](?<url>[^""']+[.](?:pdf|docx?|xlsx?|pptx?|zip|rar|7z|txt|csv|rtf|odt|ods|epub)(?:[?][^""']*)?)[""']",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    | System.Text.RegularExpressions.RegexOptions.CultureInvariant)
+                .Select(match =>
+                    match.Groups["url"].Value)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+
+            if (expectedAttachments > 0)
+            {
+                var attachments = Path.Combine(
+                    folder,
+                    "Вложения");
+                var readyAttachments =
+                    Directory.Exists(attachments)
+                        ? Directory.EnumerateFiles(
+                                attachments,
+                                "*",
+                                SearchOption.TopDirectoryOnly)
+                            .Count(path =>
+                                new FileInfo(path).Length > 0)
+                        : 0;
+                if (readyAttachments < expectedAttachments)
+                    return false;
+            }
+
+            return true;
         }
         catch (Exception ex) when (
             ex is IOException
-                or UnauthorizedAccessException)
+                or UnauthorizedAccessException
+                or System.Text.RegularExpressions.RegexMatchTimeoutException)
         {
             return false;
         }
@@ -858,7 +963,7 @@ public sealed partial class MainWindow
         CancellationToken token)
     {
         const int maxAttempts = 4;
-        var resumeKey =
+        var requestedResumeKey =
             CourseDownloadStateStore.StableMediaResumeKey(
                 lesson.Uri,
                 videoIndex + 1,
@@ -866,7 +971,7 @@ public sealed partial class MainWindow
         MigrateLegacyCourseJob(
             lessonFolder,
             baseName,
-            resumeKey);
+            requestedResumeKey);
 
         var candidate = initialCandidate;
         for (var attempt = 1;
@@ -933,6 +1038,12 @@ public sealed partial class MainWindow
                     $"quality-fallback={attemptQuality} attempt={attempt}/{maxAttempts}");
             }
 
+            var attemptResumeKey =
+                CourseDownloadStateStore.StableMediaResumeKey(
+                    lesson.Uri,
+                    videoIndex + 1,
+                    attemptQuality);
+
             var intent = CaptureDownloadIntent(
                 candidate.Source,
                 attemptQuality) with
@@ -950,7 +1061,7 @@ public sealed partial class MainWindow
                         ?? videoIndex + 1,
                     queueContext: null,
                     suggestedBaseNameOverride: baseName,
-                    resumeKeyOverride: resumeKey),
+                    resumeKeyOverride: attemptResumeKey),
                 resetCookieSelectionAfterUse: false,
                 managedKind: "course_download");
 

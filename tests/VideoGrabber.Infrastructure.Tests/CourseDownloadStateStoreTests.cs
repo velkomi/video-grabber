@@ -73,9 +73,14 @@ public sealed class CourseDownloadStateStoreTests
             lesson,
             2,
             "720p");
+        var lowerQuality = CourseDownloadStateStore.StableMediaResumeKey(
+            lesson,
+            1,
+            "480p");
 
         Assert.Equal(first, again);
         Assert.NotEqual(first, secondVideo);
+        Assert.NotEqual(first, lowerQuality);
         Assert.Equal(24, first.Length);
         Assert.All(first, ch =>
             Assert.True(char.IsAsciiLetterOrDigit(ch)));
