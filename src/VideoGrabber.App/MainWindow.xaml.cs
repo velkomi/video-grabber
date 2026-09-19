@@ -898,6 +898,9 @@ public sealed partial class MainWindow : Window
     private Button PauseButton()
     {
         var button = SecondaryButton("⏸ Пауза");
+        button.Width = 145;
+        button.MinWidth = 145;
+        button.HorizontalContentAlignment = HorizontalAlignment.Center;
         button.IsEnabled = false;
         button.Click += (_, _) => TogglePause();
         _pauseButtons.Add(button);
@@ -927,7 +930,10 @@ public sealed partial class MainWindow : Window
     private void UpdatePauseButtonsAvailability(bool busy)
     {
         foreach (var button in _pauseButtons)
+        {
             button.IsEnabled = busy;
+            UpdatePauseButtonVisual(button);
+        }
         if (!busy && _operationPaused)
             ResetPauseState();
     }
@@ -943,8 +949,16 @@ public sealed partial class MainWindow : Window
         else
         {
             button.Content = "⏸ Пауза";
-            button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 241, 245, 249));
-            button.Foreground = TextBrush;
+            if (button.IsEnabled)
+            {
+                button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 250, 204, 21));
+                button.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 31, 41, 55));
+            }
+            else
+            {
+                button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 226, 232, 240));
+                button.Foreground = TextBrush;
+            }
         }
     }
 

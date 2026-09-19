@@ -1,4 +1,14 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.26] - 2026-09-19
+
+- Status: compact course manifests and pause-button UX follow-up.
+- Previous version: 0.1.10-preview.25.
+- Per-lesson verification files are now named `VG.lesson.json`.
+- Backward compatibility: existing `VG.lesson.json` is still accepted; the next write migrates it to `VG.lesson.json`.
+- Final cleanup: only after every planned lesson passes the final integrity audit, all lesson manifests are consolidated atomically into one `VG.verify.json` in the course root. The root index is re-read and validated before per-lesson manifests are deleted.
+- Resume/recheck after completion continues to work from `VG.verify.json`, so removing per-lesson JSON files does not make a completed course look incomplete.
+- Pause button: fixed 145 px width in both `⏸ Пауза` and `▶ Продолжить` states; active/running state is yellow with dark text, paused state is green with white text.
+- Verification before final packaging: targeted manifest/pause/wiring suite 36/36; Local Release build 0 warnings/errors.
 ## [0.1.10-preview.25] - 2026-09-19
 
 - Status: course integrity / pause / quality / archive portability candidate.
@@ -6,7 +16,7 @@
 - Image repair: malformed image names that looked like extensions are normalized from MIME/file signatures. Existing archive audit found 11 such files; all 11 were confirmed JPEG/JFIF and safely renamed to `.jpg` with no collisions. Seven existing lesson HTML files were augmented with local image references.
 - Pause/resume: shared `⏸ Пауза` / green `▶ Продолжить` control is exposed in the main downloader, selected browser video area, whole-course area and audio/text area. Active owned child processes and logical course/archive loops are paused and resumed without treating pause as cancellation.
 - Course quality: whole-course UI now offers 360p ceiling, 480p ceiling, 720p ceiling and best available. The selected tier persists in course state; HLS course downloads choose the best available track not exceeding the selected ceiling.
-- Integrity manifests: every visited lesson writes `VideoGrabber.lesson.json` from the live page with expected video/material counts and selected quality. A lesson with multiple videos is complete only when every `Видео 01…NN` file is present and non-empty.
+- Integrity manifests: every visited lesson writes `VG.lesson.json` from the live page with expected video/material counts and selected quality. A lesson with multiple videos is complete only when every `Видео 01…NN` file is present and non-empty.
 - Pre-run reconciliation: every whole-course start checks the saved files against lesson manifests. Legacy lessons without manifests are intentionally revisited once to rebuild authoritative expectations instead of being trusted from stale HTML.
 - Final verification: after an apparently complete pass the entire course is reconciled again. If anything is missing the UI reports that final verification found incomplete content and automatic downloading continues. `.vg-job-*` and course temporary files are purged only after the final verification confirms all lessons.
 - Module 3 audit at packaging time: Day 1 currently lacks videos 03/16/21; Day 2 lacks 01/06/12/16. These seven are therefore not considered complete by the new numbered-video verification.

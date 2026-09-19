@@ -3,6 +3,8 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии следуют [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+- Preview.26 shortens lesson verification files to `VG.lesson.json`; after a 100% successful final course audit, all per-lesson manifests are atomically consolidated into one root `VG.verify.json` and the per-lesson JSON files are removed. Legacy `VideoGrabber.lesson.json` remains readable and is migrated automatically.
+- Pause controls now keep a fixed 145 px width in both states. While work is running, `⏸ Пауза` is yellow with dark text; when paused it becomes green `▶ Продолжить` without changing size.
 - Preview.25 adds course integrity verification and interactive pause/resume: every lesson records a live verification manifest with expected video/material counts; multi-video lessons require every numbered `Видео 01…NN` output, old archives without manifests are rechecked from the live course once, and a final audit automatically retries missing content before verified cache cleanup.
 - Course downloads now have an independent quality ceiling (`до 360p`, `до 480p`, `до 720p`, `best`) persisted with resume state; when an exact HLS height is absent the closest available lower variant is selected for the course.
 - Pause/resume controls are available in the main download area, browser video area, whole-course area and audio/text tools. The button switches from `⏸ Пауза` to green `▶ Продолжить`; process-backed downloads/transcoding and course loops pause without discarding resumable state.

@@ -617,3 +617,18 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("LooksVirtualOrVpn", connector);
     }
 }
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Pause_button_has_stable_size_and_running_yellow_state()
+    {
+        var root = FindRepoRoot();
+        var main = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
+        Assert.Contains("button.Width = 145;", main);
+        Assert.Contains("button.MinWidth = 145;", main);
+        Assert.Contains("ColorHelper.FromArgb(255, 250, 204, 21)", main);
+        Assert.Contains("button.Content = \"▶ Продолжить\"", main);
+        Assert.Contains("ColorHelper.FromArgb(255, 22, 163, 74)", main);
+    }
+}

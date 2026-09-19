@@ -590,10 +590,23 @@ public sealed partial class MainWindow
             return false;
         }
 
+        var lessonEntries = plan.Lessons
+            .Select(lesson => (
+                LessonFolder: CourseLessonFolderPath(rootFolder, lesson),
+                LessonUri: lesson.Uri))
+            .ToArray();
+        var lessonManifestsDeleted =
+            await CourseLessonVerificationManifestStore.ConsolidateCourseAsync(
+                rootFolder,
+                lessonEntries,
+                token);
         var removed = PurgeVerifiedCourseCache(rootFolder);
         DiagnosticHub.Log.Write("course.final-verify", "succeeded",
-            $"lessons={plan.Lessons.Length} normalizedImages={normalizedImages} recovered={recovered} cacheRemoved={removed}");
-        _browserHint.Text = $"Финальная проверка завершена: все {plan.Lessons.Length} уроков подтверждены, временный кэш очищен.";
+            $"lessons={plan.Lessons.Length} normalizedImages={normalizedImages} recovered={recovered} " +
+            $"lessonManifestsDeleted={lessonManifestsDeleted} cacheRemoved={removed}");
+        _browserHint.Text =
+            $"Финальная проверка завершена: все {plan.Lessons.Length} уроков подтверждены. " +
+            "Служебные VG.lesson.json собраны в один VG.verify.json в корне курса и удалены из папок уроков; временный кэш очищен.";
         return true;
     }
 
@@ -661,7 +674,11 @@ public sealed partial class MainWindow
                 .Any(IsCourseTemporaryFile))
                 return false;
 
-            if (!CourseLessonVerificationManifestStore.TryLoad(folder, out var manifest)
+            if (!CourseLessonVerificationManifestStore.TryLoadForLesson(
+                    courseRoot,
+                    folder,
+                    lesson.Uri,
+                    out var manifest)
                 || manifest is null)
                 return false;
 
