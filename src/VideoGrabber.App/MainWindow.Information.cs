@@ -37,7 +37,8 @@ public sealed partial class MainWindow
         capabilities.Children.Add(MutedText("• GetCourse, включая школы на собственных доменах: поиск HLS master, выбор качества и загрузка через встроенный браузер."));
         capabilities.Children.Add(MutedText("• Kinescope и обычный HLS/DASH/MP4 без DRM; split video/audio объединяется FFmpeg."));
         capabilities.Children.Add(MutedText("• Другие сайты, которые поддерживает установленный yt-dlp, если у пользователя есть доступ к видео."));
-        capabilities.Children.Add(MutedText("• MP3, быстрая обрезка/склейка, локальная расшифровка Whisper и точечная маршрутизация сайтов."));
+        capabilities.Children.Add(MutedText("• MP3, быстрая обрезка/склейка, локальная расшифровка встроенным Whisper и точечная маршрутизация сайтов."));
+        capabilities.Children.Add(MutedText("• Полный комплект уже содержит yt-dlp, FFmpeg, FFprobe, Deno, Whisper и модель распознавания — отдельная установка для обычной работы не требуется."));
         body.Children.Add(Card(capabilities));
         var getCourse = Vertical(8);
         getCourse.Children.Add(SectionHeading("Как скачать с GetCourse"));

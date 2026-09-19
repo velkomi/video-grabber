@@ -71,6 +71,8 @@ public sealed partial class MainWindow : Window
     private TextBlock _ffmpegStatus = null!;
     private TextBlock _ffprobeStatus = null!;
     private TextBlock _denoStatus = null!;
+    private TextBlock _whisperStatus = null!;
+    private TextBlock _whisperModelStatus = null!;
     private WebView2? _mediaBrowser;
     private CancellationTokenSource? _operation;
     private bool _isInstallingComponents;
@@ -90,11 +92,16 @@ public sealed partial class MainWindow : Window
         AppDiagnostics.Write("Code-only host initialized");
 
         var componentRoot = Path.Combine(AppDataRoot, "tools");
-        var transaction = new ComponentInstallTransaction(_componentRunner);
-        transaction.AbortRecoveryAsync(componentRoot, CancellationToken.None).GetAwaiter().GetResult();
         var initialTools = new ToolLocator(AppContext.BaseDirectory, componentRoot);
+        if (!initialTools.UsesBundledRuntime)
+        {
+            var transaction = new ComponentInstallTransaction(_componentRunner);
+            transaction.AbortRecoveryAsync(componentRoot, CancellationToken.None).GetAwaiter().GetResult();
+            initialTools = new ToolLocator(AppContext.BaseDirectory, componentRoot);
+        }
         _componentServices = ComponentServiceFactory.Create(initialTools, _componentRunner, _egressRegistry);
         _rootHost.Children.Add(BuildShell());
+        SetOperationControls(false);
 #if VIDEOGRABBER_MANAGED
         StartManagedAccountRestore();
 #endif
@@ -192,7 +199,7 @@ public sealed partial class MainWindow : Window
         var navigation = Vertical(8);
         var downloadItem = NavigationButton("↓  Загрузчик");
         var editorItem = NavigationButton("✂  Редактор");
-        var settingsItem = NavigationButton("⚙  Компоненты");
+        var settingsItem = NavigationButton("⚙  Встроенные инструменты");
 #if VIDEOGRABBER_MANAGED
         var accountItem = NavigationButton("👤  Аккаунт");
 #endif
@@ -406,31 +413,33 @@ public sealed partial class MainWindow : Window
     {
         var body = PageStack();
         body.Children.Add(PageHeading(
-            "Компоненты",
-            "Инструменты хранятся в профиле текущего пользователя и обновляются по вашему нажатию."));
+            "Встроенные инструменты",
+            "Все необходимые утилиты входят в полный комплект VideoGrabber и используются локально. Отдельная установка не требуется."));
         _ytDlpStatus = new TextBlock();
         _ffmpegStatus = new TextBlock();
         _ffprobeStatus = new TextBlock();
         _denoStatus = new TextBlock();
+        _whisperStatus = new TextBlock();
+        _whisperModelStatus = new TextBlock();
         var content = Vertical(12);
-        content.Children.Add(SectionHeading("Локальные инструменты"));
+        content.Children.Add(SectionHeading("Комплект VideoGrabber"));
         content.Children.Add(_ytDlpStatus);
         content.Children.Add(_ffmpegStatus);
         content.Children.Add(_ffprobeStatus);
         content.Children.Add(_denoStatus);
-        content.Children.Add(MutedText("Встроенный браузер работает в InPrivate. Cookies передаются только при вашем выборе, через временный файл. Секреты скрываются в журналах."));
-        var install = PrimaryButton("Установить или обновить");
-        install.Click += InstallComponents_Click;
-        var refresh = SecondaryButton("Обновить статус");
+        content.Children.Add(_whisperStatus);
+        content.Children.Add(_whisperModelStatus);
+        content.Children.Add(MutedText(
+            "Эти файлы поставляются вместе с VideoGrabber. Программа не должна скачивать их во время обычной работы. Обновляются они вместе с новой версией приложения."));
+        var refresh = SecondaryButton("Проверить встроенные инструменты");
         refresh.Click += (_, _) => RefreshComponentStatus();
-        content.Children.Add(Horizontal(install, refresh));
+        content.Children.Add(refresh);
         body.Children.Add(Card(content));
         body.Children.Add(BuildNetworkCard());
         body.Children.Add(BuildDiagnosticsCard());
         body.Children.Add(BuildTranscriptionSettingsCard());
         return new ScrollViewer { Content = body };
     }
-
     private void ShowPage(string? tag)
     {
         _downloadPage.Visibility = tag is null or "download" ? Visibility.Visible : Visibility.Collapsed;
@@ -719,6 +728,10 @@ public sealed partial class MainWindow : Window
         _ffmpegStatus.Text = ToolStatus("FFmpeg", _tools.Ffmpeg);
         _ffprobeStatus.Text = ToolStatus("FFprobe", _tools.Ffprobe);
         _denoStatus.Text = ToolStatus("Deno", _tools.Deno);
+        if (_whisperStatus is not null)
+            _whisperStatus.Text = ToolStatus("Whisper", _tools.WhisperCli);
+        if (_whisperModelStatus is not null)
+            _whisperModelStatus.Text = ToolStatus("Модель Whisper", _tools.WhisperModel);
     }
 
     private static string ToolStatus(string name, string path) =>

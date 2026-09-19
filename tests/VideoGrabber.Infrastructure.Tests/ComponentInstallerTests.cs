@@ -69,23 +69,21 @@ public sealed class ComponentInstallerTests
 
 
     [Fact]
-    public void App_wires_manual_and_auto_install_to_owned_cancellation_lifetime()
+    public void App_prefers_bundled_runtime_and_does_not_auto_install_during_download()
     {
         var app = ReadApp("MainWindow.xaml.cs");
         var download = ReadApp("MainWindow.Download.cs");
-        Assert.Contains("InstallComponentsAsync(bool forceUpdate, CancellationToken cancellationToken)", app);
-        Assert.Contains("_operations.IsBusy || _isInstallingComponents", app);
-        Assert.Contains("new ComponentInstallTransaction(_componentRunner)", app);
-        Assert.Contains("Interlocked.Exchange(ref _componentServices, nextServices)", app);
-        Assert.Contains("InstallComponentsAsync(forceUpdate: false, operation.Token)", download);
-        Assert.Contains("service.RunAsync(intent, lease, operation.Token)", download);
-        Assert.Contains("if (!installed || installCompletion != OperationCompletion.None)", download);
-        Assert.Contains("() => Volatile.Read(ref _componentServices).Downloader", download);
-        Assert.Contains("var components = Volatile.Read(ref _componentServices);", app);
         var media = ReadApp("MainWindow.MediaActions.cs");
-        Assert.Contains("var components = Volatile.Read(ref _componentServices);", media);
-        Assert.Contains("components.Transcriber.TranscribeAsync", media);
-        Assert.Contains("components.Tools", media);
+        Assert.Contains("initialTools.UsesBundledRuntime", app);
+        Assert.Contains("Встроенные инструменты", app);
+        Assert.DoesNotContain("var install = PrimaryButton(\"Установить или обновить\")", app);
+        Assert.DoesNotContain("InstallComponentsAsync(forceUpdate: false", download);
+        Assert.Contains("Встроенные инструменты VideoGrabber отсутствуют или повреждены", download);
+        Assert.Contains("service.RunAsync(intent, lease, operation.Token)", download);
+        Assert.Contains("() => Volatile.Read(ref _componentServices).Downloader", download);
+        Assert.Contains("components.Tools.WhisperCli", media);
+        Assert.Contains("components.Tools.WhisperModel", media);
+        Assert.Contains("components.Tools.WhisperAvailable", media);
     }
 
     private static string ReadApp(string name)

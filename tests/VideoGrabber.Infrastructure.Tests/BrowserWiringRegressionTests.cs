@@ -632,3 +632,20 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("ColorHelper.FromArgb(255, 22, 163, 74)", main);
     }
 }
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Bundled_runtime_and_transcription_are_wired_without_runtime_installer()
+    {
+        var root = FindRepoRoot();
+        var main = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
+        var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
+        var media = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.MediaActions.cs"));
+        Assert.Contains("Встроенные инструменты", main);
+        Assert.DoesNotContain("var install = PrimaryButton(\"Установить или обновить\")", main);
+        Assert.DoesNotContain("InstallComponentsAsync(forceUpdate: false", download);
+        Assert.Contains("components.Tools.WhisperCli", media);
+        Assert.Contains("components.Tools.WhisperModel", media);
+        Assert.Contains("Horizontal(_mp3Button, _textButton, mediaPauseButton, cancel)", media);
+    }
+}

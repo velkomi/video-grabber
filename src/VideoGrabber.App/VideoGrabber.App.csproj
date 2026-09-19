@@ -34,10 +34,18 @@
     <Compile Remove="SmokeWindow.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="../../scripts/Install-Components.ps1" Link="scripts/Install-Components.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/Analyze-Logs.ps1" Link="scripts/Analyze-Logs.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../scripts/Install-DiagnosticsTasks.ps1" Link="scripts/Install-DiagnosticsTasks.ps1" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\VideoGrabber.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\VideoGrabber.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-</Project>
+  <PropertyGroup>
+    <VideoGrabberBundledRuntimeRoot Condition="'$(VideoGrabberBundledRuntimeRoot)' == '' and '$(VIDEOGRABBER_BUNDLED_RUNTIME)' != ''">$(VIDEOGRABBER_BUNDLED_RUNTIME)</VideoGrabberBundledRuntimeRoot>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(VideoGrabberBundledRuntimeRoot)' != '' and Exists('$(VideoGrabberBundledRuntimeRoot)')">
+    <Content Include="$(VideoGrabberBundledRuntimeRoot)\**\*">
+      <Link>tools\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup></Project>

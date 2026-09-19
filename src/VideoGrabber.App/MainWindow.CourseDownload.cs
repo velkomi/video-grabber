@@ -2532,6 +2532,12 @@ public sealed partial class MainWindow
     {
         var busy = _courseDownloadActive || _operations.IsBusy;
 
+        if (_mp3Button is not null)
+            _mp3Button.IsEnabled = !busy;
+        if (_textButton is not null)
+            _textButton.IsEnabled = !busy;
+        UpdateLocalMediaAvailabilityHint();
+
         if (_courseDownloadButton is not null)
             _courseDownloadButton.IsEnabled = !busy;
 

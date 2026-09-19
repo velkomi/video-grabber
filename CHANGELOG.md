@@ -3,6 +3,10 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии следуют [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+- Preview.27 ships a full self-contained media runtime with the application: yt-dlp, FFmpeg, FFprobe, Deno, whisper.cpp CLI and a multilingual `ggml-base` model. Normal use no longer downloads or installs these components at runtime; a missing bundled tool is reported as a damaged/incomplete distribution instead of starting a background installer.
+- Local transcription now always uses the bundled Whisper CLI/model. The Components page is now an informational `Встроенные инструменты` page, and the `Звук и текст` block explains MP3 vs text+SRT clearly. Its pause button is now actually visible.
+- Local media controls explicitly explain when they are disabled by an active course/download operation and re-enable automatically afterward. Invalid/corrupted media now gets a direct FFprobe-readable error instead of being confused with a file that merely has no audio track.
+- The full bundled editor runtime was verified with a real FFmpeg trim+join integration test, and bundled Whisper was verified end-to-end on a real video fragment producing both TXT and SRT.
 - Preview.26 shortens lesson verification files to `VG.lesson.json`; after a 100% successful final course audit, all per-lesson manifests are atomically consolidated into one root `VG.verify.json` and the per-lesson JSON files are removed. Legacy `VideoGrabber.lesson.json` remains readable and is migrated automatically.
 - Pause controls now keep a fixed 145 px width in both states. While work is running, `⏸ Пауза` is yellow with dark text; when paused it becomes green `▶ Продолжить` without changing size.
 - Preview.25 adds course integrity verification and interactive pause/resume: every lesson records a live verification manifest with expected video/material counts; multi-video lessons require every numbered `Видео 01…NN` output, old archives without manifests are rechecked from the live course once, and a final audit automatically retries missing content before verified cache cleanup.

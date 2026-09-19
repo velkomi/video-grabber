@@ -76,37 +76,13 @@ public sealed partial class MainWindow
         _operation = operation;
         if (!RequiredComponentsAvailable())
         {
-            if (!_operations.TryBegin())
-            {
-                _operation = null;
-                SetDownloadState("Другая операция уже выполняется.", null, true);
-                return OperationOutcome.Failed;
-            }
-            SetOperationControls(true);
-            var installOutcome = OperationOutcome.Failed;
-            var installed = false;
-            try
-            {
-                installed = await InstallComponentsAsync(forceUpdate: false, operation.Token);
-                installOutcome = installed ? OperationOutcome.Succeeded : OperationOutcome.Failed;
-            }
-            catch (OperationCanceledException)
-            {
-                installOutcome = OperationOutcome.Cancelled;
-            }
-            var installCompletion = _operations.Complete(installOutcome);
-            if (!installed || installCompletion != OperationCompletion.None)
-            {
-                CompleteOperation(installCompletion);
-                SetDownloadState(installOutcome == OperationOutcome.Cancelled
-                    ? "Подготовка компонентов отменена."
-                    : "Компоненты не готовы. Установка не изменяла активный набор инструментов.", null,
-                    installOutcome != OperationOutcome.Cancelled);
-                return installOutcome;
-            }
-            _operation = operation;
+            _operation = null;
+            SetDownloadState(
+                "Встроенные инструменты VideoGrabber отсутствуют или повреждены.",
+                "Используйте полный дистрибутив приложения. Во время обычной работы компоненты отдельно не скачиваются.",
+                true);
+            return OperationOutcome.Failed;
         }
-
         using var job = DiagnosticHub.Begin("ui.download", intent.SelectedSource.Host);
         var owner = new object();
         _progressOwner = owner;

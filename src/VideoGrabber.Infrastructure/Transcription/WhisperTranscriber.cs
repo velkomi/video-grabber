@@ -28,7 +28,8 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
             return new(false, "Текст или субтитры с таким именем уже существуют. Выберите новое имя.");
         var media = await (probe ?? new FfprobeMediaProbe(runner, tools))
             .ProbeAsync(input, cancellationToken).ConfigureAwait(false);
-        if (!media.IsValid || !media.HasAudio) return new(false, "В файле не найдена аудиодорожка.");
+        if (!media.IsValid) return new(false, "Файл повреждён или не является корректным видео/аудио: FFprobe не смог его прочитать.");
+        if (!media.HasAudio) return new(false, "В файле не найдена аудиодорожка.");
         var mediaDuration = media.DurationSeconds > 0 && double.IsFinite(media.DurationSeconds)
             ? media.DurationSeconds : (double?)null;
         var directory = Path.Combine(Path.GetDirectoryName(outputBase)!, ".vg-asr-" + Guid.NewGuid().ToString("N"));

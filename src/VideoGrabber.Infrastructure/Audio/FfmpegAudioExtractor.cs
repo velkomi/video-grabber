@@ -21,7 +21,8 @@ public sealed class FfmpegAudioExtractor(IProcessRunner runner, ToolLocator tool
         if (!Path.GetExtension(output).Equals(".mp3", StringComparison.OrdinalIgnoreCase))
             return new(false, "Для аудио укажите расширение .mp3.");
         var source = await _probe.ProbeAsync(input, cancellationToken).ConfigureAwait(false);
-        if (!source.IsValid || !source.HasAudio) return new(false, "В исходном файле нет доступной аудиодорожки.");
+        if (!source.IsValid) return new(false, "Файл повреждён или не является корректным видео/аудио: FFprobe не смог его прочитать.");
+        if (!source.HasAudio) return new(false, "В исходном файле нет доступной аудиодорожки.");
         var folder = Path.GetDirectoryName(output)!;
         Directory.CreateDirectory(folder);
         var temporary = Path.Combine(folder, $".vg-audio-{Guid.NewGuid():N}.mp3");

@@ -1,4 +1,16 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.27] - 2026-09-19
+
+- Status: full self-contained desktop runtime / built-in transcription candidate.
+- Previous version: 0.1.10-preview.26.
+- Distribution: full Local package includes `tools\yt-dlp.exe`, `tools\ffmpeg.exe`, `tools\ffprobe.exe`, `tools\deno.exe`, plus `tools\whisper\whisper-cli.exe`, required whisper/ggml CPU DLLs and multilingual `ggml-base.bin`. Runtime payload is about 539 MB before the app/framework files.
+- Runtime ownership: a complete bundled `tools` directory is authoritative over stale AppData component generations. Normal download flow no longer launches `Install-Components.ps1`; if a bundled tool is missing, VideoGrabber reports an incomplete/corrupted distribution.
+- UI: `Компоненты` is renamed to `Встроенные инструменты`. The old `Установить или обновить` button is removed from ordinary UI; the page shows the actual built-in tool paths and offers only a status check. Tool updates arrive with a new VideoGrabber build.
+- Transcription: `Получить текст + SRT` uses the bundled Whisper CLI and model automatically. Manual EXE/model selectors are removed from normal UX; only speech language remains configurable. A real isolated bundle test produced both TXT and SRT from a real video fragment.
+- Audio/text controls: the previously-created-but-not-rendered pause button is now displayed next to MP3/text actions. When another operation or a whole-course download is active, the section explicitly explains why its buttons are temporarily unavailable.
+- Invalid input diagnostics: FFprobe failure now reports that the file is damaged or not a valid audio/video container. The user-selected `D:\Torrent\14+.avi` is 1,471,320,064 bytes but starts with zero-filled header bytes and FFprobe reports `Invalid data found when processing input`; this is a source-file problem independent of the UI.
+- Editor verification: real FFmpeg integration test generated media, trimmed a fragment and joined two fragments successfully with the bundled runtime.
+- Verification before packaging: focused bundled-runtime/media/UI suite 51/51; full pre-version gate Core 32/32, Infrastructure 678 passed / 0 failed / 1 environment-fixture skip, Worker 31/31; Local/Managed Release builds 0 warnings/errors. Real bundled Whisper and editor checks also passed outside the skipped fixture-specific test.
 ## [0.1.10-preview.26] - 2026-09-19
 
 - Status: compact course manifests and pause-button UX follow-up.
