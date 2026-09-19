@@ -1,5 +1,15 @@
 # Журнал подготовки релизов
 
+## [0.1.10-preview.22] - 2026-09-19
+
+- Status: course-resume/layout hardening candidate
+- Previous version: 0.1.10-preview.21
+- Folder layout: root course materials are grouped under 00 - Общая информация; modules are numbered explicitly 01..08; nested lessons and training folders use one shared DOM-order sequence so duplicate 01/01 or 02/02 siblings are not created.
+- Existing archive migrated in place with file-count/byte integrity checks; no media bytes were recopied.
+- Resume safety: when a specific course URL is open, selecting a parent folder with a different VideoGrabber.course.json no longer starts the wrong project. Direct child states are searched for the matching canonical course URL; otherwise resume is refused with a clear message.
+- UX: Open in embedded browser is dark green; the UI explicitly tells the user to scroll down after opening and to authenticate in the embedded browser before whole-course download/resume.
+- Verification: targeted planner/state/UI tests 38/38; Core 32/32; Infrastructure 644 passed / 0 failed / 14 existing live-tool skips; Worker 31/31; Local/Managed/API/Worker Release builds 0 warnings/errors. DB-backed Platform tests remain environment-blocked because disposable PostgreSQL cannot bind a socket in this Windows session.
+
 ## [0.1.10-preview.21] - 2026-09-19
 
 - Status: persistent crash-resume candidate

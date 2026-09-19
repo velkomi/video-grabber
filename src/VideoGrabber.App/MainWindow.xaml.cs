@@ -281,8 +281,15 @@ public sealed partial class MainWindow : Window
         _cancelButton = DangerButton("Отменить всё");
         _cancelButton.IsEnabled = false;
         _cancelButton.Click += (_, _) => CancelOperation();
-        var browserButton = SecondaryButton("Открыть во встроенном браузере");
+        var browserButton = BrowserActionButton("Открыть во встроенном браузере");
         browserButton.Click += OpenBrowser_Click;
+        var browserButtonHint = new TextBlock
+        {
+            Text = "↓ После нажатия прокрутите эту страницу ниже: встроенный браузер откроется внизу. Для закрытого курса войдите там в свой аккаунт.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = MutedBrush,
+            Margin = new Thickness(2, 4, 2, 0)
+        };
         var openFolderButton = SecondaryButton("Открыть папку загрузок");
         openFolderButton.Click += OpenOutputFolder_Click;
 
@@ -293,6 +300,7 @@ public sealed partial class MainWindow : Window
         downloadForm.Children.Add(_audioOnlyBox);
         downloadForm.Children.Add(Horizontal(_downloadButton, _cancelButton, openFolderButton));
         downloadForm.Children.Add(browserButton);
+        downloadForm.Children.Add(browserButtonHint);
         body.Children.Add(Card(downloadForm));
 
         _downloadStatus = new TextBlock { Text = "Готово к работе", TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontWeight = FontWeights.SemiBold };
@@ -907,6 +915,16 @@ public sealed partial class MainWindow : Window
         Background = new SolidColorBrush(Colors.IndianRed),
         Foreground = new SolidColorBrush(Colors.White),
         Padding = new Thickness(16, 8, 16, 8),
+        CornerRadius = new CornerRadius(8)
+    };
+
+    private static Button BrowserActionButton(string text) => new()
+    {
+        Content = text,
+        Background = new SolidColorBrush(
+            ColorHelper.FromArgb(255, 24, 94, 61)),
+        Foreground = new SolidColorBrush(Colors.White),
+        Padding = new Thickness(18, 9, 18, 9),
         CornerRadius = new CornerRadius(8)
     };
 

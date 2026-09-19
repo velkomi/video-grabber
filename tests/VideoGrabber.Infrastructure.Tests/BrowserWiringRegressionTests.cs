@@ -545,3 +545,30 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("Обновляю ссылку", course);
     }
 }
+
+
+public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Course_resume_matches_the_opened_course_and_browser_guidance_is_explicit()
+    {
+        var root = FindRepoRoot();
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+        var browser = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
+        var shell = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
+
+        Assert.Contains("ResolveCourseResumeStateAsync", course);
+        Assert.Contains("RequestedCourseRoot", course);
+        Assert.Contains("Выбрана папка другого курса", course);
+        Assert.Contains("Directory.EnumerateDirectories", course);
+
+        Assert.Contains("сначала войдите в свой аккаунт", browser);
+        Assert.Contains("Прокрутите страницу вниз", browser);
+        Assert.Contains("BrowserActionButton", shell);
+        Assert.Contains("24, 94, 61", shell);
+        Assert.Contains("прокрутите эту страницу ниже", shell);
+    }
+}

@@ -56,11 +56,11 @@ public sealed class GetCourseCoursePlannerTests
         Assert.Equal(1, plan.Lessons[0].LessonOrdinal);
 
         Assert.Equal(lessonTwo, plan.Lessons[1].Uri);
-        Assert.Equal(["01 - Модуль 1", "01 - Подмодуль"], plan.Lessons[1].ModuleFolders);
+        Assert.Equal(["01 - Модуль 1", "02 - Подмодуль"], plan.Lessons[1].ModuleFolders);
         Assert.Equal(1, plan.Lessons[1].LessonOrdinal);
 
         Assert.Equal(lessonRoot, plan.Lessons[2].Uri);
-        Assert.Equal(["00 - Вводные материалы"], plan.Lessons[2].ModuleFolders);
+        Assert.Equal(["00 - Общая информация"], plan.Lessons[2].ModuleFolders);
         Assert.Equal(1, plan.Lessons[2].LessonOrdinal);
 
         Assert.Equal(lessonThree, plan.Lessons[3].Uri);
@@ -68,6 +68,75 @@ public sealed class GetCourseCoursePlannerTests
         Assert.Equal(1, plan.Lessons[3].LessonOrdinal);
 
         Assert.Equal([moduleOne, subModule, moduleTwo], visited);
+    }
+
+    [Fact]
+    public async Task Planner_separates_general_information_and_numbers_modules_explicitly()
+    {
+        var root = new Uri("https://school.example/teach/control/stream/view/id/1");
+        var org = new Uri("https://school.example/teach/control/stream/view/id/2");
+        var moduleOne = new Uri("https://school.example/teach/control/stream/view/id/10");
+        var moduleTwo = new Uri("https://school.example/teach/control/stream/view/id/20");
+        var intro = new Uri("https://school.example/teach/control/lesson/view/id/100");
+        var orgLesson = new Uri("https://school.example/teach/control/lesson/view/id/101");
+        var method = new Uri("https://school.example/teach/control/lesson/view/id/110");
+        var homework = new Uri("https://school.example/teach/control/stream/view/id/11");
+        var homeworkLesson = new Uri("https://school.example/teach/control/lesson/view/id/111");
+        var second = new Uri("https://school.example/teach/control/lesson/view/id/120");
+
+        var rootPage = Page(
+            "Курс",
+            Lesson("Приветствие", intro, 1),
+            Training("Запись организационного эфира", org, 2),
+            Training("МОДУЛЬ №1", moduleOne, 3),
+            Training("МОДУЛЬ №2", moduleTwo, 4));
+
+        var pages = new Dictionary<string, GetCourseCoursePage>
+        {
+            [GetCourseCourseStructure.CanonicalKey(org)] = Page(
+                "Орг",
+                Lesson("Эфир", orgLesson, 1)),
+            [GetCourseCourseStructure.CanonicalKey(moduleOne)] = Page(
+                "МОДУЛЬ №1",
+                Lesson("Методические материалы", method, 1),
+                Training("Домашние задания", homework, 2)),
+            [GetCourseCourseStructure.CanonicalKey(homework)] = Page(
+                "Домашние задания",
+                Lesson("Задание", homeworkLesson, 1)),
+            [GetCourseCourseStructure.CanonicalKey(moduleTwo)] = Page(
+                "МОДУЛЬ №2",
+                Lesson("День 1", second, 1))
+        };
+
+        var plan = await GetCourseCoursePlanner.BuildAsync(
+            root,
+            rootPage,
+            (uri, _) => Task.FromResult<GetCourseCoursePage?>(
+                pages[GetCourseCourseStructure.CanonicalKey(uri)]),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(
+            ["00 - Общая информация"],
+            plan.Lessons[0].ModuleFolders);
+        Assert.Equal(1, plan.Lessons[0].LessonOrdinal);
+
+        Assert.Equal(
+            ["00 - Общая информация", "02 - Запись организационного эфира"],
+            plan.Lessons[1].ModuleFolders);
+
+        Assert.Equal(
+            ["01 - МОДУЛЬ №1"],
+            plan.Lessons[2].ModuleFolders);
+        Assert.Equal(1, plan.Lessons[2].LessonOrdinal);
+
+        Assert.Equal(
+            ["01 - МОДУЛЬ №1", "02 - Домашние задания"],
+            plan.Lessons[3].ModuleFolders);
+
+        Assert.Equal(
+            ["02 - МОДУЛЬ №2"],
+            plan.Lessons[4].ModuleFolders);
     }
 
     [Fact]

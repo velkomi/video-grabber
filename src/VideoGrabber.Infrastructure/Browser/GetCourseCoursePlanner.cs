@@ -72,6 +72,14 @@ public static class GetCourseCoursePlanner
 
         var lessonOrdinal = 0;
         var moduleOrdinal = 0;
+        var itemOrdinal = 0;
+        var generalOrdinal = 0;
+        var moduleLayout =
+            depth == 0
+            && page.Trainings.Any(link =>
+                TryGetTopLevelModuleNumber(
+                    link.Title,
+                    out _));
 
         foreach (var link in page.Links)
         {
@@ -83,14 +91,34 @@ public static class GetCourseCoursePlanner
                     GetCourseCourseStructure.CanonicalKey(link.Uri);
                 if (!visitedLessons.Add(lessonKey)) continue;
                 lessonOrdinal++;
-                var lessonFolders = depth == 0 && moduleFolders.Length == 0
-                    ? new[] { "00 - Вводные материалы" }
-                    : moduleFolders.ToArray();
+                itemOrdinal++;
+                if (moduleLayout
+                    && depth == 0
+                    && moduleFolders.Length == 0)
+                    generalOrdinal++;
+
+                var lessonFolders =
+                    moduleLayout
+                    && depth == 0
+                    && moduleFolders.Length == 0
+                        ? new[] { "00 - Общая информация" }
+                        : depth == 0
+                            && moduleFolders.Length == 0
+                                ? new[] { "00 - Вводные материалы" }
+                                : moduleFolders.ToArray();
+
+                var ordinal =
+                    moduleLayout
+                    && depth == 0
+                    && moduleFolders.Length == 0
+                        ? generalOrdinal
+                        : itemOrdinal;
+
                 lessons.Add(new GetCourseLessonPlan(
                     link.Uri,
                     link.Title,
                     lessonFolders,
-                    lessonOrdinal));
+                    ordinal));
                 continue;
             }
 
@@ -100,13 +128,47 @@ public static class GetCourseCoursePlanner
             if (visitedTrainings.Contains(childKey)) continue;
 
             moduleOrdinal++;
-            var childFolder =
-                GetCourseCourseStructure.OrderedFolder(
-                    moduleOrdinal,
-                    link.Title);
-            var childFolders = moduleFolders
-                .Append(childFolder)
-                .ToArray();
+            itemOrdinal++;
+
+            string[] childFolders;
+            if (moduleLayout
+                && depth == 0
+                && moduleFolders.Length == 0)
+            {
+                if (TryGetTopLevelModuleNumber(
+                        link.Title,
+                        out var explicitModuleNumber))
+                {
+                    var childFolder =
+                        GetCourseCourseStructure.OrderedFolder(
+                            explicitModuleNumber,
+                            link.Title);
+                    childFolders = [childFolder];
+                }
+                else
+                {
+                    generalOrdinal++;
+                    var infoFolder =
+                        GetCourseCourseStructure.OrderedFolder(
+                            generalOrdinal,
+                            link.Title);
+                    childFolders =
+                    [
+                        "00 - Общая информация",
+                        infoFolder
+                    ];
+                }
+            }
+            else
+            {
+                var childFolder =
+                    GetCourseCourseStructure.OrderedFolder(
+                        itemOrdinal,
+                        link.Title);
+                childFolders = moduleFolders
+                    .Append(childFolder)
+                    .ToArray();
+            }
 
             onModule?.Invoke(link.Title);
             var childPage =
@@ -125,5 +187,25 @@ public static class GetCourseCoursePlanner
                 onModule,
                 cancellationToken);
         }
+    }
+
+    private static bool TryGetTopLevelModuleNumber(
+        string title,
+        out int number)
+    {
+        number = 0;
+        if (string.IsNullOrWhiteSpace(title))
+            return false;
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            title,
+            @"^ *МОДУЛЬ *№? *(?<n>[0-9]+)(?: |$)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        return match.Success
+            && int.TryParse(
+                match.Groups["n"].Value,
+                out number)
+            && number is > 0 and < 100;
     }
 }

@@ -62,6 +62,13 @@ public sealed partial class MainWindow
         panel.Children.Add(TwoColumn(_mediaCandidatesBox, _mediaQualityBox));
         panel.Children.Add(Horizontal(download, addQueue, downloadAll, howTo));
         panel.Children.Add(SectionHeading("Весь курс GetCourse"));
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Важно: для закрытого курса сначала войдите в свой аккаунт во встроенном браузере ниже (логин и пароль), дождитесь открытия страницы курса и только потом нажимайте «Скачать весь курс» или «Продолжить / открыть папку курса».",
+            TextWrapping = TextWrapping.Wrap,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
         _courseDownloadButton = PrimaryButton("Скачать весь курс");
         _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
 
@@ -152,6 +159,8 @@ public sealed partial class MainWindow
             return;
         }
         _browserCard.Visibility = Visibility.Visible;
+        _browserHint.Text =
+            "Встроенный браузер открыт ниже. Прокрутите страницу вниз; если курс закрытый — авторизуйтесь в нём и дождитесь открытия курса.";
         _browserInitializing = true;
         BrowserPageLease? initializationLease = null;
         try

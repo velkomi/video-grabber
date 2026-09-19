@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using VideoGrabber.Core.Processes;
+using VideoGrabber.Core.Security;
 using VideoGrabber.Infrastructure.Browser;
 using VideoGrabber.Infrastructure.Diagnostics;
 using VideoGrabber.Infrastructure.Media;
@@ -95,34 +96,33 @@ public sealed partial class MainWindow
         if (folder is null) return false;
 
         var selectedRoot = Path.GetFullPath(folder.Path);
-        var statePath = CourseDownloadStateStore.StatePath(selectedRoot);
-        if (File.Exists(statePath))
+        try
         {
-            try
+            var resolved = await ResolveCourseResumeStateAsync(
+                selectedRoot,
+                _windowLifetime.Token);
+            if (resolved is not null)
             {
-                var state = await CourseDownloadStateStore.LoadAsync(
-                    selectedRoot,
-                    _windowLifetime.Token);
                 ApplyLoadedCourseState(
-                    state,
-                    selectedRoot);
+                    resolved.Value.State,
+                    resolved.Value.Root);
                 _browserHint.Text =
                     $"Проект курса восстановлен с диска. Готово уроков: {_courseCompletedLessons.Count}/{_cachedCoursePlan!.Lessons.Length}.";
                 UpdateCourseControls();
                 return true;
             }
-            catch (Exception ex) when (
-                ex is IOException
-                    or UnauthorizedAccessException
-                    or InvalidDataException
-                    or JsonException)
-            {
-                _browserHint.Text =
-                    "Не удалось прочитать проект курса: "
-                    + VideoGrabber.Core.Security.SensitiveDataRedactor.Redact(
-                        ex.Message);
-                return false;
-            }
+        }
+        catch (Exception ex) when (
+            ex is IOException
+                or UnauthorizedAccessException
+                or InvalidDataException
+                or JsonException)
+        {
+            _browserHint.Text =
+                "Не удалось прочитать проект курса: "
+                + VideoGrabber.Core.Security.SensitiveDataRedactor.Redact(
+                    ex.Message);
+            return false;
         }
 
         if (_mediaBrowser?.CoreWebView2 is null
@@ -136,6 +136,111 @@ public sealed partial class MainWindow
 
         return await BootstrapCourseResumeProjectAsync(
             selectedRoot);
+    }
+
+    private async Task<(CourseDownloadState State, string Root)?>
+        ResolveCourseResumeStateAsync(
+            string selectedRoot,
+            CancellationToken token)
+    {
+        var requested = RequestedCourseRoot();
+        var candidates = new List<string>();
+
+        void AddIfStateExists(string root)
+        {
+            if (File.Exists(
+                    CourseDownloadStateStore.StatePath(root)))
+                candidates.Add(root);
+        }
+
+        AddIfStateExists(selectedRoot);
+
+        try
+        {
+            foreach (var child in Directory.EnumerateDirectories(
+                         selectedRoot,
+                         "*",
+                         SearchOption.TopDirectoryOnly)
+                     .Take(100))
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    if ((File.GetAttributes(child)
+                        & FileAttributes.ReparsePoint) != 0)
+                        continue;
+                    AddIfStateExists(child);
+                }
+                catch (Exception ex) when (
+                    ex is IOException
+                        or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+        catch (Exception ex) when (
+            ex is IOException
+                or UnauthorizedAccessException
+                or DirectoryNotFoundException)
+        {
+        }
+
+        if (candidates.Count == 0)
+            return null;
+
+        CourseDownloadState? firstValid = null;
+        string? firstValidRoot = null;
+        foreach (var root in candidates.Distinct(
+                     StringComparer.OrdinalIgnoreCase))
+        {
+            token.ThrowIfCancellationRequested();
+            var state = await CourseDownloadStateStore.LoadAsync(
+                root,
+                token);
+            firstValid ??= state;
+            firstValidRoot ??= root;
+
+            if (requested is null)
+                continue;
+
+            var stateRoot = new Uri(
+                state.RootUrl,
+                UriKind.Absolute);
+            if (string.Equals(
+                    GetCourseCourseStructure.CanonicalKey(stateRoot),
+                    GetCourseCourseStructure.CanonicalKey(requested),
+                    StringComparison.Ordinal))
+                return (state, root);
+        }
+
+        if (requested is null
+            && firstValid is not null
+            && firstValidRoot is not null)
+            return (firstValid, firstValidRoot);
+
+        if (requested is not null)
+            throw new InvalidDataException(
+                "Выбрана папка другого курса. Откройте нужный курс во встроенном браузере и выберите его собственную папку; VideoGrabber не будет продолжать чужой проект.");
+
+        return null;
+    }
+
+    private Uri? RequestedCourseRoot()
+    {
+        if (_urlBox is not null
+            && UrlPolicy.TryValidate(
+                _urlBox.Text,
+                out var fromInput,
+                out _)
+            && fromInput is not null
+            && GetCourseCourseStructure.IsTrainingUri(fromInput))
+            return fromInput;
+
+        if (_browserPageUri is { } browser
+            && GetCourseCourseStructure.IsTrainingUri(browser))
+            return browser;
+
+        return null;
     }
 
     private async Task<bool> BootstrapCourseResumeProjectAsync(
