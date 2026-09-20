@@ -52,6 +52,34 @@ public sealed class CourseLessonArchiveTests
         Assert.Equal("Тест.pdf", name);
     }
 
+    [Theory]
+    [InlineData("photo.png", 1, "photo.png")]
+    [InlineData("photo.png", 2, "photo (2).png")]
+    [InlineData("photo.png", 5, "photo (5).png")]
+    [InlineData("photo", 3, "photo (3)")]
+    public void Asset_occurrence_name_is_stable_and_unique(
+        string fileName,
+        int occurrence,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            CourseLessonArchive.AssetFileNameForOccurrence(
+                fileName,
+                occurrence));
+    }
+
+    [Fact]
+    public void Asset_occurrence_name_keeps_suffix_when_base_is_long()
+    {
+        var result = CourseLessonArchive.AssetFileNameForOccurrence(
+            new string('a', 220) + ".jpg",
+            2);
+
+        Assert.EndsWith(" (2).jpg", result, StringComparison.Ordinal);
+        Assert.True(result.Length <= 180);
+    }
+
     [Fact]
     public void Lesson_folder_is_ordered_and_windows_safe()
     {

@@ -139,6 +139,31 @@ public static class CourseLessonArchive
             180);
     }
 
+    public static string AssetFileNameForOccurrence(
+        string fileName,
+        int occurrence)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        var extension = Path.GetExtension(fileName);
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        if (string.IsNullOrWhiteSpace(stem))
+        {
+            stem = fileName;
+            extension = string.Empty;
+        }
+
+        var suffix = occurrence <= 1
+            ? string.Empty
+            : $" ({occurrence})";
+        var maxStemLength = Math.Max(
+            1,
+            180 - extension.Length - suffix.Length);
+        stem = DownloadFileName.SanitizeBaseName(
+            stem,
+            maxStemLength);
+        return stem + suffix + extension;
+    }
+
     public static void WriteDocx(
         string path,
         string title,

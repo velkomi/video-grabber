@@ -83,6 +83,8 @@ public sealed partial class MainWindow
         var saved = 0;
         var unavailable = 0;
         var errors = 0;
+        var assetOccurrences = new Dictionary<string, int>(
+            StringComparer.OrdinalIgnoreCase);
         foreach (var asset in snapshot.Assets)
         {
             token.ThrowIfCancellationRequested();
@@ -93,6 +95,7 @@ public sealed partial class MainWindow
                     asset,
                     lesson.Uri,
                     lessonFolder,
+                    assetOccurrences,
                     token);
                 if (outcome == CourseAssetOutcome.Saved)
                     saved++;
@@ -385,6 +388,7 @@ public sealed partial class MainWindow
         CourseLessonAsset asset,
         Uri referer,
         string lessonFolder,
+        Dictionary<string, int> assetOccurrences,
         CancellationToken token)
     {
         var core = _mediaBrowser?.CoreWebView2
@@ -569,6 +573,16 @@ public sealed partial class MainWindow
                 if (inferred is not null)
                     fileName += inferred;
             }
+
+            var occurrenceKey = asset.Kind + "\u001f" + fileName;
+            assetOccurrences.TryGetValue(
+                occurrenceKey,
+                out var occurrence);
+            occurrence++;
+            assetOccurrences[occurrenceKey] = occurrence;
+            fileName = CourseLessonArchive.AssetFileNameForOccurrence(
+                fileName,
+                occurrence);
 
             var targetDirectory = Path.Combine(
                 lessonFolder,
