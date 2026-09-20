@@ -103,12 +103,21 @@ public sealed partial class MainWindow
             _courseResumeButton,
             _courseClearCacheButton));
 
-        _courseNetworkWarning = new InfoBar
+        _courseNetworkWarningText = new TextBlock
         {
-            IsOpen = false,
-            IsClosable = true,
-            Severity = InfoBarSeverity.Warning,
-            Title = "Проверяю другой сетевой маршрут"
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = TextBrush,
+            FontSize = 13
+        };
+        _courseNetworkWarning = new Border
+        {
+            Visibility = Visibility.Collapsed,
+            Padding = new Thickness(14, 12, 14, 12),
+            CornerRadius = new CornerRadius(10),
+            Background = BadgeBrush,
+            BorderBrush = CardBorderBrush,
+            BorderThickness = new Thickness(1),
+            Child = _courseNetworkWarningText
         };
         panel.Children.Add(_courseNetworkWarning);
 

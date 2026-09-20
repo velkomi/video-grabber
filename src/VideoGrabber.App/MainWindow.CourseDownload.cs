@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
 using VideoGrabber.Core.Processes;
@@ -23,7 +24,8 @@ public sealed partial class MainWindow
     private TextBlock _courseCurrentText = null!;
     private TextBlock _courseEtaText = null!;
     private TextBlock _courseElapsedText = null!;
-    private InfoBar _courseNetworkWarning = null!;
+    private Border _courseNetworkWarning = null!;
+    private TextBlock _courseNetworkWarningText = null!;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _courseElapsedTimer;
     private DateTimeOffset _courseProcessStartedUtc;
     private Button _transcribeDownloadedButton = null!;
@@ -1143,12 +1145,13 @@ public sealed partial class MainWindow
         int failureStreak,
         string? error)
     {
-        if (_courseNetworkWarning is null)
+        if (_courseNetworkWarning is null
+            || _courseNetworkWarningText is null)
             return;
         if (failureStreak < 2
             || plan.Lessons.Length == 0)
         {
-            _courseNetworkWarning.IsOpen = false;
+            _courseNetworkWarning.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -1157,21 +1160,21 @@ public sealed partial class MainWindow
             0,
             plan.Lessons.Length - 1);
         var lesson = plan.Lessons[index];
-        _courseNetworkWarning.Title =
-            $"Урок {index + 1} пока не скачан полностью";
-        _courseNetworkWarning.Message =
+        var title = $"Урок {index + 1} пока не скачан полностью";
+        var message =
             $"{lesson.Title}. VideoGrabber автоматически чередует прямой физический и системный маршрут Windows. " +
             "Если именно этот урок в браузере открывается только при включённом VPN, включите VPN — повтор продолжится сам, без перезапуска программы." +
             (string.IsNullOrWhiteSpace(error)
                 ? string.Empty
                 : " Последняя ошибка: " + error);
-        _courseNetworkWarning.IsOpen = true;
+        _courseNetworkWarningText.Text = title + Environment.NewLine + message;
+        _courseNetworkWarning.Visibility = Visibility.Visible;
     }
 
     private void ClearCourseNetworkWarning()
     {
         if (_courseNetworkWarning is not null)
-            _courseNetworkWarning.IsOpen = false;
+            _courseNetworkWarning.Visibility = Visibility.Collapsed;
     }
 
     private static bool IsTransientCourseFailure(Exception ex)

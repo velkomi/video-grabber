@@ -21,6 +21,10 @@ namespace VideoGrabber.App;
 
 public sealed partial class MainWindow : Window
 {
+    private static string BrandLogoAssetPath => Path.Combine(
+        AppContext.BaseDirectory,
+        "Assets",
+        "VideoGrabber.png");
     private static readonly SolidColorBrush CardBrush = new(ColorHelper.FromArgb(255, 255, 255, 255));
     private static readonly SolidColorBrush CardBorderBrush = new(ColorHelper.FromArgb(255, 216, 224, 234));
     private static readonly SolidColorBrush AccentBrush = new(ColorHelper.FromArgb(255, 45, 125, 255));
@@ -169,19 +173,19 @@ public sealed partial class MainWindow : Window
             Width = 34,
             Height = 34,
             CornerRadius = new CornerRadius(11),
-            Background = new SolidColorBrush(Colors.Transparent),
-            Child = new Image
+            Background = AccentBrush,
+            Child = new FontIcon
             {
-                Source = new BitmapImage(
-                    new Uri("ms-appx:///Assets/VideoGrabber.png")),
-                Stretch = Stretch.Uniform
+                Glyph = "\uE896",
+                FontSize = 18,
+                Foreground = new SolidColorBrush(Colors.White)
             }
         });
         brand.Children.Add(new TextBlock
         {
             Text = AppDisplayName,
             FontSize = 18,
-            FontFamily = new FontFamily("Segoe UI Variable Display"),
+            FontFamily = new FontFamily("Segoe UI"),
             FontWeight = FontWeights.Bold,
             Foreground = TextBrush,
             VerticalAlignment = VerticalAlignment.Center
@@ -915,10 +919,6 @@ public sealed partial class MainWindow : Window
             HorizontalScrollMode = ScrollMode.Disabled,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
         };
-        viewer.Resources["ScrollBarThumbBackground"] = AccentBrush;
-        viewer.Resources["ScrollBarThumbBackgroundPointerOver"] = AccentBrush;
-        viewer.Resources["ScrollBarThumbBackgroundPressed"] = AccentBrush;
-        viewer.Resources["ScrollBarPanningThumbBackground"] = AccentBrush;
         return viewer;
     }
 
@@ -1099,7 +1099,7 @@ public sealed partial class MainWindow : Window
         content.Children.Add(new TextBlock
         {
             Text = text,
-            FontFamily = new FontFamily("Segoe UI Variable Text"),
+            FontFamily = new FontFamily("Segoe UI"),
             FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             Foreground = TextBrush,
@@ -1122,7 +1122,7 @@ public sealed partial class MainWindow : Window
         content.Children.Add(new TextBlock
         {
             Text = "Создано Валерием",
-            FontFamily = new FontFamily("Segoe UI Variable Text"),
+            FontFamily = new FontFamily("Segoe UI"),
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
             Foreground = TextBrush
@@ -1142,7 +1142,7 @@ public sealed partial class MainWindow : Window
         telegramContent.Children.Add(new TextBlock
         {
             Text = "Telegram · @Velkoshkin",
-            FontFamily = new FontFamily("Segoe UI Variable Text"),
+            FontFamily = new FontFamily("Segoe UI"),
             FontWeight = FontWeights.SemiBold,
             Foreground = AccentBrush,
             VerticalAlignment = VerticalAlignment.Center

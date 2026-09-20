@@ -677,11 +677,12 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.DoesNotContain("локально на вашем ПК", shell);
         Assert.DoesNotContain("Встроенные инструменты", shell);
         Assert.Contains("\"Настройки\"", shell);
-        Assert.Contains("Segoe UI Variable", shell);
+        Assert.Contains("new FontFamily(\"Segoe UI\")", shell);
         Assert.Contains("VerticalScrollBarVisibility = ScrollBarVisibility.Visible", shell);
-        Assert.Contains("ScrollBarThumbBackground", shell);
+        Assert.DoesNotContain("ScrollBarThumbBackground", shell);
         Assert.Contains("ResponsiveActions", browser);
-        Assert.Contains("_courseNetworkWarning = new InfoBar", browser);
+        Assert.Contains("_courseNetworkWarning = new Border", browser);
+        Assert.DoesNotContain("_courseNetworkWarning = new InfoBar", browser);
     }
 
     [Fact]

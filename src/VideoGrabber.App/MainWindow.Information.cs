@@ -67,7 +67,7 @@ public sealed partial class MainWindow
         appearance.Children.Add(_themeBox);
         appearance.Children.Add(MutedText("Тема встроенной страницы сайта определяется самим сайтом; VideoGrabber не вмешивается в стили чужого плеера."));
         body.Children.Add(Card(appearance));
-        return PageScrollViewer(body);
+        return new ScrollViewer { Content = body };
     }
 
     private void InitializeTheme()
