@@ -72,7 +72,7 @@ public sealed partial class MainWindow
         body.Children.Add(Card(_accountDevicesPanel));
         body.Children.Add(BuildDesktopWorkerCard());
 
-        var view = new ScrollViewer { Content = body };
+        var view = PageScrollViewer(body);
         view.Loaded += (_, _) => StartManagedAccountRestore();
         return view;
     }

@@ -23,6 +23,7 @@ public sealed partial class MainWindow
     private TextBlock _courseCurrentText = null!;
     private TextBlock _courseEtaText = null!;
     private TextBlock _courseElapsedText = null!;
+    private InfoBar _courseNetworkWarning = null!;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _courseElapsedTimer;
     private DateTimeOffset _courseProcessStartedUtc;
     private Button _transcribeDownloadedButton = null!;
@@ -546,21 +547,26 @@ public sealed partial class MainWindow
         string courseRoot)
     {
         var before = _courseCompletedLessons.Count;
+        var diskCompleted = new HashSet<string>(StringComparer.Ordinal);
         foreach (var lesson in plan.Lessons)
         {
             if (!CourseLessonLooksCompleteOnDisk(
                     courseRoot,
                     lesson))
                 continue;
-            _courseCompletedLessons.Add(
+            diskCompleted.Add(
                 GetCourseCourseStructure.CanonicalKey(
                     lesson.Uri));
         }
 
+        _courseCompletedLessons.Clear();
+        _courseCompletedLessons.UnionWith(diskCompleted);
+
         DiagnosticHub.Log.Write(
             "course.state.reconcile",
             "succeeded",
-            $"disk-complete={_courseCompletedLessons.Count}/{plan.Lessons.Length} added={_courseCompletedLessons.Count - before}");
+            $"disk-complete={_courseCompletedLessons.Count}/{plan.Lessons.Length} " +
+            $"previous={before} delta={_courseCompletedLessons.Count - before}");
     }
 
     private async Task<bool> FinalVerifyCourseAsync(
@@ -604,6 +610,7 @@ public sealed partial class MainWindow
         DiagnosticHub.Log.Write("course.final-verify", "succeeded",
             $"lessons={plan.Lessons.Length} normalizedImages={normalizedImages} recovered={recovered} " +
             $"lessonManifestsDeleted={lessonManifestsDeleted} cacheRemoved={removed}");
+        ClearCourseNetworkWarning();
         _browserHint.Text =
             $"Финальная проверка завершена: все {plan.Lessons.Length} уроков подтверждены. " +
             "Служебные VG.lesson.json собраны в один VG.verify.json в корне курса и удалены из папок уроков; временный кэш очищен.";
@@ -636,13 +643,26 @@ public sealed partial class MainWindow
     private static bool CourseLessonLooksCompleteOnDisk(
         string courseRoot,
         GetCourseLessonPlan lesson)
+        => CourseLessonLooksCompleteOnDisk(
+            courseRoot,
+            lesson,
+            out _);
+
+    private static bool CourseLessonLooksCompleteOnDisk(
+        string courseRoot,
+        GetCourseLessonPlan lesson,
+        out string reason)
     {
+        reason = "complete";
         var folder =
             CourseLessonFolderPath(
                 courseRoot,
                 lesson);
         if (!Directory.Exists(folder))
+        {
+            reason = "lesson-folder-missing";
             return false;
+        }
 
         static bool NonEmpty(string path)
         {
@@ -663,7 +683,10 @@ public sealed partial class MainWindow
             || !NonEmpty(Path.Combine(
                 folder,
                 "Страница.html")))
+        {
+            reason = "archive-file-missing-or-empty";
             return false;
+        }
 
         try
         {
@@ -672,7 +695,10 @@ public sealed partial class MainWindow
                     "*",
                     SearchOption.AllDirectories)
                 .Any(IsCourseTemporaryFile))
+            {
+                reason = "temporary-file-present";
                 return false;
+            }
 
             if (!CourseLessonVerificationManifestStore.TryLoadForLesson(
                     courseRoot,
@@ -680,14 +706,20 @@ public sealed partial class MainWindow
                     lesson.Uri,
                     out var manifest)
                 || manifest is null)
+            {
+                reason = "verification-manifest-missing";
                 return false;
+            }
 
             if (!Uri.TryCreate(manifest.LessonUrl, UriKind.Absolute, out var manifestLesson)
                 || !string.Equals(
                     GetCourseCourseStructure.CanonicalKey(manifestLesson),
                     GetCourseCourseStructure.CanonicalKey(lesson.Uri),
                     StringComparison.Ordinal))
+            {
+                reason = "verification-manifest-mismatch";
                 return false;
+            }
 
             var mediaExtensions = new HashSet<string>(
                 [".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3", ".aac", ".opus", ".ts"],
@@ -697,7 +729,10 @@ public sealed partial class MainWindow
                     && new FileInfo(path).Length > 0)
                 .ToArray();
             if (readyMedia.Length < manifest.ExpectedVideoCount)
+            {
+                reason = $"media-missing:{readyMedia.Length}/{manifest.ExpectedVideoCount}";
                 return false;
+            }
 
             if (manifest.ExpectedVideoCount > 1)
             {
@@ -707,7 +742,10 @@ public sealed partial class MainWindow
                     if (!readyMedia.Any(path =>
                             Path.GetFileNameWithoutExtension(path)
                                 .Contains(marker, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        reason = $"media-ordinal-missing:{ordinal}/{manifest.ExpectedVideoCount}";
                         return false;
+                    }
                 }
             }
 
@@ -720,7 +758,10 @@ public sealed partial class MainWindow
                     .Count(path => !IsCourseTemporaryFile(path) && new FileInfo(path).Length > 0);
             }
             if (readyAssets < manifest.ExpectedAssetCount)
+            {
+                reason = $"asset-missing:{readyAssets}/{manifest.ExpectedAssetCount}";
                 return false;
+            }
 
             return true;
         }
@@ -729,6 +770,7 @@ public sealed partial class MainWindow
                 or UnauthorizedAccessException
                 or System.Text.RegularExpressions.RegexMatchTimeoutException)
         {
+            reason = "verification-read-error:" + ex.GetType().Name;
             return false;
         }
     }
@@ -826,6 +868,7 @@ public sealed partial class MainWindow
             }
 
             _courseTotalLessons = plan.Lessons.Length;
+            ClearCourseNetworkWarning();
             _courseCurrentLessonIndex = Math.Clamp(
                 _courseResumeLessonIndex,
                 0,
@@ -937,6 +980,8 @@ public sealed partial class MainWindow
                 failureStreak = madeProgress
                     ? 0
                     : failureStreak + 1;
+                if (madeProgress)
+                    ClearCourseNetworkWarning();
                 completedAtLastAttempt =
                     _courseCompletedLessons.Count;
 
@@ -995,6 +1040,11 @@ public sealed partial class MainWindow
                 300,
                 30 * Math.Max(1, failureStreak));
 
+        UpdateCourseNetworkWarning(
+            plan,
+            failureStreak,
+            error: null);
+
         DiagnosticHub.Log.Write(
             "course.auto-resume",
             "observed",
@@ -1050,6 +1100,10 @@ public sealed partial class MainWindow
         var safeError =
             VideoGrabber.Core.Security.SensitiveDataRedactor.Redact(
                 error.Message);
+        UpdateCourseNetworkWarning(
+            plan,
+            failureStreak,
+            safeError);
         DiagnosticHub.Log.Write(
             "course.auto-resume",
             "observed",
@@ -1082,6 +1136,42 @@ public sealed partial class MainWindow
             $"retry={failureStreak} next={_courseResumeLessonIndex + 1}/{plan.Lessons.Length}");
 
         return failureStreak;
+    }
+
+    private void UpdateCourseNetworkWarning(
+        GetCourseCoursePlan plan,
+        int failureStreak,
+        string? error)
+    {
+        if (_courseNetworkWarning is null)
+            return;
+        if (failureStreak < 2
+            || plan.Lessons.Length == 0)
+        {
+            _courseNetworkWarning.IsOpen = false;
+            return;
+        }
+
+        var index = Math.Clamp(
+            _courseResumeLessonIndex,
+            0,
+            plan.Lessons.Length - 1);
+        var lesson = plan.Lessons[index];
+        _courseNetworkWarning.Title =
+            $"Урок {index + 1} пока не скачан полностью";
+        _courseNetworkWarning.Message =
+            $"{lesson.Title}. VideoGrabber автоматически чередует прямой физический и системный маршрут Windows. " +
+            "Если именно этот урок в браузере открывается только при включённом VPN, включите VPN — повтор продолжится сам, без перезапуска программы." +
+            (string.IsNullOrWhiteSpace(error)
+                ? string.Empty
+                : " Последняя ошибка: " + error);
+        _courseNetworkWarning.IsOpen = true;
+    }
+
+    private void ClearCourseNetworkWarning()
+    {
+        if (_courseNetworkWarning is not null)
+            _courseNetworkWarning.IsOpen = false;
     }
 
     private static bool IsTransientCourseFailure(Exception ex)
@@ -1276,7 +1366,9 @@ public sealed partial class MainWindow
                     await MarkCourseLessonCompletedAsync(
                         lessonKey,
                         lessonIndex,
-                        plan.Lessons.Length);
+                        plan.Lessons.Length,
+                        rootFolder,
+                        lesson);
 
                 DiagnosticHub.Log.Write(
                     "course.lesson",
@@ -1339,7 +1431,9 @@ public sealed partial class MainWindow
                 await MarkCourseLessonCompletedAsync(
                     lessonKey,
                     lessonIndex,
-                    plan.Lessons.Length);
+                    plan.Lessons.Length,
+                    rootFolder,
+                    lesson);
         }
 
         try
@@ -1954,8 +2048,25 @@ public sealed partial class MainWindow
     private async Task MarkCourseLessonCompletedAsync(
         string lessonKey,
         int lessonIndex,
-        int total)
+        int total,
+        string rootFolder,
+        GetCourseLessonPlan lesson)
     {
+        if (!CourseLessonLooksCompleteOnDisk(
+                rootFolder,
+                lesson,
+                out var incompleteReason))
+        {
+            _courseCompletedLessons.Remove(lessonKey);
+            _courseResumeLessonIndex = lessonIndex;
+            DiagnosticHub.Log.Write(
+                "course.lesson-verify",
+                "observed",
+                $"lesson={lessonIndex + 1}/{total} incomplete={incompleteReason}");
+            await PersistCourseStateSafeAsync();
+            return;
+        }
+
         if (!_courseCompletedLessons.Add(lessonKey)) return;
         _courseResumeLessonIndex = lessonIndex + 1;
         if (total > 0)

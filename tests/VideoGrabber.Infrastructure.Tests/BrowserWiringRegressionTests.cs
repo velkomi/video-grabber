@@ -641,11 +641,62 @@ public sealed partial class BrowserWiringRegressionTests
         var main = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
         var download = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
         var media = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.MediaActions.cs"));
-        Assert.Contains("Встроенные инструменты", main);
+        Assert.Contains("initialTools.UsesBundledRuntime", main);
         Assert.DoesNotContain("var install = PrimaryButton(\"Установить или обновить\")", main);
         Assert.DoesNotContain("InstallComponentsAsync(forceUpdate: false", download);
         Assert.Contains("components.Tools.WhisperCli", media);
         Assert.Contains("components.Tools.WhisperModel", media);
         Assert.Contains("Horizontal(_mp3Button, _textButton, mediaPauseButton, cancel)", media);
+    }
+}public sealed partial class BrowserWiringRegressionTests
+{
+    [Fact]
+    public void Course_completion_is_disk_authoritative_before_progress_reaches_100_percent()
+    {
+        var root = FindRepoRoot();
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+
+        Assert.Contains("out var incompleteReason", course);
+        Assert.Contains("course.lesson-verify", course);
+        Assert.Contains("diskCompleted = new HashSet<string>", course);
+        Assert.Contains("_courseCompletedLessons.Clear();", course);
+        Assert.Contains("_courseCompletedLessons.UnionWith(diskCompleted);", course);
+    }
+
+    [Fact]
+    public void Desktop_shell_uses_compact_navigation_logo_visible_scrollbar_and_wrapped_actions()
+    {
+        var root = FindRepoRoot();
+        var shell = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
+        var browser = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Browser.cs"));
+
+        Assert.Contains("VideoGrabber.png", shell);
+        Assert.DoesNotContain("локально на вашем ПК", shell);
+        Assert.DoesNotContain("Встроенные инструменты", shell);
+        Assert.Contains("\"Настройки\"", shell);
+        Assert.Contains("Segoe UI Variable", shell);
+        Assert.Contains("VerticalScrollBarVisibility = ScrollBarVisibility.Visible", shell);
+        Assert.Contains("ScrollBarThumbBackground", shell);
+        Assert.Contains("ResponsiveActions", browser);
+        Assert.Contains("_courseNetworkWarning = new InfoBar", browser);
+    }
+
+    [Fact]
+    public void Auto_route_proxy_reports_transport_failures_for_alternate_route_selection()
+    {
+        var root = FindRepoRoot();
+        var proxy = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Infrastructure", "Networking", "SiteRouteProxy.cs"));
+        var routes = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Infrastructure", "Networking", "DownloadRouteResolver.cs"));
+        var mainNetwork = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Network.cs"));
+
+        Assert.Contains("_onTransportFailure?.Invoke(targetHost, ex)", proxy);
+        Assert.Contains("onTransportFailure: connector.ReportTransportFailure", routes);
+        Assert.Contains("onTransportFailure: connector.ReportTransportFailure", mainNetwork);
     }
 }

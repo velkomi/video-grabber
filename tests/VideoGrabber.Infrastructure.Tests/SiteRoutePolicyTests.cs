@@ -6,6 +6,70 @@ namespace VideoGrabber.Infrastructure.Tests;
 public sealed partial class SiteRoutePolicyTests
 {
     [Fact]
+    public void Transport_failure_on_auto_physical_route_prefers_system_route_next()
+    {
+        var policy = new SiteRoutePolicy(new SiteRouteSettings([
+            new("iglyrazuma.ru", RouteConnector.AutoPhysicalAdapterId)
+        ]));
+        Assert.True(policy.ConfigureSession(
+            "iglyrazuma.ru",
+            RouteConnector.AutoPhysicalAdapterId));
+
+        policy.ReportRouteConnected(
+            "vh-79-integros.kinescopecdn.net",
+            usedSystemRoute: false);
+
+        Assert.True(policy.ReportTransportFailure(
+            "vh-79-integros.kinescopecdn.net"));
+        Assert.True(policy.ShouldPreferSystemRoute(
+            "vh-79-integros.kinescopecdn.net"));
+    }
+
+    [Fact]
+    public void Transport_failure_on_system_route_returns_auto_mode_to_physical_first()
+    {
+        var policy = new SiteRoutePolicy(new SiteRouteSettings([
+            new("iglyrazuma.ru", RouteConnector.AutoPhysicalAdapterId)
+        ]));
+        Assert.True(policy.ConfigureSession(
+            "iglyrazuma.ru",
+            RouteConnector.AutoPhysicalAdapterId));
+
+        policy.ReportRouteConnected(
+            "vh-79-integros.kinescopecdn.net",
+            usedSystemRoute: false);
+        Assert.True(policy.ReportTransportFailure(
+            "vh-79-integros.kinescopecdn.net"));
+        Assert.True(policy.ShouldPreferSystemRoute(
+            "vh-79-integros.kinescopecdn.net"));
+
+        policy.ReportRouteConnected(
+            "vh-79-integros.kinescopecdn.net",
+            usedSystemRoute: true);
+        Assert.False(policy.ReportTransportFailure(
+            "vh-79-integros.kinescopecdn.net"));
+        Assert.False(policy.ShouldPreferSystemRoute(
+            "vh-79-integros.kinescopecdn.net"));
+    }
+
+    [Fact]
+    public void Manual_adapter_transport_failure_never_enables_system_fallback_preference()
+    {
+        var policy = new SiteRoutePolicy(new SiteRouteSettings([
+            new("iglyrazuma.ru", "ethernet")
+        ]));
+        Assert.True(policy.ConfigureSession("iglyrazuma.ru", "ethernet"));
+        policy.ReportRouteConnected(
+            "vh-79-integros.kinescopecdn.net",
+            usedSystemRoute: false);
+
+        Assert.False(policy.ReportTransportFailure(
+            "vh-79-integros.kinescopecdn.net"));
+        Assert.False(policy.ShouldPreferSystemRoute(
+            "vh-79-integros.kinescopecdn.net"));
+    }
+
+    [Fact]
     public void Existing_policy_reference_observes_updated_rules()
     {
         var policy = new SiteRoutePolicy(new SiteRouteSettings([]));

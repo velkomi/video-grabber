@@ -73,7 +73,13 @@ public sealed class DownloadRouteScope : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (DownloadRouteResolver.ResolveAdapterId(_policy, saved, source, referer, _sessionScope) is null) return null;
-        return _browserProxy ?? (_ownedProxy ??= new SiteRouteProxy(new RouteConnector(_policy).OpenAsync));
+        if (_browserProxy is not null) return _browserProxy;
+        if (_ownedProxy is not null) return _ownedProxy;
+        var connector = new RouteConnector(_policy);
+        _ownedProxy = new SiteRouteProxy(
+            connector.OpenAsync,
+            onTransportFailure: connector.ReportTransportFailure);
+        return _ownedProxy;
     }
 
     public EgressSessionLease ResolveEgress(IManagedEgressSessionRegistry registry,
@@ -81,8 +87,15 @@ public sealed class DownloadRouteScope : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _ = DownloadRouteResolver.ResolveAdapterId(_policy, saved, source, referer, _sessionScope);
-        _ownedEgress ??= new DownloadEgressSession(registry, new RouteConnector(_policy).OpenAsync,
-            new EgressPolicy("download", PublicOnly: true));
+        if (_ownedEgress is null)
+        {
+            var connector = new RouteConnector(_policy);
+            _ownedEgress = new DownloadEgressSession(
+                registry,
+                connector.OpenAsync,
+                new EgressPolicy("download", PublicOnly: true),
+                onTransportFailure: connector.ReportTransportFailure);
+        }
         return _ownedEgress.Lease;
     }
 

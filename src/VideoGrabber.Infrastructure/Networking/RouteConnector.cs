@@ -63,7 +63,10 @@ public sealed class RouteConnector
             var lease = _policy.CaptureLease(host);
             adapterId = lease.AdapterId;
             using var dnsDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            dnsDeadline.CancelAfter(TimeSpan.FromSeconds(15));
+            dnsDeadline.CancelAfter(
+                string.Equals(adapterId, AutoPhysicalAdapterId, StringComparison.OrdinalIgnoreCase)
+                    ? TimeSpan.FromSeconds(8)
+                    : TimeSpan.FromSeconds(15));
             addresses = await _dnsResolver(host, dnsDeadline.Token).ConfigureAwait(false);
             if (!_policy.IsLeaseCurrent(lease, host))
                 throw new InvalidOperationException("Маршрутизируемая сессия изменилась во время DNS-разрешения; соединение отменено.");
@@ -81,15 +84,44 @@ public sealed class RouteConnector
                 StringComparison.OrdinalIgnoreCase))
         {
             if (!OperatingSystem.IsWindows())
-                return await ConnectAsync(
+            {
+                var systemStream = await ConnectAsync(
                     host,
                     port,
                     addresses,
                     adapter: null,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    TimeSpan.FromSeconds(8)).ConfigureAwait(false);
+                _policy.ReportRouteConnected(host, usedSystemRoute: true);
+                return systemStream;
+            }
 
             Exception? last = null;
-            foreach (var candidate in GetAdapters())
+            if (_policy.ShouldPreferSystemRoute(host))
+            {
+                try
+                {
+                    var preferredSystemStream = await ConnectAsync(
+                        host,
+                        port,
+                        addresses,
+                        adapter: null,
+                        cancellationToken,
+                        TimeSpan.FromSeconds(8)).ConfigureAwait(false);
+                    _policy.ReportRouteConnected(host, usedSystemRoute: true);
+                    DiagnosticHub.Log.Write(
+                        "network.auto-route",
+                        "succeeded",
+                        "host=" + host + " adapter=system-preferred");
+                    return preferredSystemStream;
+                }
+                catch (IOException ex)
+                {
+                    last = ex;
+                }
+            }
+
+            foreach (var candidate in GetAdapters().Take(2))
             {
                 try
                 {
@@ -98,7 +130,9 @@ public sealed class RouteConnector
                         port,
                         addresses,
                         candidate,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken,
+                        TimeSpan.FromSeconds(6)).ConfigureAwait(false);
+                    _policy.ReportRouteConnected(host, usedSystemRoute: false);
                     DiagnosticHub.Log.Write(
                         "network.auto-route",
                         "succeeded",
@@ -119,7 +153,9 @@ public sealed class RouteConnector
                     port,
                     addresses,
                     adapter: null,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    TimeSpan.FromSeconds(8)).ConfigureAwait(false);
+                _policy.ReportRouteConnected(host, usedSystemRoute: true);
                 DiagnosticHub.Log.Write(
                     "network.auto-route",
                     "succeeded",
@@ -131,7 +167,7 @@ public sealed class RouteConnector
             {
                 throw new IOException(
                     "Автоматический маршрут не установил соединение ни через физический адаптер, ни через системный маршрут.",
-                    last ?? ex);
+                    ex.InnerException is null ? last ?? ex : ex);
             }
         }
 
@@ -156,10 +192,28 @@ public sealed class RouteConnector
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task<Stream> ConnectAsync(string host, int port, IEnumerable<IPAddress> addresses, RouteAdapter? adapter, CancellationToken cancellationToken)
+    public void ReportTransportFailure(string host, Exception error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        var systemPreferred = _policy.ReportTransportFailure(host);
+        DiagnosticHub.Log.Write(
+            "network.route-health",
+            "observed",
+            "host=" + host.TrimEnd('.').ToLowerInvariant()
+            + " error=" + error.GetType().Name
+            + " next=" + (systemPreferred ? "system-first" : "physical-first"));
+    }
+
+    private static async Task<Stream> ConnectAsync(
+        string host,
+        int port,
+        IEnumerable<IPAddress> addresses,
+        RouteAdapter? adapter,
+        CancellationToken cancellationToken,
+        TimeSpan? timeout = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        deadline.CancelAfter(timeout ?? TimeSpan.FromSeconds(15));
         Exception? last = null;
         foreach (var address in addresses.Where(a => adapter is null || a.AddressFamily == AddressFamily.InterNetwork).Take(4))
         {

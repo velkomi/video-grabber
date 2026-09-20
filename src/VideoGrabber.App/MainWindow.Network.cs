@@ -179,7 +179,12 @@ public sealed partial class MainWindow
         if (_routeReadError is not null) throw new InvalidOperationException("Исправьте файл правил подключения в разделе «Компоненты»: " + _routeReadError);
         if (routeScope is not null) return routeScope.ResolveProxy(_routes, source, referer);
         if (DownloadRouteResolver.ResolveAdapterId(_routePolicy, _routes, source, referer) is null) return null;
-        return _routeProxy ??= new SiteRouteProxy(new RouteConnector(_routePolicy).OpenAsync);
+        if (_routeProxy is not null) return _routeProxy;
+        var connector = new RouteConnector(_routePolicy);
+        _routeProxy = new SiteRouteProxy(
+            connector.OpenAsync,
+            onTransportFailure: connector.ReportTransportFailure);
+        return _routeProxy;
     }
 
     private EgressSessionLease EnsureDownloadEgress(Uri source, Uri? referer, DownloadRouteScope routeScope)

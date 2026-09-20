@@ -3,6 +3,7 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Text;
 using Microsoft.Web.WebView2.Core;
 using VideoGrabber.Core.Downloads;
@@ -165,45 +166,44 @@ public sealed partial class MainWindow : Window
         };
         brand.Children.Add(new Border
         {
-            Width = 30,
-            Height = 30,
-            CornerRadius = new CornerRadius(9),
-            Background = AccentBrush,
-            Child = new FontIcon { Glyph = "\uE896", Foreground = new SolidColorBrush(Colors.White) }
+            Width = 34,
+            Height = 34,
+            CornerRadius = new CornerRadius(11),
+            Background = new SolidColorBrush(Colors.Transparent),
+            Child = new Image
+            {
+                Source = new BitmapImage(
+                    new Uri("ms-appx:///Assets/VideoGrabber.png")),
+                Stretch = Stretch.Uniform
+            }
         });
         brand.Children.Add(new TextBlock
         {
             Text = AppDisplayName,
-            FontSize = 17,
-            FontWeight = FontWeights.SemiBold,
+            FontSize = 18,
+            FontFamily = new FontFamily("Segoe UI Variable Display"),
+            FontWeight = FontWeights.Bold,
             Foreground = TextBrush,
             VerticalAlignment = VerticalAlignment.Center
-        });
-        brand.Children.Add(new Border
-        {
-            Padding = new Thickness(9, 4, 9, 4),
-            CornerRadius = new CornerRadius(9),
-            Background = BadgeBrush,
-            Child = new TextBlock { Text = "локально на вашем ПК", FontSize = 11, Foreground = TextBrush }
         });
         _titleBar.Children.Add(brand);
         shell.Children.Add(_titleBar);
 
         var contentArea = new Grid();
-        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(228) });
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetRow(contentArea, 1);
         var sidebar = new Grid { Padding = new Thickness(14, 18, 14, 18) };
         sidebar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var navigation = Vertical(8);
-        var downloadItem = NavigationButton("↓  Загрузчик");
-        var editorItem = NavigationButton("✂  Редактор");
-        var settingsItem = NavigationButton("⚙  Встроенные инструменты");
+        var downloadItem = NavigationButton("\uE896", "Загрузчик");
+        var editorItem = NavigationButton("\uE70F", "Редактор");
+        var settingsItem = NavigationButton("\uE713", "Настройки");
 #if VIDEOGRABBER_MANAGED
-        var accountItem = NavigationButton("👤  Аккаунт");
+        var accountItem = NavigationButton("\uE77B", "Аккаунт");
 #endif
-        var infoItem = NavigationButton("ⓘ  Информация");
+        var infoItem = NavigationButton("\uE946", "Информация");
         downloadItem.Click += (_, _) => ShowPage("download");
         editorItem.Click += (_, _) => ShowPage("editor");
         settingsItem.Click += (_, _) => ShowPage("settings");
@@ -308,7 +308,11 @@ public sealed partial class MainWindow : Window
         downloadForm.Children.Add(TwoColumn(_outputFolderBox, chooseFolder, secondAuto: true));
         downloadForm.Children.Add(TwoColumn(_qualityBox, _cookiesBox));
         downloadForm.Children.Add(_audioOnlyBox);
-        downloadForm.Children.Add(Horizontal(_downloadButton, topPauseButton, _cancelButton, openFolderButton));
+        downloadForm.Children.Add(ResponsiveActions(
+            _downloadButton,
+            topPauseButton,
+            _cancelButton,
+            openFolderButton));
         downloadForm.Children.Add(browserButton);
         downloadForm.Children.Add(browserButtonHint);
         body.Children.Add(Card(downloadForm));
@@ -355,7 +359,7 @@ public sealed partial class MainWindow : Window
         body.Children.Add(_browserCard);
         body.Children.Add(BuildMediaActionsCard());
 
-        return new ScrollViewer { Content = body };
+        return PageScrollViewer(body);
     }
 
     private ScrollViewer BuildEditorPage()
@@ -406,15 +410,15 @@ public sealed partial class MainWindow : Window
         var cancelEdit = DangerButton("Отменить всё");
         cancelEdit.Click += (_, _) => CancelOperation();
         body.Children.Add(cancelEdit);
-        return new ScrollViewer { Content = body };
+        return PageScrollViewer(body);
     }
 
     private ScrollViewer BuildSettingsPage()
     {
         var body = PageStack();
         body.Children.Add(PageHeading(
-            "Встроенные инструменты",
-            "Все необходимые утилиты входят в полный комплект VideoGrabber и используются локально. Отдельная установка не требуется."));
+            "Настройки VideoGrabber",
+            "Компоненты, подключение, диагностика и параметры обработки в одном месте."));
         _ytDlpStatus = new TextBlock();
         _ffmpegStatus = new TextBlock();
         _ffprobeStatus = new TextBlock();
@@ -438,7 +442,7 @@ public sealed partial class MainWindow : Window
         body.Children.Add(BuildNetworkCard());
         body.Children.Add(BuildDiagnosticsCard());
         body.Children.Add(BuildTranscriptionSettingsCard());
-        return new ScrollViewer { Content = body };
+        return PageScrollViewer(body);
     }
     private void ShowPage(string? tag)
     {
@@ -860,6 +864,64 @@ public sealed partial class MainWindow : Window
         return panel;
     }
 
+    private static Grid ResponsiveActions(params Button[] buttons)
+    {
+        var grid = new Grid
+        {
+            ColumnSpacing = 10,
+            RowSpacing = 10,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star)
+        });
+        grid.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star)
+        });
+
+        for (var index = 0; index < buttons.Length; index++)
+        {
+            var row = index / 2;
+            while (grid.RowDefinitions.Count <= row)
+                grid.RowDefinitions.Add(new RowDefinition
+                {
+                    Height = GridLength.Auto
+                });
+
+            var button = buttons[index];
+            button.Width = double.NaN;
+            button.MinWidth = 0;
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
+            button.HorizontalContentAlignment = HorizontalAlignment.Center;
+            Grid.SetRow(button, row);
+            Grid.SetColumn(button, index % 2);
+            if (index == buttons.Length - 1 && buttons.Length % 2 == 1)
+                Grid.SetColumnSpan(button, 2);
+            grid.Children.Add(button);
+        }
+
+        return grid;
+    }
+
+    private static ScrollViewer PageScrollViewer(UIElement content)
+    {
+        var viewer = new ScrollViewer
+        {
+            Content = content,
+            VerticalScrollMode = ScrollMode.Enabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Visible,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+        };
+        viewer.Resources["ScrollBarThumbBackground"] = AccentBrush;
+        viewer.Resources["ScrollBarThumbBackgroundPointerOver"] = AccentBrush;
+        viewer.Resources["ScrollBarThumbBackgroundPressed"] = AccentBrush;
+        viewer.Resources["ScrollBarPanningThumbBackground"] = AccentBrush;
+        return viewer;
+    }
+
     private static Grid TwoColumn(FrameworkElement first, FrameworkElement second, bool secondAuto = false)
     {
         var grid = new Grid { ColumnSpacing = 12 };
@@ -1019,34 +1081,79 @@ public sealed partial class MainWindow : Window
         CornerRadius = new CornerRadius(8)
     };
 
-    private static Button NavigationButton(string text) => new()
+    private static Button NavigationButton(string glyph, string text)
     {
-        Content = text,
-        HorizontalContentAlignment = HorizontalAlignment.Left,
-        HorizontalAlignment = HorizontalAlignment.Stretch,
-        Padding = new Thickness(14, 11, 14, 11),
-        CornerRadius = new CornerRadius(8),
-        Background = new SolidColorBrush(Colors.Transparent)
-    };
+        var content = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 11,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        content.Children.Add(new FontIcon
+        {
+            Glyph = glyph,
+            FontSize = 17,
+            Foreground = AccentBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontFamily = new FontFamily("Segoe UI Variable Text"),
+            FontSize = 14,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = TextBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        return new Button
+        {
+            Content = content,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Padding = new Thickness(14, 11, 14, 11),
+            CornerRadius = new CornerRadius(9),
+            Background = new SolidColorBrush(Colors.Transparent)
+        };
+    }
 
     private static Border BuildAuthorCard()
     {
-        var content = Vertical(3);
+        var content = Vertical(6);
         content.Children.Add(new TextBlock
         {
             Text = "Создано Валерием",
-            FontSize = 14,
-            FontWeight = FontWeights.Bold,
+            FontFamily = new FontFamily("Segoe UI Variable Text"),
+            FontSize = 13,
+            FontWeight = FontWeights.SemiBold,
             Foreground = TextBrush
+        });
+        var telegramContent = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 7,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        telegramContent.Children.Add(new FontIcon
+        {
+            Glyph = "\uE724",
+            FontSize = 16,
+            Foreground = AccentBrush
+        });
+        telegramContent.Children.Add(new TextBlock
+        {
+            Text = "Telegram · @Velkoshkin",
+            FontFamily = new FontFamily("Segoe UI Variable Text"),
+            FontWeight = FontWeights.SemiBold,
+            Foreground = AccentBrush,
+            VerticalAlignment = VerticalAlignment.Center
         });
         var telegramLink = new HyperlinkButton
         {
-            Content = "Telegram: @Velkoshkin",
+            Content = telegramContent,
             NavigateUri = new Uri("https://t.me/Velkoshkin"),
             HorizontalAlignment = HorizontalAlignment.Left,
-            Padding = new Thickness(0, 4, 0, 4),
+            Padding = new Thickness(0, 2, 0, 2),
             MinHeight = 32,
-            FontWeight = FontWeights.SemiBold,
             Foreground = AccentBrush
         };
         ToolTipService.SetToolTip(telegramLink, "Открыть контакт @Velkoshkin в Telegram");

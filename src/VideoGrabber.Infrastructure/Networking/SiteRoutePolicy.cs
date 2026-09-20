@@ -7,11 +7,14 @@ public sealed record RouteLease(string? AdapterId, long SessionVersion, bool IsS
 
 public sealed class SiteRoutePolicy
 {
+    private static readonly TimeSpan SystemRoutePreferenceDuration = TimeSpan.FromMinutes(5);
     private SiteRouteSettings _current;
     private SessionState? _session;
     private long _sessionVersion;
     private readonly object _sessionGate = new();
     private readonly ConcurrentDictionary<string, string> _resolvedSessionIps = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _preferSystemUntil = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, bool> _lastRouteWasSystem = new(StringComparer.OrdinalIgnoreCase);
 
     public SiteRoutePolicy(SiteRouteSettings initial)
     {
@@ -26,7 +29,59 @@ public sealed class SiteRoutePolicy
     {
         ArgumentNullException.ThrowIfNull(settings);
         Volatile.Write(ref _current, settings);
+        _preferSystemUntil.Clear();
+        _lastRouteWasSystem.Clear();
         ClearSession();
+    }
+
+    public bool ShouldPreferSystemRoute(string host)
+    {
+        host = NormalizeHost(host);
+        if (!string.Equals(
+                ResolveAdapterId(host),
+                RouteConnector.AutoPhysicalAdapterId,
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!_preferSystemUntil.TryGetValue(host, out var until))
+            return false;
+        if (until > DateTimeOffset.UtcNow)
+            return true;
+
+        _preferSystemUntil.TryRemove(host, out _);
+        return false;
+    }
+
+    public void ReportRouteConnected(string host, bool usedSystemRoute)
+    {
+        host = NormalizeHost(host);
+        if (!string.Equals(
+                ResolveAdapterId(host),
+                RouteConnector.AutoPhysicalAdapterId,
+                StringComparison.OrdinalIgnoreCase))
+            return;
+        _lastRouteWasSystem[host] = usedSystemRoute;
+    }
+
+    public bool ReportTransportFailure(string host)
+    {
+        host = NormalizeHost(host);
+        if (!string.Equals(
+                ResolveAdapterId(host),
+                RouteConnector.AutoPhysicalAdapterId,
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (_lastRouteWasSystem.TryGetValue(host, out var usedSystemRoute)
+            && usedSystemRoute)
+        {
+            _preferSystemUntil.TryRemove(host, out _);
+            return false;
+        }
+
+        _preferSystemUntil[host] =
+            DateTimeOffset.UtcNow + SystemRoutePreferenceDuration;
+        return true;
     }
 
     public bool ConfigureSession(string sourceHost, string adapterId, bool allowCustomRoot = false)
@@ -154,6 +209,9 @@ public sealed class SiteRoutePolicy
     private static bool MatchesFamily(string host, IReadOnlyList<string> families)
         => families.Any(family => host.Equals(family, StringComparison.OrdinalIgnoreCase)
             || host.EndsWith("." + family, StringComparison.OrdinalIgnoreCase));
+
+    private static string NormalizeHost(string host)
+        => (host ?? string.Empty).Trim().TrimEnd('.').ToLowerInvariant();
 
     private sealed record SessionState(string AdapterId, IReadOnlyList<string> Families, long Version);
 }

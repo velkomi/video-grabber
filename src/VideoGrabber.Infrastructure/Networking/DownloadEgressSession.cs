@@ -12,13 +12,17 @@ public sealed class DownloadEgressSession : IDisposable
         IManagedEgressSessionRegistry registry,
         Func<string, int, CancellationToken, Task<Stream>> connect,
         EgressPolicy policy,
-        Action<string, int>? validateTarget = null)
+        Action<string, int>? validateTarget = null,
+        Action<string, Exception>? onTransportFailure = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         ArgumentNullException.ThrowIfNull(connect);
         ArgumentNullException.ThrowIfNull(policy);
 
-        _proxy = new SiteRouteProxy(connect, validateTarget);
+        _proxy = new SiteRouteProxy(
+            connect,
+            validateTarget,
+            onTransportFailure);
         try
         {
             Lease = _registry.Issue(new Uri(_proxy.ProxyUrl), policy);

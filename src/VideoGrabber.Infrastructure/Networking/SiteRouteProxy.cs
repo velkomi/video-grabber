@@ -15,13 +15,18 @@ public sealed class SiteRouteProxy : IDisposable
     private readonly SemaphoreSlim _slots = new(32, 32);
     private readonly Func<string, int, CancellationToken, Task<Stream>> _connect;
     private readonly Action<string, int> _validateTarget;
+    private readonly Action<string, Exception>? _onTransportFailure;
     private int _disposed;
     public int Port { get; }
     public string ProxyUrl => "socks5://127.0.0.1:" + Port;
-    public SiteRouteProxy(Func<string, int, CancellationToken, Task<Stream>> connect, Action<string, int>? validateTarget = null)
+    public SiteRouteProxy(
+        Func<string, int, CancellationToken, Task<Stream>> connect,
+        Action<string, int>? validateTarget = null,
+        Action<string, Exception>? onTransportFailure = null)
     {
         _connect = connect;
         _validateTarget = validateTarget ?? RouteConnector.ValidateProxyTarget;
+        _onTransportFailure = onTransportFailure;
         _listener.Start(32);
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
         _ = AcceptAsync();
@@ -92,6 +97,13 @@ public sealed class SiteRouteProxy : IDisposable
         }
         catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException or ArgumentException or InvalidOperationException or TimeoutException)
         {
+            if (connected
+                && targetHost is not null
+                && ex is IOException or SocketException or TimeoutException)
+            {
+                try { _onTransportFailure?.Invoke(targetHost, ex); }
+                catch { }
+            }
             if (!connected && !_stopping.IsCancellationRequested)
             {
                 try { await stream.WriteAsync(new byte[] { 5, 1, 0, 1, 0, 0, 0, 0, 0, 0 }, _stopping.Token).AsTask().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false); }

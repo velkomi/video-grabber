@@ -61,7 +61,12 @@ public sealed partial class MainWindow
 
         panel.Children.Add(_browserAddress);
         panel.Children.Add(TwoColumn(_mediaCandidatesBox, _mediaQualityBox));
-        panel.Children.Add(Horizontal(download, selectedPauseButton, addQueue, downloadAll, howTo));
+        panel.Children.Add(ResponsiveActions(
+            download,
+            selectedPauseButton,
+            addQueue,
+            downloadAll,
+            howTo));
         panel.Children.Add(SectionHeading("Весь курс GetCourse"));
         panel.Children.Add(new TextBlock
         {
@@ -93,10 +98,19 @@ public sealed partial class MainWindow
         _courseClearCacheButton = SecondaryButton("Очистить кэш / временные файлы");
         _courseClearCacheButton.Click += (_, _) => ClearCourseTemporaryFiles();
 
-        panel.Children.Add(Horizontal(
+        panel.Children.Add(ResponsiveActions(
             _courseDownloadButton,
             _courseResumeButton,
             _courseClearCacheButton));
+
+        _courseNetworkWarning = new InfoBar
+        {
+            IsOpen = false,
+            IsClosable = true,
+            Severity = InfoBarSeverity.Warning,
+            Title = "Проверяю другой сетевой маршрут"
+        };
+        panel.Children.Add(_courseNetworkWarning);
 
         _courseStageText = new TextBlock
         {
@@ -153,7 +167,7 @@ public sealed partial class MainWindow
         remove.Click += (_, _) => RemoveQueuedCandidate();
         var runQueue = PrimaryButton("Скачать очередь / продолжить");
         runQueue.Click += async (_, _) => await DownloadQueuedCandidatesAsync();
-        panel.Children.Add(Horizontal(addAll, up, down, remove));
+        panel.Children.Add(ResponsiveActions(addAll, up, down, remove));
         panel.Children.Add(runQueue);
         panel.Children.Add(MutedText("Для каждого найденного видео можно выбрать своё качество. Успешные пункты удаляются из очереди; оставшиеся можно продолжить позже. Отмена останавливает всю очередь."));
         panel.Children.Add(MutedText("Для закрытого урока войдите на сайте и выберите выше «Встроенный браузер — только эта загрузка». Пароль приложение не читает. DRM не обходится."));

@@ -75,7 +75,7 @@ public sealed class ComponentInstallerTests
         var download = ReadApp("MainWindow.Download.cs");
         var media = ReadApp("MainWindow.MediaActions.cs");
         Assert.Contains("initialTools.UsesBundledRuntime", app);
-        Assert.Contains("Встроенные инструменты", app);
+        Assert.Contains("\"Настройки\"", app);
         Assert.DoesNotContain("var install = PrimaryButton(\"Установить или обновить\")", app);
         Assert.DoesNotContain("InstallComponentsAsync(forceUpdate: false", download);
         Assert.Contains("Встроенные инструменты VideoGrabber отсутствуют или повреждены", download);
