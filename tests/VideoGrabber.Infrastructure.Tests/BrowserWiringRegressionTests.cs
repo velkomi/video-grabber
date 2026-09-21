@@ -628,7 +628,7 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("button.Width = 145;", main);
         Assert.Contains("button.MinWidth = 145;", main);
         Assert.Contains("ColorHelper.FromArgb(255, 250, 204, 21)", main);
-        Assert.Contains("button.Content = \"▶ Продолжить\"", main);
+        Assert.Contains("button.Content = \"▶  Продолжить\"", main);
         Assert.Contains("ColorHelper.FromArgb(255, 22, 163, 74)", main);
     }
 }
@@ -683,6 +683,48 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("ResponsiveActions", browser);
         Assert.Contains("_courseNetworkWarning = new Border", browser);
         Assert.DoesNotContain("_courseNetworkWarning = new InfoBar", browser);
+    }
+
+    [Fact]
+    public void Download_page_keeps_brand_pause_persistence_and_completion_actions()
+    {
+        var root = FindRepoRoot();
+        var shell = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.xaml.cs"));
+        var preferences = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.DownloadPreferences.cs"));
+        var media = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.MediaActions.cs"));
+        var download = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.Download.cs"));
+        var queue = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
+        var course = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
+
+        Assert.Contains("Child = new Image", shell);
+        Assert.Contains("BrandLogoAssetPath", shell);
+        Assert.Contains("После завершения всех загрузок", shell);
+        Assert.Contains("button.IsHitTestVisible = busy", shell);
+        Assert.Contains("⏸  Пауза", shell);
+
+        Assert.Contains(@"D:\VideoGrabber", preferences);
+        Assert.Contains(@"C:\VideoGrabber", preferences);
+        Assert.Contains("SetSuspendState", preferences);
+        Assert.Contains("shutdown.exe", preferences);
+        Assert.Contains("CompletionAction", media);
+        Assert.Contains("DownloadFolder", media);
+
+        Assert.Contains("ScheduleCompletionActionAfterDownloads(\"direct\")", download);
+        Assert.Contains("ScheduleCompletionActionAfterDownloads(\"queue\")", queue);
+        Assert.Contains("ScheduleCompletionActionAfterDownloads(\"course\")", course);
+
+        var png = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.App", "Assets", "VideoGrabber.png"));
+        var ico = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.App", "Assets", "VideoGrabber.ico"));
+        Assert.True(png.Exists && png.Length > 500_000);
+        Assert.True(ico.Exists && ico.Length > 5_000);
     }
 
     [Fact]

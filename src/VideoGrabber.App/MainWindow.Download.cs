@@ -124,6 +124,10 @@ public sealed partial class MainWindow
                     _localMediaBox.Text = path;
                     _localOutputBaseBox.Text = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path) + "-text");
                     RegisterDownloadedMedia(path);
+                    if (!_queueRunnerActive
+                        && !_courseDownloadActive
+                        && _browserDownloadQueue.Items.Count == 0)
+                        ScheduleCompletionActionAfterDownloads("direct");
                 }
             }
             return result.Outcome;

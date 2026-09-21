@@ -901,6 +901,7 @@ public sealed partial class MainWindow
                 _courseResumeLessonIndex = plan.Lessons.Length;
                 SetCourseProgressFinished(
                     $"Готово: полностью сохранено {plan.Lessons.Length} из {plan.Lessons.Length} уроков.");
+                ScheduleCompletionActionAfterDownloads("course");
             }
             else
             {

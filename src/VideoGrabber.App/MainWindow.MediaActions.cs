@@ -30,6 +30,8 @@ public sealed partial class MainWindow
         public string WhisperModel { get; set; } = "";
         public string Language { get; set; } = "auto";
         public LogMode LogMode { get; set; } = LogMode.Full;
+        public string DownloadFolder { get; set; } = "";
+        public string CompletionAction { get; set; } = "none";
     }
 
     private Border BuildMediaActionsCard()
@@ -230,8 +232,7 @@ public sealed partial class MainWindow
             _preferences.WhisperModel = _whisperModelBox.Text.Trim().Trim('"');
             _preferences.Language = (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "auto";
             _preferences.LogMode = DiagnosticHub.Log.Mode;
-            Directory.CreateDirectory(Path.GetDirectoryName(PreferencesPath)!);
-            File.WriteAllText(PreferencesPath, JsonSerializer.Serialize(_preferences, new JsonSerializerOptions { WriteIndented = true }));
+            PersistUiPreferences();
             _logStatus.Text = "Настройки сохранены. Пароли и cookies в настройки не записываются.";
         }
         catch (Exception ex) { _logStatus.Text = "Не удалось сохранить настройки: " + SensitiveDataRedactor.Redact(ex.Message); }

@@ -50,6 +50,7 @@ public sealed partial class MainWindow : Window
     private TextBox _outputFolderBox = null!;
     private ComboBox _qualityBox = null!;
     private ComboBox _cookiesBox = null!;
+    private ComboBox _completionActionBox = null!;
     private CheckBox _audioOnlyBox = null!;
     private Button _downloadButton = null!;
     private Button _cancelButton = null!;
@@ -119,12 +120,7 @@ public sealed partial class MainWindow : Window
             AppWindow.SetIcon(iconPath);
         }
         AppWindow.Resize(new SizeInt32(1100, 760));
-        if (_outputFolderBox is not null)
-        {
-            _outputFolderBox.Text = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
-                "VideoGrabber");
-        }
+        InitializeDownloadPreferences();
         if (_ytDlpStatus is not null)
         {
             RefreshComponentStatus();
@@ -170,15 +166,14 @@ public sealed partial class MainWindow : Window
         };
         brand.Children.Add(new Border
         {
-            Width = 34,
-            Height = 34,
+            Width = 38,
+            Height = 38,
             CornerRadius = new CornerRadius(11),
-            Background = AccentBrush,
-            Child = new FontIcon
+            Background = new SolidColorBrush(Colors.Transparent),
+            Child = new Image
             {
-                Glyph = "\uE896",
-                FontSize = 18,
-                Foreground = new SolidColorBrush(Colors.White)
+                Source = new BitmapImage(new Uri(BrandLogoAssetPath)),
+                Stretch = Stretch.Uniform
             }
         });
         brand.Children.Add(new TextBlock
@@ -289,6 +284,19 @@ public sealed partial class MainWindow : Window
         _cookiesBox.Items.Add(ComboItem("Встроенный браузер — только эта загрузка", "embedded"));
 
         _audioOnlyBox = new CheckBox { Content = "Скачать MP3 (только звук)" };
+
+        _completionActionBox = new ComboBox
+        {
+            Header = "После завершения всех загрузок",
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        _completionActionBox.Items.Add(ComboItem("Ничего не делать", "none"));
+        _completionActionBox.Items.Add(ComboItem("Выключить компьютер", "shutdown"));
+        _completionActionBox.Items.Add(ComboItem("Перезагрузить компьютер", "restart"));
+        _completionActionBox.Items.Add(ComboItem("Перевести компьютер в спящий режим", "sleep"));
+        _completionActionBox.SelectionChanged += (_, _) =>
+            CompletionActionSelectionChanged();
+
         _downloadButton = PrimaryButton("Скачать");
         _downloadButton.Click += Download_Click;
         _cancelButton = DangerButton("Отменить всё");
@@ -312,6 +320,9 @@ public sealed partial class MainWindow : Window
         downloadForm.Children.Add(TwoColumn(_outputFolderBox, chooseFolder, secondAuto: true));
         downloadForm.Children.Add(TwoColumn(_qualityBox, _cookiesBox));
         downloadForm.Children.Add(_audioOnlyBox);
+        downloadForm.Children.Add(_completionActionBox);
+        downloadForm.Children.Add(MutedText(
+            "Действие выполняется только после успешного завершения всех загрузок на 100%."));
         downloadForm.Children.Add(ResponsiveActions(
             _downloadButton,
             topPauseButton,
@@ -465,7 +476,8 @@ public sealed partial class MainWindow : Window
         picker.FileTypeFilter.Add("*");
         InitializePicker(picker);
         var folder = await picker.PickSingleFolderAsync();
-        if (folder is not null) _outputFolderBox.Text = folder.Path;
+        if (folder is not null)
+            SaveSelectedDownloadFolder(folder.Path);
     }
 
     private void OpenOutputFolder_Click(object sender, RoutedEventArgs e)
@@ -972,11 +984,15 @@ public sealed partial class MainWindow : Window
 
     private Button PauseButton()
     {
-        var button = SecondaryButton("⏸ Пауза");
+        var button = SecondaryButton("⏸  Пауза");
         button.Width = 145;
         button.MinWidth = 145;
         button.HorizontalContentAlignment = HorizontalAlignment.Center;
-        button.IsEnabled = false;
+        button.FontWeight = FontWeights.SemiBold;
+        button.IsEnabled = true;
+        button.IsHitTestVisible = false;
+        button.IsTabStop = false;
+        button.Opacity = 1;
         button.Click += (_, _) => TogglePause();
         _pauseButtons.Add(button);
         UpdatePauseButtonVisual(button);
@@ -985,6 +1001,8 @@ public sealed partial class MainWindow : Window
 
     private void TogglePause()
     {
+        if (!_operations.IsBusy && !_courseDownloadActive)
+            return;
         _operationPaused = !_operationPaused;
         if (_operationPaused)
             ProcessPauseRegistry.PauseAll();
@@ -1006,7 +1024,12 @@ public sealed partial class MainWindow : Window
     {
         foreach (var button in _pauseButtons)
         {
-            button.IsEnabled = busy;
+            // Keep the caption fully visible even while pause is unavailable.
+            // WinUI dims disabled button content too aggressively on Windows 10.
+            button.IsEnabled = true;
+            button.IsHitTestVisible = busy;
+            button.IsTabStop = busy;
+            button.Opacity = 1;
             UpdatePauseButtonVisual(button);
         }
         if (!busy && _operationPaused)
@@ -1017,23 +1040,21 @@ public sealed partial class MainWindow : Window
     {
         if (ProcessPauseRegistry.IsPaused)
         {
-            button.Content = "▶ Продолжить";
+            button.Content = "▶  Продолжить";
             button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 22, 163, 74));
             button.Foreground = new SolidColorBrush(Colors.White);
         }
+        else if (button.IsHitTestVisible)
+        {
+            button.Content = "⏸  Пауза";
+            button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 250, 204, 21));
+            button.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 31, 41, 55));
+        }
         else
         {
-            button.Content = "⏸ Пауза";
-            if (button.IsEnabled)
-            {
-                button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 250, 204, 21));
-                button.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 31, 41, 55));
-            }
-            else
-            {
-                button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 226, 232, 240));
-                button.Foreground = TextBrush;
-            }
+            button.Content = "⏸  Пауза";
+            button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 71, 85, 105));
+            button.Foreground = new SolidColorBrush(Colors.White);
         }
     }
 

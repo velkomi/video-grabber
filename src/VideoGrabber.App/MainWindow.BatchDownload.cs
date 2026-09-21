@@ -219,6 +219,9 @@ public sealed partial class MainWindow
             _browserHint.Text = _browserDownloadQueue.Items.Count == 0
                 ? "Очередь завершена. Все пункты скачаны."
                 : $"Проход очереди завершён. Для повтора осталось: {_browserDownloadQueue.Items.Count}.";
+            if (_browserDownloadQueue.Items.Count == 0
+                && completed > 0)
+                ScheduleCompletionActionAfterDownloads("queue");
         }
         finally
         {
