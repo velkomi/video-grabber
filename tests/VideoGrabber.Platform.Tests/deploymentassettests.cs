@@ -137,8 +137,9 @@ public sealed class DeploymentAssetTests
             "exec gosu 10001:10001 dotnet VideoGrabber.Platform.Api.dll",
             compose,
             StringComparison.Ordinal);
+        Assert.Contains("volume-init:", compose, StringComparison.Ordinal);
         Assert.Contains(
-            "chown 10001:10001 /var/lib/videograbber/jobs",
+            "chmod 0700 /data; chown 10001:10001 /data",
             compose,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -167,7 +168,7 @@ public sealed class DeploymentAssetTests
             compose,
             StringComparison.Ordinal);
         Assert.Contains(
-            "cap_add: [\"CHOWN\",\"SETGID\",\"SETUID\"]",
+            "cap_add: [\"CHOWN\"]",
             compose,
             StringComparison.Ordinal);
         Assert.Contains(
