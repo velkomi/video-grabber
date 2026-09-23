@@ -12,6 +12,10 @@ public sealed class DeploymentAssetTests
             root, "deploy", "platform", "compose.staging.yml"));
 
         Assert.Contains("role-provisioner:", compose, StringComparison.Ordinal);
+        Assert.Contains(
+            "exec bash /opt/videograbber/provision_runtime_roles.sh",
+            compose,
+            StringComparison.Ordinal);
         Assert.Contains("egress-proxy:", compose, StringComparison.Ordinal);
         Assert.Contains("VG_PLATFORM_IDENTITY_DSN", compose, StringComparison.Ordinal);
         Assert.Contains("VG_PLATFORM_DEVICE_DSN", compose, StringComparison.Ordinal);

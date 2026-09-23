@@ -49,7 +49,7 @@ services:
         condition: service_completed_successfully
     entrypoint: ["/bin/sh","-ec"]
     command:
-      - exec /opt/videograbber/provision_runtime_roles.sh
+      - exec bash /opt/videograbber/provision_runtime_roles.sh
     volumes:
       - ./provision_runtime_roles.sh:/opt/videograbber/provision_runtime_roles.sh:ro
     secrets:
