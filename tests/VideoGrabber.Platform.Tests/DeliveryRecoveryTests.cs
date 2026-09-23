@@ -251,10 +251,14 @@ public sealed class DeliveryRecoveryTests
             connection);
         command.Parameters.AddWithValue("artifact", artifactId);
         var value = await command.ExecuteScalarAsync();
-        return value is DateTimeOffset retained
-            ? retained
-            : throw new InvalidDataException(
-                "Artifact retention deadline is missing.");
+        return value switch
+        {
+            DateTimeOffset retained => retained,
+            DateTime retained when retained.Kind == DateTimeKind.Utc
+                => new DateTimeOffset(retained),
+            _ => throw new InvalidDataException(
+                "Artifact retention deadline is missing.")
+        };
     }
 
     private static async Task<long> CommitCountAsync(ApiFixture f, Guid accountId)

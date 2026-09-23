@@ -438,7 +438,7 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_PLATFORM_SESSION_SIGNING_KEY", TestSessionKey);
         builder.UseSetting("VG_PLATFORM_LEASE_KEY_ID", "test-lease-key-1");
         builder.UseSetting("VG_PLATFORM_LEASE_SIGNING_KEY_PKCS8", TestLeasePrivateKey);
-        builder.UseSetting("VG_TELEGRAM_BOT_TOKEN", "test-telegram-bot-token-local-only");
+        builder.UseSetting("VG_TELEGRAM_BOT_TOKEN", TelegramAuthTests.BotToken);
         builder.UseSetting("VG_TELEGRAM_WEBHOOK_SECRET", "test-webhook-secret-2026");
         builder.UseSetting("VG_TELEGRAM_INBOX_KEY", Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray()));
         builder.UseSetting("VG_TELEGRAM_MINIAPP_URL", "https://miniapp.example.test/");

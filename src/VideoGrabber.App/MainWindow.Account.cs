@@ -39,11 +39,8 @@ public sealed partial class MainWindow
             ProviderButton("Google", "google"),
             ProviderButton("Почта", "email")));
         auth.Children.Add(MutedText(
-            "После входа можно отдельно привязать дополнительные способы: Telegram, Apple или Яндекс."));
-        auth.Children.Add(Horizontal(
-            ProviderButton("Telegram", "telegram"),
-            ProviderButton("Apple", "apple"),
-            ProviderButton("Яндекс", "yandex")));
+            "Telegram привязывается командой /link в @VideoGra_bot после входа в основной аккаунт. " +
+            "Apple и Яндекс в текущем публичном запуске не используются."));
         var refresh = SecondaryButton("Обновить данные");
         refresh.Click += async (_, _) => await LoadManagedAccountAsync();
         var signOut = SecondaryButton("Выйти");
