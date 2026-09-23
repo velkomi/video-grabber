@@ -67,7 +67,7 @@ public sealed partial class MainWindow
         var configured = Environment.GetEnvironmentVariable("VIDEOGRABBER_PLATFORM_URL");
         if (Uri.TryCreate(configured, UriKind.Absolute, out var uri) && IsAllowedManagedApiBase(uri))
             return EnsureTrailingSlash(uri);
-        return new Uri("https://licensing.invalid/");
+        return new Uri("https://videograbber.srv1902378.hstgr.cloud/");
     }
 
     private static bool IsAllowedManagedApiBase(Uri uri)
