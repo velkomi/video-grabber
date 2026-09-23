@@ -7,7 +7,11 @@ public sealed record AccessSnapshot(
     DateTimeOffset? ValidUntil,
     long RemainingDownloads,
     DateTimeOffset? OfflineUntil,
-    string Reason);
+    string Reason)
+{
+    public string? PlanId { get; init; }
+    public bool CanDownloadCourse { get; init; }
+}
 
 public sealed record GrantRequest(
     Guid AccountId,

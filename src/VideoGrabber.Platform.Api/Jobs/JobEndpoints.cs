@@ -1,5 +1,6 @@
 using VideoGrabber.Platform.Api.Operations;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Core.Access;
 using VideoGrabber.Platform.Persistence;
 
 namespace VideoGrabber.Platform.Api.Jobs;
@@ -18,12 +19,22 @@ public static class JobEndpoints
 
     private static async Task<IResult> CreateAsync(
         CreateJob request, HttpContext http, JobStore jobs, DeviceStore devices,
+        IAccountStore accounts,
         PlatformOperationalCounters counters,
         CancellationToken cancellationToken)
     {
         if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
         try
         {
+            var profile = await accounts.ReadAsync(accountId, cancellationToken);
+            if (profile is null) return Results.Unauthorized();
+            if (!AccountEligibility.CanUseProtectedDownloads(profile))
+            {
+                counters.RecordBlockedAdmission();
+                return Results.Json(
+                    new { code = "primary_account_link_required" },
+                    statusCode: StatusCodes.Status403Forbidden);
+            }
             if (request.Executor == "desktop_worker"
                 && (request.DeviceId is not Guid deviceId
                     || !await devices.IsActiveAsync(accountId, deviceId, cancellationToken)))

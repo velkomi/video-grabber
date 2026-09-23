@@ -20,10 +20,13 @@ public sealed class TelegramMediaParityTests
         Assert.NotNull(capabilities);
         var names = capabilities!.Operations.Select(x => x.Operation).ToHashSet(StringComparer.Ordinal);
         Assert.Equal(
-            new HashSet<string>(["download","mp3","trim","join","transcribe"], StringComparer.Ordinal),
+            new HashSet<string>(["download","course_download","mp3","trim","join","transcribe"], StringComparer.Ordinal),
             names);
         Assert.Contains(capabilities.Operations,
             x => x.Operation == "download" && x.Executors.Contains("server_worker"));
+        Assert.Contains(capabilities.Operations,
+            x => x.Operation == "course_download"
+                 && x.Executors.SequenceEqual(["desktop_worker"]));
         Assert.Contains(capabilities.Operations,
             x => x.Operation == "transcribe" && x.Executors.Contains("desktop_worker"));
     }

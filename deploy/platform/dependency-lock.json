@@ -8,6 +8,7 @@
     "dotnetRuntime": "mcr.microsoft.com/dotnet/runtime@sha256:8a153b5889d796b6450295b383596b13308c24c230515f8a7770ce1b94e0c460",
     "postgres": "postgres@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0",
     "caddy": "caddy@sha256:ae4458638da8e1a91aafffb231c5f8778e964bca650c8a8cb23a7e8ac557aa3c",
+    "egressProxy": "ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029",
     "restic": "restic/restic@sha256:4cf4a61ef9786f4de53e9de8c8f5c040f33830eb0a10bf3d614410ee2fcb6120",
     "optionalBotApi": "aiogram/telegram-bot-api@sha256:16e13777edf491d6b2818bd72a93245364314da1c21113c6b0de24b37f609113"
   },

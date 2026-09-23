@@ -19,7 +19,11 @@ public sealed record JobView(
     string State,
     string Executor,
     Guid? ArtifactId,
-    string Reason);
+    string Reason)
+{
+    public string? Kind { get; init; }
+    public string? Quality { get; init; }
+}
 
 public sealed record AttemptLease(
     Guid JobId,
@@ -66,6 +70,15 @@ public sealed record WorkerSourceDescriptor(
     string MediaType,
     DateTimeOffset ExpiresAt);
 public sealed record AnalyzeSourceRequest(Uri Source);
+
+public sealed record RegisterDesktopSourceRequest(
+    Uri Source,
+    string Quality);
+
+public sealed record DesktopLocalCompletionRequest(
+    AttemptLease Lease,
+    string Outcome,
+    string EvidenceId);
 
 public sealed record UploadTicketRequest(
     AttemptLease Lease,

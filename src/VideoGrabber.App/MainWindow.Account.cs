@@ -32,14 +32,18 @@ public sealed partial class MainWindow
             "Вход открывается только в системном браузере. Сессия хранится через Windows DPAPI."));
         var auth = Vertical(10);
         auth.Children.Add(SectionHeading("Вход / привязка способа входа"));
-        auth.Children.Add(MutedText("До входа кнопка открывает сессию. После входа — безопасно привязывает дополнительный способ через отдельный PKCE/challenge flow. Media WebView2 не используется."));
+        auth.Children.Add(MutedText(
+            "Основной VideoGrabber-аккаунт создаётся через Google или e-mail Magic Link на сайте. " +
+            "Windows получает только одноразовый код входа и хранит refresh-сессию через DPAPI. Media WebView2 не используется."));
         auth.Children.Add(Horizontal(
             ProviderButton("Google", "google"),
-            ProviderButton("Apple", "apple"),
-            ProviderButton("Яндекс", "yandex")));
+            ProviderButton("Почта", "email")));
+        auth.Children.Add(MutedText(
+            "После входа можно отдельно привязать дополнительные способы: Telegram, Apple или Яндекс."));
         auth.Children.Add(Horizontal(
             ProviderButton("Telegram", "telegram"),
-            ProviderButton("Почта", "email")));
+            ProviderButton("Apple", "apple"),
+            ProviderButton("Яндекс", "yandex")));
         var refresh = SecondaryButton("Обновить данные");
         refresh.Click += async (_, _) => await LoadManagedAccountAsync();
         var signOut = SecondaryButton("Выйти");
@@ -89,9 +93,20 @@ public sealed partial class MainWindow
         button.Click += async (_, _) =>
         {
             if (_managedAccountId is not null && !string.IsNullOrWhiteSpace(_managedAccessToken))
+            {
                 await LinkManagedProviderAsync(provider);
-            else
-                await SignInProviderAsync(provider);
+                return;
+            }
+
+            if (provider is not ("google" or "email"))
+            {
+                SetAccountStatus(
+                    "Сначала войдите в основной аккаунт через Google или e-mail. " +
+                    "После этого можно привязать " + provider + ".");
+                return;
+            }
+
+            await SignInProviderAsync(provider);
         };
         return button;
     }
@@ -129,7 +144,9 @@ public sealed partial class MainWindow
     {
         if (_accountBusy) return;
         _accountBusy = true;
-        SetAccountStatus("Открываю системный браузер для входа…");
+        SetAccountStatus(
+            "Открываю сайт VideoGrabber в системном браузере. " +
+            "Выберите Google или e-mail Magic Link для входа…");
         try
         {
             var signIn = new SystemBrowserSignIn(_managedHttp, provider,

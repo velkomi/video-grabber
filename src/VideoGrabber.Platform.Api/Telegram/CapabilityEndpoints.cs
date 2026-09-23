@@ -22,6 +22,9 @@ public static class CapabilityEndpoints
                     "download", ["server_worker","desktop_worker"],
                     RequiresSource: true, MinimumInputs: 0, Available: true),
                 new MediaCapability(
+                    "course_download", ["desktop_worker"],
+                    RequiresSource: true, MinimumInputs: 0, Available: true),
+                new MediaCapability(
                     "mp3", ["server_worker","desktop_worker"],
                     RequiresSource: true, MinimumInputs: 0, Available: true),
                 new MediaCapability(

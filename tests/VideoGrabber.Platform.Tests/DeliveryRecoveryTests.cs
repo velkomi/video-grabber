@@ -84,6 +84,12 @@ public sealed class DeliveryRecoveryTests
             new GrantRequest(account.Id, "credits", 0, 1, null, "delivery", Guid.NewGuid())))
             .EnsureSuccessStatusCode();
         var fixture = await CompletedArtifactAsync(f, account.Id);
+        var initialRetention = await RetentionUntilAsync(
+            f, fixture.Artifact.ArtifactId);
+        Assert.InRange(
+            initialRetention,
+            f.Clock.GetUtcNow().AddMinutes(59),
+            f.Clock.GetUtcNow().AddMinutes(61));
         var destination = await LinkPrivateDestinationAsync(f, account.Client, userId);
         var request = new DeliveryRequest(
             fixture.Job.JobId, fixture.Artifact.ArtifactId,
@@ -107,6 +113,12 @@ public sealed class DeliveryRecoveryTests
         Assert.Equal("delivered", delivered.State);
         Assert.Equal(1, SendDocumentCount(f));
         Assert.Equal(1L, await CommitCountAsync(f, account.Id));
+        var deliveredRetention = await RetentionUntilAsync(
+            f, fixture.Artifact.ArtifactId);
+        Assert.InRange(
+            deliveredRetention,
+            f.Clock.GetUtcNow().AddMinutes(4),
+            f.Clock.GetUtcNow().AddMinutes(6));
 
         Cleanup(fixture.Path);
     }
@@ -227,6 +239,22 @@ public sealed class DeliveryRecoveryTests
             CancellationToken.None);
         Assert.Equal("completed", completed.State);
         return new CompletedFixture(completed, artifact, path);
+    }
+
+    private static async Task<DateTimeOffset> RetentionUntilAsync(
+        ApiFixture f,
+        Guid artifactId)
+    {
+        await using var connection = await f.Database.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "select retained_until from licensing.artifacts where artifact_id=@artifact",
+            connection);
+        command.Parameters.AddWithValue("artifact", artifactId);
+        var value = await command.ExecuteScalarAsync();
+        return value is DateTimeOffset retained
+            ? retained
+            : throw new InvalidDataException(
+                "Artifact retention deadline is missing.");
     }
 
     private static async Task<long> CommitCountAsync(ApiFixture f, Guid accountId)

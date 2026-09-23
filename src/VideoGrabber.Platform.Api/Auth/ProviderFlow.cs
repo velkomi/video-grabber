@@ -32,13 +32,15 @@ public sealed class IdentityAccountResolver : IIdentityAccountResolver, IAsyncDi
     private readonly Npgsql.NpgsqlDataSource _dataSource;
     private readonly AccountStore _store;
 
-    public IdentityAccountResolver(IConfiguration configuration)
+    public IdentityAccountResolver(
+        IConfiguration configuration,
+        TimeProvider clock)
     {
         var dsn = configuration.GetConnectionString("PlatformIdentity")
             ?? configuration["VG_PLATFORM_IDENTITY_DSN"]
             ?? throw new InvalidOperationException("Platform identity database DSN is not configured.");
         _dataSource = Npgsql.NpgsqlDataSource.Create(dsn);
-        _store = new AccountStore(_dataSource);
+        _store = new AccountStore(_dataSource, clock);
     }
 
     public Task<AccountProfile> ResolveAsync(VerifiedIdentity identity, CancellationToken cancellationToken)
@@ -53,9 +55,11 @@ public sealed class ProviderFlow(
     TimeProvider timeProvider,
     IBrokerCodeExchange codeExchange,
     IBrokerTokenValidator tokenValidator,
-    IIdentityAccountResolver identities)
+    IIdentityAccountResolver identities,
+    IConfiguration configuration)
 {
     private static readonly TimeSpan FlowLifetime = TimeSpan.FromMinutes(5);
+    private readonly Uri[] _allowedWebReturnUris = ReadAllowedWebReturnUris(configuration);
 
     public Task<SignInStart> BeginAsync(
         BeginSignIn request,
@@ -78,8 +82,10 @@ public sealed class ProviderFlow(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Provider);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ClientChallenge);
-        if (!IsAllowedClientReturnUri(request.ReturnUri))
-            throw new ArgumentException("Return URI must use HTTPS or the exact desktop loopback callback.", nameof(request));
+        if (!IsAllowedConfiguredClientReturnUri(request.ReturnUri, _allowedWebReturnUris))
+            throw new ArgumentException(
+                "Return URI must be an explicitly allowed HTTPS web callback or the exact desktop loopback callback.",
+                nameof(request));
         if (!partitions.TryGetValue(request.Provider, out var partition))
             throw new KeyNotFoundException("Unknown identity provider.");
 
@@ -129,14 +135,71 @@ public sealed class ProviderFlow(
     internal static bool IsAllowedClientReturnUri(Uri uri)
     {
         ArgumentNullException.ThrowIfNull(uri);
-        if (uri.Scheme == Uri.UriSchemeHttps) return true;
-        return uri.Scheme == Uri.UriSchemeHttp
+        return IsDesktopLoopbackReturnUri(uri)
+            || (uri.Scheme == Uri.UriSchemeHttps
+                && string.IsNullOrEmpty(uri.UserInfo)
+                && string.IsNullOrEmpty(uri.Query)
+                && string.IsNullOrEmpty(uri.Fragment));
+    }
+
+    private static bool IsAllowedConfiguredClientReturnUri(
+        Uri uri,
+        IReadOnlyList<Uri> allowedWebReturnUris)
+    {
+        if (IsDesktopLoopbackReturnUri(uri)) return true;
+        if (uri.Scheme != Uri.UriSchemeHttps
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment))
+            return false;
+        return allowedWebReturnUris.Any(allowed =>
+            string.Equals(
+                allowed.GetComponents(
+                    UriComponents.SchemeAndServer | UriComponents.Path,
+                    UriFormat.UriEscaped),
+                uri.GetComponents(
+                    UriComponents.SchemeAndServer | UriComponents.Path,
+                    UriFormat.UriEscaped),
+                StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsDesktopLoopbackReturnUri(Uri uri)
+        => uri.Scheme == Uri.UriSchemeHttp
             && string.Equals(uri.Host, "127.0.0.1", StringComparison.Ordinal)
             && !uri.IsDefaultPort
             && string.Equals(uri.AbsolutePath, "/videograbber-auth/callback", StringComparison.Ordinal)
             && string.IsNullOrEmpty(uri.UserInfo)
             && string.IsNullOrEmpty(uri.Query)
             && string.IsNullOrEmpty(uri.Fragment);
+
+    private static Uri[] ReadAllowedWebReturnUris(IConfiguration configuration)
+    {
+        var result = new List<Uri>();
+        AddConfigured(configuration["VG_WEB_AUTH_RETURN_URI"]);
+        foreach (var raw in (configuration["VG_WEB_AUTH_RETURN_URIS"] ?? string.Empty)
+                     .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            AddConfigured(raw);
+
+        if (Uri.TryCreate(
+                configuration["VG_PLATFORM_PUBLIC_URL"],
+                UriKind.Absolute,
+                out var publicUri)
+            && publicUri.Scheme == Uri.UriSchemeHttps
+            && string.IsNullOrEmpty(publicUri.UserInfo))
+            AddConfigured(new Uri(publicUri, "/web/").AbsoluteUri);
+
+        return result.Distinct().ToArray();
+
+        void AddConfigured(string? raw)
+        {
+            if (!Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+                || uri.Scheme != Uri.UriSchemeHttps
+                || !string.IsNullOrEmpty(uri.UserInfo)
+                || !string.IsNullOrEmpty(uri.Query)
+                || !string.IsNullOrEmpty(uri.Fragment))
+                return;
+            result.Add(uri);
+        }
     }
     private static Uri BuildAuthorizationUri(
         BrokerPartitionOptions partition,

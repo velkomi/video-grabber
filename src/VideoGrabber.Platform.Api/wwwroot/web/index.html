@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>VideoGrabber — загрузки на ваш компьютер</title>
+  <meta name="description" content="VideoGrabber: единый аккаунт для сайта, Windows и Telegram. Задания с сайта скачиваются прямо на ваш компьютер.">
+  <link rel="stylesheet" href="/web/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/web/" aria-label="VideoGrabber">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>VideoGrabber</span>
+    </a>
+    <nav aria-label="Основная навигация">
+      <a href="#how">Как работает</a>
+      <a href="#pricing">Тарифы</a>
+      <a href="#app">Кабинет</a>
+    </nav>
+    <button id="header-login" class="button button-ghost" type="button">Войти</button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Сайт → ваш Windows-компьютер</p>
+        <h1>Ссылка приходит сюда.<br><span>Файл остаётся у вас.</span></h1>
+        <p class="hero-lead">
+          Отправьте видео или курс из браузера. VideoGrabber на вашем компьютере
+          заберёт задание из защищённой очереди и сохранит результат прямо в выбранную папку.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#app">Открыть загрузчик</a>
+          <a class="button button-quiet" href="#pricing">Посмотреть тарифы</a>
+        </div>
+        <div class="trust-line" aria-label="Принципы хранения">
+          <span>Без постоянного хранения медиа на сервере</span>
+          <span>Один аккаунт: Web · Windows · Telegram</span>
+        </div>
+      </div>
+
+      <div class="film-stage" aria-hidden="true">
+        <div class="film-orbit orbit-a">
+          <div class="frame"><b>URL</b><small>вставьте ссылку</small></div>
+          <div class="frame"><b>QUEUE</b><small>защищённое задание</small></div>
+          <div class="frame"><b>PC</b><small>D:\VideoGrabber</small></div>
+        </div>
+        <div class="film-orbit orbit-b">
+          <div class="frame"><b>VIDEO</b><small>качество на выбор</small></div>
+          <div class="frame"><b>COURSE</b><small>локальный архив</small></div>
+          <div class="frame"><b>MP3</b><small>на ваш диск</small></div>
+        </div>
+        <div class="lens"><span>VG</span></div>
+      </div>
+    </section>
+
+    <section id="how" class="section">
+      <div class="section-head">
+        <p class="eyebrow">Один маршрут</p>
+        <h2>Сайт управляет очередью. Windows скачивает.</h2>
+      </div>
+      <div class="flow-grid">
+        <article><strong>1</strong><h3>Войдите</h3><p>Google или подтверждённый e-mail связываются с одним VideoGrabber account.</p></article>
+        <article><strong>2</strong><h3>Вставьте ссылку</h3><p>Выберите видео, MP3 или полный курс и нужное качество.</p></article>
+        <article><strong>3</strong><h3>Компьютер заберёт job</h3><p>Зарегистрированный VideoGrabber проверяет подпись устройства и получает только своё задание.</p></article>
+        <article><strong>4</strong><h3>Результат остаётся локально</h3><p>Видео и курсы не становятся постоянным облачным архивом VideoGrabber.</p></article>
+      </div>
+    </section>
+
+    <section id="pricing" class="section pricing-section">
+      <div class="section-head">
+        <p class="eyebrow">Простые правила</p>
+        <h2>Тарифы без скрытых «кредитов»</h2>
+      </div>
+      <div class="pricing-grid">
+        <article class="price-card">
+          <p class="plan">Free</p><p class="price">0 ₽</p>
+          <p>10 загрузок видео за всё время аккаунта.</p>
+          <ul><li>10 lifetime-загрузок</li><li>Windows / Web / Telegram account</li><li>Без полного курса</li></ul>
+        </article>
+        <article class="price-card">
+          <p class="plan">Start</p><p class="price">1 500 ₽<small>/30 дней</small></p>
+          <p>Для регулярных небольших загрузок.</p>
+          <ul><li>До 10 загрузок в сутки</li><li>Сброс лимита по серверным UTC-суткам</li><li>Без полного курса</li></ul>
+        </article>
+        <article class="price-card featured">
+          <span class="badge">Видео без лимита</span>
+          <p class="plan">Unlimited Video</p><p class="price">2 500 ₽<small>/30 дней</small></p>
+          <p>Неограниченные отдельные видео.</p>
+          <ul><li>Без лимита на отдельные видео</li><li>Web → Desktop</li><li>Полный курс не включён</li></ul>
+        </article>
+        <article class="price-card">
+          <p class="plan">Full Course</p><p class="price">5 000 ₽<small>/30 дней</small></p>
+          <p>Максимальный режим VideoGrabber.</p>
+          <ul><li>Видео без лимита</li><li>Скачивание полного курса</li><li>Локальное сохранение структуры курса</li></ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="app" class="section app-section">
+      <div class="section-head">
+        <p class="eyebrow">Личный кабинет</p>
+        <h2>Отправить на мой компьютер</h2>
+      </div>
+
+      <div id="signed-out" class="auth-panel">
+        <div>
+          <h3>Войдите в VideoGrabber</h3>
+          <p>Один и тот же аккаунт используется на сайте, в Managed Windows и Telegram.</p>
+        </div>
+        <div class="auth-actions">
+          <button id="google-login" class="button button-primary" type="button">Войти через Google</button>
+          <form id="email-login-form" class="email-login-form">
+            <input id="login-email" type="email" autocomplete="email" placeholder="you@example.com" required>
+            <button id="email-login" class="button button-quiet" type="submit">Получить ссылку</button>
+          </form>
+        </div>
+        <p class="field-note">E-mail вход работает без пароля: Supabase отправит одноразовую Magic Link.</p>
+        <p id="auth-status" class="status" role="status"></p>
+      </div>
+
+      <div id="dashboard" hidden>
+        <div class="dashboard-grid">
+          <section class="panel download-panel">
+            <div class="panel-title">
+              <div><p class="eyebrow">Новое задание</p><h3>Загрузчик</h3></div>
+              <span id="device-pill" class="pill offline">Компьютер не выбран</span>
+            </div>
+
+            <form id="download-form">
+              <label>Ссылка
+                <input id="source-url" type="url" inputmode="url" required placeholder="https://…" autocomplete="off">
+              </label>
+              <div class="form-row">
+                <label>Что сделать
+                  <select id="operation">
+                    <option value="download">Скачать видео</option>
+                    <option value="mp3">Скачать MP3</option>
+                    <option value="course_download">Скачать весь курс</option>
+                  </select>
+                </label>
+                <label>Качество
+                  <select id="quality">
+                    <option value="best">Лучшее доступное</option>
+                    <option value="2160p">до 2160p</option>
+                    <option value="1440p">до 1440p</option>
+                    <option value="1080p">до 1080p</option>
+                    <option value="720p">до 720p</option>
+                    <option value="480p">до 480p</option>
+                    <option value="360p">до 360p</option>
+                  </select>
+                </label>
+              </div>
+              <label>Компьютер
+                <select id="device-select"></select>
+              </label>
+              <p id="course-hint" class="field-note"></p>
+              <button id="submit-job" class="button button-primary button-wide" type="submit">Отправить на компьютер</button>
+            </form>
+            <p id="job-status" class="status" role="status"></p>
+          </section>
+
+          <aside class="panel account-panel">
+            <div class="panel-title">
+              <div><p class="eyebrow">Аккаунт</p><h3 id="account-title">VideoGrabber</h3></div>
+              <button id="logout" class="text-button" type="button">Выйти</button>
+            </div>
+            <dl class="facts">
+              <div><dt>Тариф</dt><dd id="plan-value">—</dd></div>
+              <div><dt>Лимит</dt><dd id="limit-value">—</dd></div>
+              <div><dt>Курс</dt><dd id="course-value">—</dd></div>
+              <div><dt>Telegram</dt><dd id="telegram-value">—</dd></div>
+            </dl>
+            <a class="text-link" href="/miniapp/">Открыть Telegram Mini App</a>
+          </aside>
+        </div>
+
+        <div class="dashboard-grid lower">
+          <section class="panel">
+            <div class="panel-title"><div><p class="eyebrow">Очередь</p><h3>Последние задания</h3></div><button id="refresh-jobs" class="text-button" type="button">Обновить</button></div>
+            <div id="jobs-list" class="job-list"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-title"><div><p class="eyebrow">Устройства</p><h3>Windows VideoGrabber</h3></div></div>
+            <div id="devices-list" class="device-list"></div>
+            <p class="field-note">Online означает, что зарегистрированный Managed-клиент недавно подтвердил приватный ключ устройства.</p>
+          </section>
+        </div>
+
+        <section class="panel billing-panel">
+          <div class="panel-title"><div><p class="eyebrow">Подписка</p><h3>Сменить тариф</h3></div><span id="billing-environment" class="pill">—</span></div>
+          <div id="billing-products" class="billing-products"></div>
+          <p class="field-note">Реальная оплата доступна только когда YooKassa явно настроена на сервере. Сам интерфейс не включает списания автоматически.</p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>VideoGrabber</span>
+    <span>Медиа на сервере — временно. Локальный результат — на вашем компьютере.</span>
+  </footer>
+
+  <script src="/web/app.js" defer></script>
+</body>
+</html>

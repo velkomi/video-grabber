@@ -4,6 +4,8 @@ obj/
 .idea/
 TestResults/
 artifacts/
+.test-artifacts/
+__pycache__/
 tools/
 *.user
 *.suo

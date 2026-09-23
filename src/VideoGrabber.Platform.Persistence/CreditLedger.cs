@@ -81,10 +81,38 @@ public sealed class CreditLedger : IAsyncDisposable
             ?? throw new ReservationUnavailableException();
         if (account.Blocked) throw new ReservationUnavailableException();
         var expiresAt = now.Add(HoldLifetime);
-        if (account.Role == "owner_admin" ||
-            await HasTimedAccessAsync(connection, transaction, accountId, now, cancellationToken))
+        if (account.Role == "owner_admin")
             return await InsertReservationAsync(connection, transaction, accountId,
-                request, null, false, expiresAt, cancellationToken);
+                request, null, false, expiresAt, null, null, cancellationToken);
+
+        var planId = await ReadActivePlanIdAsync(
+            connection, transaction, accountId, now, cancellationToken);
+
+        if (request.Operation == "course_download")
+        {
+            if (planId != "full_course")
+                throw new ReservationUnavailableException();
+            return await InsertReservationAsync(connection, transaction, accountId,
+                request, null, false, expiresAt, null, null, cancellationToken);
+        }
+
+        if (planId is "unlimited_video" or "full_course")
+            return await InsertReservationAsync(connection, transaction, accountId,
+                request, null, false, expiresAt, null, null, cancellationToken);
+
+        if (planId == "start")
+        {
+            var quotaDate = DateOnly.FromDateTime(now.UtcDateTime);
+            await ReserveDailyStartAsync(
+                connection, transaction, accountId, quotaDate, now, cancellationToken);
+            return await InsertReservationAsync(connection, transaction, accountId,
+                request, null, false, expiresAt, "start", quotaDate, cancellationToken);
+        }
+
+        if (await HasLegacyTimedAccessAsync(
+                connection, transaction, accountId, now, cancellationToken))
+            return await InsertReservationAsync(connection, transaction, accountId,
+                request, null, false, expiresAt, null, null, cancellationToken);
 
         var grantId = await LockCreditGrantAsync(connection, transaction, accountId, now, cancellationToken)
             ?? throw new ReservationUnavailableException();
@@ -99,7 +127,7 @@ public sealed class CreditLedger : IAsyncDisposable
                 throw new ReservationUnavailableException();
         }
         var reserved = await InsertReservationAsync(connection, transaction, accountId,
-            request, grantId, true, expiresAt, cancellationToken);
+            request, grantId, true, expiresAt, null, null, cancellationToken);
         await InsertLedgerEventAsync(connection, transaction, accountId, grantId,
             reserved.ReservationId, "reserve", -1, +1, 0, 0, null,
             "credit reserved", cancellationToken);
@@ -154,6 +182,12 @@ public sealed class CreditLedger : IAsyncDisposable
             await InsertLedgerEventAsync(connection, transaction, accountId, grantId,
                 row.ReservationId, "commit", 0, -1, +1, 0, finalize.EvidenceId,
                 "verified output committed", cancellationToken);
+        }
+        if (finalize.Outcome == "success" && row.QuotaPlanId == "start"
+            && row.QuotaDate is DateOnly quotaDate)
+        {
+            await CommitDailyStartAsync(
+                connection, transaction, accountId, quotaDate, _clock.GetUtcNow(), cancellationToken);
         }
         await using (var update = new NpgsqlCommand("""
             update licensing.reservations
@@ -216,6 +250,11 @@ public sealed class CreditLedger : IAsyncDisposable
                 active ? "unstarted reservation released" : "expired or revoked reservation voided",
                 cancellationToken);
         }
+        if (row.QuotaPlanId == "start" && row.QuotaDate is DateOnly quotaDate)
+        {
+            await ReleaseDailyStartAsync(
+                connection, transaction, row.AccountId, quotaDate, _clock.GetUtcNow(), cancellationToken);
+        }
         await using var update = new NpgsqlCommand(
             "update licensing.reservations set state='released',finalized_at=@now where reservation_id=@reservation and state='reserved'",
             connection, transaction);
@@ -251,7 +290,7 @@ public sealed class CreditLedger : IAsyncDisposable
         return new AccountState(reader.GetString(0), reader.GetBoolean(1));
     }
 
-    private static async Task<bool> HasTimedAccessAsync(
+    private static async Task<bool> HasLegacyTimedAccessAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid accountId,
@@ -263,11 +302,114 @@ public sealed class CreditLedger : IAsyncDisposable
               select 1 from licensing.entitlement_grants
               where account_id=@account and revoked_at is null and valid_from<=@now
                 and (valid_until is null or valid_until>@now)
-                and kind in ('permanent','time'))
+                and kind in ('permanent','time') and plan_id is null)
             """, connection, transaction);
         command.Parameters.AddWithValue("account", accountId);
         command.Parameters.AddWithValue("now", now);
         return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
+    private static async Task<string?> ReadActivePlanIdAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            select plan_id
+            from licensing.entitlement_grants
+            where account_id=@account and plan_id is not null
+              and revoked_at is null and valid_from<=@now
+              and (valid_until is null or valid_until>@now)
+            order by case plan_id
+              when 'full_course' then 3
+              when 'unlimited_video' then 2
+              when 'start' then 1
+              when 'free' then 0
+              else -1 end desc,
+              created_at desc,grant_id
+            limit 1
+            """, connection, transaction);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("now", now);
+        return await command.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    private static async Task ReserveDailyStartAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        DateOnly usageDate,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using (var ensure = new NpgsqlCommand("""
+            insert into licensing.daily_plan_usage(
+              account_id,usage_date,plan_id,reserved,spent,updated_at)
+            values(@account,@date,'start',0,0,@now)
+            on conflict(account_id,usage_date,plan_id) do nothing
+            """, connection, transaction))
+        {
+            ensure.Parameters.AddWithValue("account", accountId);
+            ensure.Parameters.AddWithValue("date", usageDate);
+            ensure.Parameters.AddWithValue("now", now);
+            await ensure.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var reserve = new NpgsqlCommand("""
+            update licensing.daily_plan_usage
+            set reserved=reserved+1,updated_at=@now
+            where account_id=@account and usage_date=@date and plan_id='start'
+              and reserved+spent<10
+            """, connection, transaction);
+        reserve.Parameters.AddWithValue("account", accountId);
+        reserve.Parameters.AddWithValue("date", usageDate);
+        reserve.Parameters.AddWithValue("now", now);
+        if (await reserve.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new ReservationUnavailableException();
+    }
+
+    private static async Task CommitDailyStartAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        DateOnly usageDate,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            update licensing.daily_plan_usage
+            set reserved=reserved-1,spent=spent+1,updated_at=@now
+            where account_id=@account and usage_date=@date and plan_id='start'
+              and reserved>0
+            """, connection, transaction);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("date", usageDate);
+        command.Parameters.AddWithValue("now", now);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new InvalidOperationException("Daily plan reservation is inconsistent.");
+    }
+
+    private static async Task ReleaseDailyStartAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        DateOnly usageDate,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            update licensing.daily_plan_usage
+            set reserved=reserved-1,updated_at=@now
+            where account_id=@account and usage_date=@date and plan_id='start'
+              and reserved>0
+            """, connection, transaction);
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("date", usageDate);
+        command.Parameters.AddWithValue("now", now);
+        if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            throw new InvalidOperationException("Daily plan reservation is inconsistent.");
     }
 
     private static async Task<Guid?> LockCreditGrantAsync(
@@ -299,15 +441,17 @@ public sealed class CreditLedger : IAsyncDisposable
         Guid? grantId,
         bool usesCredit,
         DateTimeOffset expiresAt,
+        string? quotaPlanId,
+        DateOnly? quotaDate,
         CancellationToken cancellationToken)
     {
         var reservationId = Guid.NewGuid();
         await using var command = new NpgsqlCommand("""
             insert into licensing.reservations(
               reservation_id,account_id,intent_id,request_hash,operation,executor,device_id,
-              grant_id,state,uses_credit,expires_at)
+              grant_id,state,uses_credit,expires_at,quota_plan_id,quota_date)
             values(@reservation,@account,@intent,@hash,@operation,@executor,@device,
-              @grant,'reserved',@uses,@expires)
+              @grant,'reserved',@uses,@expires,@quota_plan,@quota_date)
             returning expires_at
             """, connection, transaction);
         command.Parameters.AddWithValue("reservation", reservationId);
@@ -320,6 +464,8 @@ public sealed class CreditLedger : IAsyncDisposable
         command.Parameters.AddWithValue("grant", (object?)grantId ?? DBNull.Value);
         command.Parameters.AddWithValue("uses", usesCredit);
         command.Parameters.AddWithValue("expires", expiresAt);
+        command.Parameters.AddWithValue("quota_plan", (object?)quotaPlanId ?? DBNull.Value);
+        command.Parameters.AddWithValue("quota_date", (object?)quotaDate ?? DBNull.Value);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
             throw new InvalidOperationException("Reservation insert did not return expiry.");
@@ -336,7 +482,8 @@ public sealed class CreditLedger : IAsyncDisposable
     {
         await using var command = new NpgsqlCommand("""
             select reservation_id,account_id,intent_id,request_hash,operation,executor,device_id,
-                   grant_id,state,uses_credit,expires_at,attempt_id,fence,evidence_id
+                   grant_id,state,uses_credit,expires_at,attempt_id,fence,evidence_id,
+                   quota_plan_id,quota_date
             from licensing.reservations
             where account_id=@account and intent_id=@intent
             for update
@@ -355,8 +502,8 @@ public sealed class CreditLedger : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var sql = accountId is null
-            ? "select reservation_id,account_id,intent_id,request_hash,operation,executor,device_id,grant_id,state,uses_credit,expires_at,attempt_id,fence,evidence_id from licensing.reservations where reservation_id=@reservation for update"
-            : "select reservation_id,account_id,intent_id,request_hash,operation,executor,device_id,grant_id,state,uses_credit,expires_at,attempt_id,fence,evidence_id from licensing.reservations where reservation_id=@reservation and account_id=@account for update";
+            ? "select reservation_id,account_id,intent_id,request_hash,operation,executor,device_id,grant_id,state,uses_credit,expires_at,attempt_id,fence,evidence_id,quota_plan_id,quota_date from licensing.reservations where reservation_id=@reservation for update"
+            : "select reservation_id,account_id,intent_id,request_hash,operation,executor,device_id,grant_id,state,uses_credit,expires_at,attempt_id,fence,evidence_id,quota_plan_id,quota_date from licensing.reservations where reservation_id=@reservation and account_id=@account for update";
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("reservation", reservationId);
         if (accountId is Guid account) command.Parameters.AddWithValue("account", account);
@@ -374,7 +521,9 @@ public sealed class CreditLedger : IAsyncDisposable
             reader.GetString(4), reader.GetString(5), reader.IsDBNull(6) ? null : reader.GetGuid(6),
             reader.IsDBNull(7) ? null : reader.GetGuid(7), reader.GetString(8), reader.GetBoolean(9),
             reader.GetFieldValue<DateTimeOffset>(10), reader.IsDBNull(11) ? null : reader.GetGuid(11),
-            reader.IsDBNull(12) ? null : reader.GetInt64(12), reader.IsDBNull(13) ? null : reader.GetString(13));
+            reader.IsDBNull(12) ? null : reader.GetInt64(12), reader.IsDBNull(13) ? null : reader.GetString(13),
+            reader.IsDBNull(14) ? null : reader.GetString(14),
+            reader.IsDBNull(15) ? null : reader.GetFieldValue<DateOnly>(15));
     }
 
     private static async Task<GrantState?> LockGrantAsync(
@@ -435,7 +584,8 @@ public sealed class CreditLedger : IAsyncDisposable
         if (request.IntentId == Guid.Empty) throw new ArgumentException("Intent id is required.");
         if (string.IsNullOrWhiteSpace(request.RequestHash) || request.RequestHash.Length > 256)
             throw new ArgumentException("Request hash is invalid.");
-        if (request.Operation != "download") throw new ArgumentException("Unsupported reservation operation.");
+        if (request.Operation is not ("download" or "course_download"))
+            throw new ArgumentException("Unsupported reservation operation.");
         if (request.Executor is not ("server_worker" or "desktop_worker"))
             throw new ArgumentException("Unsupported executor.");
         if (request.Executor == "server_worker" && request.DeviceId is not null)
@@ -456,7 +606,8 @@ public sealed class CreditLedger : IAsyncDisposable
         Guid ReservationId, Guid AccountId, Guid IntentId, string RequestHash,
         string Operation, string Executor, Guid? DeviceId, Guid? GrantId,
         string State, bool UsesCredit, DateTimeOffset ExpiresAt,
-        Guid? AttemptId, long? Fence, string? EvidenceId)
+        Guid? AttemptId, long? Fence, string? EvidenceId,
+        string? QuotaPlanId, DateOnly? QuotaDate)
     {
         public bool Matches(ReservationRequest request)
             => RequestHash == request.RequestHash && Operation == request.Operation &&

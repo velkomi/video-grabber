@@ -1,5 +1,6 @@
 using System.Text.Json;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Core.Access;
 
 namespace VideoGrabber.Platform.Core.Payments;
 
@@ -11,7 +12,10 @@ public sealed record CatalogProduct(
     long Credits,
     int Days,
     bool RecurringAllowed,
-    IReadOnlyDictionary<string, CatalogPrice> Prices);
+    IReadOnlyDictionary<string, CatalogPrice> Prices)
+{
+    public string? PlanId { get; init; }
+}
 
 public sealed record PaymentCatalog(
     string Version,
@@ -51,6 +55,14 @@ public sealed record PaymentCatalog(
             var days = checked((int)RequiredInt64(item, "days"));
             var recurringAllowed = item.TryGetProperty("recurringAllowed", out var recurring)
                 && recurring.ValueKind == JsonValueKind.True;
+            string? planId = null;
+            if (item.TryGetProperty("planId", out var planElement))
+            {
+                if (planElement.ValueKind != JsonValueKind.String
+                    || ProductPlans.Find(planElement.GetString()) is null)
+                    throw new InvalidDataException("Payment product planId is invalid.");
+                planId = planElement.GetString();
+            }
             if (credits < 0 || days < 0
                 || (kind == "credits" && credits <= 0)
                 || (kind == "time" && days <= 0))
@@ -75,7 +87,10 @@ public sealed record PaymentCatalog(
             if (!products.TryAdd(
                     sku,
                     new CatalogProduct(
-                        sku, kind, credits, days, recurringAllowed, prices)))
+                        sku, kind, credits, days, recurringAllowed, prices)
+                    {
+                        PlanId = planId
+                    }))
                 throw new InvalidDataException("Duplicate payment SKU.");
         }
 

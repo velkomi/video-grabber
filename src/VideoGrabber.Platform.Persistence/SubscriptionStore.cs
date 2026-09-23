@@ -12,8 +12,15 @@ public sealed class SubscriptionStore(
 {
     private readonly NpgsqlDataSource _dataSource = ledger.DataSource;
 
+    public Task<SubscriptionView?> ProjectInitialPaymentAsync(
+        PaymentIntentRecord intent,
+        VerifiedPayment payment,
+        CancellationToken cancellationToken)
+        => ProjectInitialPaymentAsync(intent, null, payment, cancellationToken);
+
     public async Task<SubscriptionView?> ProjectInitialPaymentAsync(
         PaymentIntentRecord intent,
+        string? planId,
         VerifiedPayment payment,
         CancellationToken cancellationToken)
     {
@@ -41,7 +48,8 @@ public sealed class SubscriptionStore(
         if (existing is not null)
         {
             if (existing.AccountId != intent.AccountId
-                || existing.Provider != payment.Provider)
+                || existing.Provider != payment.Provider
+                || (planId is not null && existing.PlanId != planId))
                 throw new SubscriptionConflictException();
             if (paidThrough > existing.PaidThrough)
                 await UpdatePaidThroughAsync(
@@ -56,9 +64,9 @@ public sealed class SubscriptionStore(
         await using (var insert = new NpgsqlCommand("""
             insert into licensing.subscriptions(
               subscription_id,account_id,origin_payment_id,provider,environment,
-              provider_reference,state,auto_renew,paid_through,created_at,updated_at)
+              provider_reference,state,auto_renew,paid_through,plan_id,created_at,updated_at)
             values(@subscription,@account,@payment,@provider,@environment,
-              @reference,'active',true,@paid_through,@now,@now)
+              @reference,'active',true,@paid_through,@plan_id,@now,@now)
             """, connection, transaction))
         {
             insert.Parameters.AddWithValue("subscription", subscriptionId);
@@ -68,6 +76,7 @@ public sealed class SubscriptionStore(
             insert.Parameters.AddWithValue("environment", payment.Environment);
             insert.Parameters.AddWithValue("reference", providerReference);
             insert.Parameters.AddWithValue("paid_through", paidThrough);
+            insert.Parameters.AddWithValue("plan_id", (object?)planId ?? DBNull.Value);
             insert.Parameters.AddWithValue("now", now);
             try
             {
@@ -96,7 +105,10 @@ public sealed class SubscriptionStore(
 
         await transaction.CommitAsync(cancellationToken);
         return new SubscriptionView(
-            subscriptionId, intent.AccountId, "active", true, paidThrough, payment.Provider);
+            subscriptionId, intent.AccountId, "active", true, paidThrough, payment.Provider)
+        {
+            PlanId = planId
+        };
     }
 
     public async Task<SubscriptionView> ApplyRenewalAsync(
@@ -142,7 +154,7 @@ public sealed class SubscriptionStore(
         }
 
         await CreateRenewalGrantAsync(
-            connection, transaction, row.AccountId, renewal, now, cancellationToken);
+            connection, transaction, row.AccountId, row.PlanId, renewal, now, cancellationToken);
 
         var nextPaidThrough = renewal.PeriodEnd > row.PaidThrough
             ? renewal.PeriodEnd
@@ -233,7 +245,10 @@ public sealed class SubscriptionStore(
         await transaction.CommitAsync(cancellationToken);
         return new SubscriptionView(
             subscriptionId, accountId, "cancel_pending",
-            false, row.PaidThrough, row.Provider);
+            false, row.PaidThrough, row.Provider)
+        {
+            PlanId = row.PlanId
+        };
     }
 
     public async Task<SubscriptionView> ConfirmCancelAsync(
@@ -279,7 +294,10 @@ public sealed class SubscriptionStore(
 
         return new SubscriptionView(
             subscriptionId, accountId, "canceled",
-            false, row.PaidThrough, row.Provider);
+            false, row.PaidThrough, row.Provider)
+        {
+            PlanId = row.PlanId
+        };
     }
 
     public async Task<SubscriptionView> ApplyTerminalAdjustmentAsync(
@@ -348,7 +366,7 @@ public sealed class SubscriptionStore(
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             select subscription_id,account_id,provider,environment,provider_reference,
-                   state,auto_renew,paid_through,origin_payment_id
+                   state,auto_renew,paid_through,origin_payment_id,plan_id
             from licensing.subscriptions
             where account_id=@account and subscription_id=@subscription
             """, connection);
@@ -365,7 +383,7 @@ public sealed class SubscriptionStore(
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             select subscription_id,account_id,provider,environment,provider_reference,
-                   state,auto_renew,paid_through,origin_payment_id
+                   state,auto_renew,paid_through,origin_payment_id,plan_id
             from licensing.subscriptions
             where account_id=@account and subscription_id=@subscription
             """, connection);
@@ -384,7 +402,7 @@ public sealed class SubscriptionStore(
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             select subscription_id,account_id,provider,environment,provider_reference,
-                   state,auto_renew,paid_through,origin_payment_id
+                   state,auto_renew,paid_through,origin_payment_id,plan_id
             from licensing.subscriptions
             where account_id=@account
             order by created_at,subscription_id
@@ -404,7 +422,7 @@ public sealed class SubscriptionStore(
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             select subscription_id,account_id,provider,environment,provider_reference,
-                   state,auto_renew,paid_through,origin_payment_id
+                   state,auto_renew,paid_through,origin_payment_id,plan_id
             from licensing.subscriptions
             where subscription_id=@subscription
             """, connection);
@@ -419,7 +437,7 @@ public sealed class SubscriptionStore(
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             select subscription_id,account_id,provider,environment,provider_reference,
-                   state,auto_renew,paid_through,origin_payment_id
+                   state,auto_renew,paid_through,origin_payment_id,plan_id
             from licensing.subscriptions
             where origin_payment_id=@payment
             """, connection);
@@ -445,7 +463,7 @@ public sealed class SubscriptionStore(
     {
         await using var command = new NpgsqlCommand("""
             select subscription_id,account_id,provider,environment,provider_reference,
-                   state,auto_renew,paid_through,origin_payment_id
+                   state,auto_renew,paid_through,origin_payment_id,plan_id
             from licensing.subscriptions
             where subscription_id=@subscription
             for update
@@ -465,7 +483,7 @@ public sealed class SubscriptionStore(
     {
         await using var command = new NpgsqlCommand("""
             select subscription_id,account_id,provider,environment,provider_reference,
-                   state,auto_renew,paid_through,origin_payment_id
+                   state,auto_renew,paid_through,origin_payment_id,plan_id
             from licensing.subscriptions
             where origin_payment_id=@payment
             for update
@@ -560,6 +578,7 @@ public sealed class SubscriptionStore(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         Guid accountId,
+        string? planId,
         RenewalEvent renewal,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -569,10 +588,10 @@ public sealed class SubscriptionStore(
             + ":" + renewal.PeriodStart.ToUnixTimeSeconds();
         await using var insert = new NpgsqlCommand("""
             insert into licensing.entitlement_grants(
-              grant_id,account_id,kind,source,source_reference,
+              grant_id,account_id,kind,source,source_reference,plan_id,
               valid_from,valid_until,available,reserved,original_amount,
               reason,created_at)
-            values(@grant,@account,'time','purchase',@source_reference,
+            values(@grant,@account,'time','purchase',@source_reference,@plan_id,
               @from,@until,0,0,0,@reason,@now)
             on conflict(source_reference)
               where source='purchase' and source_reference is not null
@@ -581,6 +600,7 @@ public sealed class SubscriptionStore(
         insert.Parameters.AddWithValue("grant", Guid.NewGuid());
         insert.Parameters.AddWithValue("account", accountId);
         insert.Parameters.AddWithValue("source_reference", sourceReference);
+        insert.Parameters.AddWithValue("plan_id", (object?)planId ?? DBNull.Value);
         insert.Parameters.AddWithValue("from", renewal.PeriodStart);
         insert.Parameters.AddWithValue("until", renewal.PeriodEnd);
         insert.Parameters.AddWithValue("reason", "subscription renewal");
@@ -681,7 +701,8 @@ public sealed class SubscriptionStore(
             reader.GetString(5),
             reader.GetBoolean(6),
             reader.GetFieldValue<DateTimeOffset>(7),
-            reader.GetGuid(8));
+            reader.GetGuid(8),
+            reader.IsDBNull(9) ? null : reader.GetString(9));
 }
 
 public sealed record SubscriptionRecord(
@@ -693,7 +714,8 @@ public sealed record SubscriptionRecord(
     string State,
     bool AutoRenew,
     DateTimeOffset PaidThrough,
-    Guid OriginPaymentId)
+    Guid OriginPaymentId,
+    string? PlanId)
 {
     public SubscriptionView ToView()
         => new(
@@ -702,5 +724,8 @@ public sealed record SubscriptionRecord(
             State,
             AutoRenew,
             PaidThrough,
-            Provider);
+            Provider)
+        {
+            PlanId = PlanId
+        };
 }

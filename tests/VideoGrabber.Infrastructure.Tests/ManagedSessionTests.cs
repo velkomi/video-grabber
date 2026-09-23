@@ -109,19 +109,28 @@ public sealed class ManagedSessionTests
     }
 
     [Fact]
-    public async Task System_browser_sign_in_uses_loopback_state_and_pkce_then_completes_session()
+    public async Task System_browser_sign_in_uses_one_time_web_handoff_and_exact_loopback_callback()
     {
         var handler = new BrowserFlowHandler();
         using var http = new HttpClient(handler) { BaseAddress = new Uri("https://licensing.example.test/") };
-        var signIn = new SystemBrowserSignIn(http, "google", async (authorization, cancellationToken) =>
+        var signIn = new SystemBrowserSignIn(http, "google", async (verification, cancellationToken) =>
         {
-            Assert.Equal("https", authorization.Scheme);
-            Assert.Equal("state-123", Query(authorization, "state"));
+            Assert.Equal("https", verification.Scheme);
+            Assert.Equal("/web/", verification.AbsolutePath);
+            Assert.Equal("state-123", Query(verification, "desktop_state"));
+            Assert.Equal(
+                "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                Query(verification, "desktop_flow"));
+
             var callback = handler.ReturnUri ?? throw new InvalidOperationException("Return URI was not captured.");
             Assert.Equal("http", callback.Scheme);
             Assert.Equal("127.0.0.1", callback.Host);
             Assert.Equal("/videograbber-auth/callback", callback.AbsolutePath);
-            var callbackUri = new UriBuilder(callback) { Query = "code=broker-code&state=state-123" }.Uri;
+
+            var callbackUri = new UriBuilder(callback)
+            {
+                Query = "code=handoff-code&state=state-123"
+            }.Uri;
             using var callbackClient = new HttpClient();
             using var response = await callbackClient.GetAsync(callbackUri, cancellationToken);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -131,9 +140,8 @@ public sealed class ManagedSessionTests
 
         Assert.Equal("access-token", session.AccessToken);
         Assert.Equal("refresh-token", session.RefreshToken);
-        Assert.True(handler.CompleteSeen);
-        Assert.NotNull(handler.ClientChallenge);
-        Assert.NotEqual(handler.ClientVerifier, handler.ClientChallenge);
+        Assert.True(handler.StartSeen);
+        Assert.True(handler.ConsumeSeen);
     }
 
     [Fact]
@@ -249,30 +257,46 @@ public sealed class ManagedSessionTests
     private sealed class BrowserFlowHandler : HttpMessageHandler
     {
         public Uri? ReturnUri { get; private set; }
-        public string? ClientChallenge { get; private set; }
-        public string? ClientVerifier { get; private set; }
-        public bool CompleteSeen { get; private set; }
+        public bool StartSeen { get; private set; }
+        public bool ConsumeSeen { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (request.RequestUri!.AbsolutePath == "/v1/auth/start")
+            if (request.RequestUri!.AbsolutePath == "/v1/auth/desktop/start")
             {
-                var begin = await request.Content!.ReadFromJsonAsync<BeginSignIn>(cancellationToken: cancellationToken)
+                var begin = await request.Content!.ReadFromJsonAsync<DesktopSignInStartRequest>(
+                    cancellationToken: cancellationToken)
                     ?? throw new InvalidDataException();
                 ReturnUri = begin.ReturnUri;
-                ClientChallenge = begin.ClientChallenge;
-                return Json(HttpStatusCode.OK, new SignInStart(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
-                    new Uri("https://broker.example.test/authorize?state=state-123"), DateTimeOffset.UtcNow.AddMinutes(5)));
+                StartSeen = true;
+                return Json(
+                    HttpStatusCode.OK,
+                    new DesktopSignInStart(
+                        Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+                        new Uri(
+                            "https://licensing.example.test/web/?" +
+                            "desktop_flow=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&" +
+                            "desktop_state=state-123"),
+                        "state-123",
+                        DateTimeOffset.UtcNow.AddMinutes(5)));
             }
-            if (request.RequestUri.AbsolutePath == "/v1/auth/complete")
+            if (request.RequestUri.AbsolutePath == "/v1/auth/desktop/consume")
             {
-                var complete = await request.Content!.ReadFromJsonAsync<CompleteSignIn>(cancellationToken: cancellationToken)
+                var complete = await request.Content!.ReadFromJsonAsync<DesktopSignInConsumeRequest>(
+                    cancellationToken: cancellationToken)
                     ?? throw new InvalidDataException();
+                Assert.Equal(
+                    Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+                    complete.FlowId);
                 Assert.Equal("state-123", complete.State);
-                Assert.Equal("broker-code", complete.Code);
-                ClientVerifier = complete.ClientVerifier;
-                CompleteSeen = true;
-                return Json(HttpStatusCode.OK, new ApiSession("access-token", "refresh-token", DateTimeOffset.UtcNow.AddMinutes(5)));
+                Assert.Equal("handoff-code", complete.Code);
+                ConsumeSeen = true;
+                return Json(
+                    HttpStatusCode.OK,
+                    new ApiSession(
+                        "access-token",
+                        "refresh-token",
+                        DateTimeOffset.UtcNow.AddMinutes(5)));
             }
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         }

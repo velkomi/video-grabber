@@ -182,6 +182,54 @@ public sealed class AdminMergeWorkflowTests
         Assert.True(await LedgerCountAsync(f, target.Id) >= 1);
         Assert.Equal(target.Id, await MergedIntoAsync(f, source.Id));
     }
+    [Fact]
+    public async Task Merge_discards_source_free_starter_instead_of_doubling_lifetime_allowance()
+    {
+        await using var f = await ApiFixture.StartAsync();
+        var source = await f.AccountAsync(
+            "google", "admin-merge-free-source", includeStarter: true);
+        var target = await f.AccountAsync(
+            "apple", "admin-merge-free-target", includeStarter: true);
+        var admin = await f.AdminAsync();
+
+        var request = await MergeRequestAsync(f, source, target);
+        var response = await admin.PostAsJsonAsync(
+            "/v1/admin/accounts/merge", request);
+        response.EnsureSuccessStatusCode();
+
+        var access = await target.Client.GetFromJsonAsync<AccessSnapshot>("/v1/access");
+        Assert.NotNull(access);
+        Assert.Equal(10, access!.RemainingDownloads);
+
+        await using var connection = await f.Database.OpenConnectionAsync();
+        await using var command = new Npgsql.NpgsqlCommand("""
+            select
+              (select count(*)
+               from licensing.entitlement_grants
+               where account_id=@target
+                 and source='system_starter'
+                 and plan_id='free'
+                 and revoked_at is null),
+              (select coalesce(sum(available),0)
+               from licensing.entitlement_grants
+               where account_id=@target
+                 and source='system_starter'
+                 and plan_id='free'
+                 and revoked_at is null),
+              (select coalesce(sum(void_delta),0)
+               from licensing.credit_ledger
+               where account_id=@source
+                 and reason like 'account merge: discard duplicate free starter;%')
+            """, connection);
+        command.Parameters.AddWithValue("source", source.Id);
+        command.Parameters.AddWithValue("target", target.Id);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(1L, reader.GetInt64(0));
+        Assert.Equal(10L, reader.GetInt64(1));
+        Assert.Equal(10L, reader.GetInt64(2));
+    }
+
     private static async Task<MergeRequest> MergeRequestAsync(
         ApiFixture f, TestAccount source, TestAccount target)
     {

@@ -4,6 +4,7 @@ using System.Text.Json;
 using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Api.Payments;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Core.Access;
 using VideoGrabber.Platform.Persistence;
 
 namespace VideoGrabber.Platform.Api.Telegram;
@@ -16,6 +17,7 @@ public sealed class BotCommandHandler(
     DestinationService destinations,
     AdminService admin,
     BotCallbackStore callbacks,
+    TelegramAccountLinkService accountLinks,
     IBotApiClient bot,
     BotMediaHandler media,
     StarsPaymentAdapter stars,
@@ -56,8 +58,8 @@ public sealed class BotCommandHandler(
         }
 
         if (command is "/account" or "/balance" or "/link" or "/devices" or "/destinations" or "/admin"
-            or "/media" or "/jobs" or "/download" or "/mp3" or "/trim" or "/join" or "/transcribe"
-            or "/buy" or "/payments" or "/paysupport")
+            or "/media" or "/jobs" or "/download" or "/course" or "/mp3" or "/trim" or "/join" or "/transcribe"
+            or "/subscription" or "/settings" or "/buy" or "/payments" or "/paysupport")
         {
             if (!string.Equals(chatType, "private", StringComparison.OrdinalIgnoreCase))
             {
@@ -75,9 +77,8 @@ public sealed class BotCommandHandler(
                 await SendBalanceAsync(chatId, accountId, cancellationToken);
                 return;
             case "/link":
-                await bot.SendMessageAsync(new BotMessage(chatId,
-                    "Привязанные способы входа управляются в Mini App или Desktop → Аккаунт. Совпадение email аккаунты не объединяет.",
-                    MiniAppMarkup()), cancellationToken);
+                await SendTelegramLinkAsync(
+                    chatId, userId, accountId, cancellationToken);
                 return;
             case "/devices":
                 await SendDevicesAsync(chatId, accountId, cancellationToken);
@@ -89,7 +90,31 @@ public sealed class BotCommandHandler(
                 await HandleAdminAsync(chatId, accountId, args, cancellationToken);
                 return;
             case "/buy":
-                await HandleBuyAsync(chatId, accountId, args, cancellationToken);
+                {
+                    var profile = await accounts.ReadAsync(
+                        accountId, cancellationToken);
+                    if (profile is null
+                        || !AccountEligibility.CanUseProtectedDownloads(profile))
+                    {
+                        await bot.SendMessageAsync(new BotMessage(
+                            chatId,
+                            "Сначала привяжите Telegram к основному VideoGrabber-аккаунту через /link. " +
+                            "Оплата для временного Telegram-аккаунта отключена, чтобы покупки не потерялись при объединении."),
+                            cancellationToken);
+                        return;
+                    }
+                    await HandleBuyAsync(
+                        chatId, accountId, args, cancellationToken);
+                    return;
+                }
+            case "/subscription":
+                await SendBalanceAsync(chatId, accountId, cancellationToken);
+                return;
+            case "/settings":
+                await bot.SendMessageAsync(new BotMessage(
+                    chatId,
+                    "Настройки аккаунта, компьютеров, Telegram и подписки доступны в Mini App.",
+                    MiniAppMarkup()), cancellationToken);
                 return;
             case "/payments":
             case "/paysupport":
@@ -135,6 +160,57 @@ public sealed class BotCommandHandler(
         }
     }
 
+    private async Task SendTelegramLinkAsync(
+        long chatId,
+        long userId,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        var profile = await accounts.ReadAsync(accountId, cancellationToken)
+            ?? throw new InvalidDataException(
+                "Telegram account points to a missing profile.");
+
+        if (AccountEligibility.CanUseProtectedDownloads(profile)
+            && profile.LinkedProviders.Contains(
+                "telegram", StringComparer.OrdinalIgnoreCase))
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Telegram уже привязан к основному VideoGrabber-аккаунту."),
+                cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var ticket = await accountLinks.BeginAsync(
+                accountId, userId, cancellationToken);
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Привязка Telegram к VideoGrabber\n\n" +
+                "Откройте одноразовую ссылку и войдите через Google или e-mail. " +
+                "После подтверждения этот Telegram будет использовать тот же тариф, лимиты и устройства.\n\n" +
+                "Ссылка действует 5 минут.",
+                UrlMarkup("Привязать Telegram", ticket.LinkUri)),
+                cancellationToken);
+        }
+        catch (TelegramAccountLinkReconciliationRequiredException)
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "На временном Telegram-аккаунте уже есть данные, которые нельзя безопасно объединить автоматически. " +
+                "Автоматическая привязка остановлена; потребуется проверка аккаунта."),
+                cancellationToken);
+        }
+        catch (TelegramAccountLinkConflictException)
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Этот Telegram уже не является временным аккаунтом или уже связан с другим профилем."),
+                cancellationToken);
+        }
+    }
+
     private async Task SendAccountAsync(long chatId, Guid accountId, CancellationToken cancellationToken)
     {
         var profile = await accounts.ReadAsync(accountId, cancellationToken)
@@ -142,8 +218,10 @@ public sealed class BotCommandHandler(
         var access = await grants.EvaluateAsync(accountId, cancellationToken);
         var refresh = await callbacks.CreateAsync(accountId, "account:refresh", null, cancellationToken);
         var text = $"Аккаунт\nРоль: {profile.Role}\n" +
+                   $"Тариф: {PlanLabel(access)}\n" +
                    $"Способы входа: {(profile.LinkedProviders.Length == 0 ? "—" : string.Join(", ", profile.LinkedProviders))}\n" +
-                   $"Скачивания: {(access.Unlimited ? "безлимит" : access.RemainingDownloads.ToString(CultureInfo.InvariantCulture))}\n" +
+                   $"Скачивания: {DownloadLimitLabel(access)}\n" +
+                   $"Полный курс: {(access.CanDownloadCourse ? "доступен" : "не входит в тариф")}\n" +
                    $"Доступ: {access.Reason}";
         await bot.SendMessageAsync(new BotMessage(chatId, text, AccountMarkup(refresh)), cancellationToken);
     }
@@ -151,19 +229,22 @@ public sealed class BotCommandHandler(
     private async Task SendBalanceAsync(long chatId, Guid accountId, CancellationToken cancellationToken)
     {
         var access = await grants.EvaluateAsync(accountId, cancellationToken);
-        var balance = access.Unlimited ? "безлимит" : access.RemainingDownloads.ToString(CultureInfo.InvariantCulture);
         var until = access.ValidUntil?.ToUniversalTime().ToString("u", CultureInfo.InvariantCulture) ?? "—";
         await bot.SendMessageAsync(new BotMessage(chatId,
-            $"Баланс: {balance} загрузок. Доступ до: {until}. Причина: {access.Reason}."), cancellationToken);
+            $"Баланс / подписка. Тариф: {PlanLabel(access)}. Лимит: {DownloadLimitLabel(access)}. " +
+            $"Полный курс: {(access.CanDownloadCourse ? "да" : "нет")}. " +
+            $"Доступ до: {until}. Причина: {access.Reason}."), cancellationToken);
     }
 
     private async Task SendDevicesAsync(long chatId, Guid accountId, CancellationToken cancellationToken)
     {
         var rows = await devices.ListAsync(accountId, cancellationToken);
         var active = rows.Where(x => !x.Revoked).ToArray();
+        var now = clock.GetUtcNow();
         var text = active.Length == 0
             ? "Активных компьютеров нет."
-            : "Компьютеры:\n" + string.Join("\n", active.Select(x => $"• {x.Name} — {x.DeviceId:D}"));
+            : "Компьютеры:\n" + string.Join("\n", active.Select(x =>
+                $"• {x.Name} — {(x.LastSeenAt is DateTimeOffset seen && now - seen < TimeSpan.FromSeconds(25) ? "online" : "offline")} — {x.DeviceId:D}"));
         await bot.SendMessageAsync(new BotMessage(chatId, text), cancellationToken);
     }
 
@@ -335,8 +416,32 @@ public sealed class BotCommandHandler(
     }
 
     private static string HelpText()
-        => "Команды: /account, /balance, /link, /devices, /destinations, /media, /jobs, /download, /mp3, /trim, /join, /transcribe, /buy, /payments, /paysupport, /help. " +
-           "В Telegram цифровые покупки — только Stars. /admin доступен только owner_admin.";
+        => "VideoGrabber\n\n" +
+           "Загрузки:\n/download <URL> [quality] — видео\n" +
+           "/course <URL> [quality] — весь курс на Windows\n" +
+           "/mp3 <URL> [quality] — MP3\n" +
+           "/media — редактор, trim/join/transcribe\n/jobs — очередь\n\n" +
+           "Аккаунт:\n/account — профиль\n/subscription — тариф и лимиты\n" +
+           "/devices — компьютеры\n/settings — Mini App\n/link — способы входа\n\n" +
+           "Платежи:\n/buy <sku> [recurring] — Stars\n/payments — история и поддержка\n\n" +
+           "/help — эта справка. /admin доступен только owner_admin.";
+
+    private static string PlanLabel(AccessSnapshot access)
+        => access.PlanId switch
+        {
+            "free" => "Free",
+            "start" => "Start",
+            "unlimited_video" => "Unlimited Video",
+            "full_course" => "Full Course",
+            _ => access.Unlimited ? "Owner / legacy unlimited" : "Legacy"
+        };
+
+    private static string DownloadLimitLabel(AccessSnapshot access)
+        => access.Unlimited
+            ? "безлимит"
+            : access.PlanId == "start"
+                ? "до 10 в UTC-сутки"
+                : access.RemainingDownloads.ToString(CultureInfo.InvariantCulture) + " осталось";
 
     private static (string Command, string Args) ParseCommand(string text)
     {

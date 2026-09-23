@@ -139,7 +139,7 @@ public sealed class GrantStore : IAsyncDisposable
         await SetAccountAsync(connection, transaction, accountId, cancellationToken);
         await using var command = new NpgsqlCommand("""
             select grant_id,kind,source,valid_from,valid_until,available,reserved,
-                   revoked_at is not null,created_at
+                   revoked_at is not null,created_at,plan_id
             from licensing.entitlement_grants
             where account_id=@account order by created_at,grant_id
             """, connection, transaction);
@@ -150,7 +150,10 @@ public sealed class GrantStore : IAsyncDisposable
                 reader.GetFieldValue<DateTimeOffset>(3),
                 reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
                 reader.GetInt64(5), reader.GetInt64(6), reader.GetBoolean(7),
-                reader.GetFieldValue<DateTimeOffset>(8)));
+                reader.GetFieldValue<DateTimeOffset>(8))
+            {
+                PlanId = reader.IsDBNull(9) ? null : reader.GetString(9)
+            });
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
         return AccessEvaluator.Evaluate(account, grants, _clock.GetUtcNow());

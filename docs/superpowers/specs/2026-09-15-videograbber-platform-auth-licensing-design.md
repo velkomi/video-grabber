@@ -12,6 +12,8 @@ Extend VideoGrabber from a local Windows application into one account-based plat
 
 The platform must preserve the working local downloader while making access, gifts, purchases and download allowances consistent across all clients.
 
+> **2026-09-21 superseding implementation note.** The current product rules are defined in `docs/platform/2026-09-21-web-account-plans-implementation.md`. In particular, a new account now receives exactly 10 lifetime Free downloads, Start is limited to 10 logical downloads per UTC day, Unlimited Video excludes full-course download, Full Course includes it, and Telegram identity alone is no longer sufficient for protected media jobs. Telegram must be linked to a main account whose origin is not Telegram (launch UX: Google or verified e-mail). Where this older design conflicts with that note, the 2026-09-21 note controls.
+
 ## 2. Core decisions
 
 - Authentication providers: Google, Apple, Yandex, Telegram, plus verified email as recovery/fallback.

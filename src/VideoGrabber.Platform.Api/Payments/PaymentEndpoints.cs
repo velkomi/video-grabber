@@ -30,6 +30,7 @@ public static class PaymentEndpoints
                 {
                     sku = product.Sku,
                     kind = product.Kind,
+                    planId = product.PlanId,
                     credits = product.Credits,
                     days = product.Days,
                     recurringAllowed = product.RecurringAllowed,

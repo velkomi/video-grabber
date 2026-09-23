@@ -73,6 +73,55 @@ public sealed class DesktopWorkerClient(
         return false;
     }
 
+    public async Task<WorkerSourceDescriptor> ResolveSourceAsync(
+        Guid deviceId,
+        string sourceId,
+        string quality,
+        CancellationToken cancellationToken)
+    {
+        if (deviceId == Guid.Empty
+            || string.IsNullOrWhiteSpace(sourceId)
+            || string.IsNullOrWhiteSpace(quality))
+            throw new ArgumentException("Desktop source request is incomplete.");
+
+        using var request = Create(
+            HttpMethod.Get,
+            $"/v1/desktop-worker/devices/{deviceId:D}/sources/{Uri.EscapeDataString(sourceId)}?quality={Uri.EscapeDataString(quality)}");
+        using var response = await http.SendAsync(
+            request, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new UnauthorizedAccessException("desktop_source_unavailable");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<WorkerSourceDescriptor>(
+            cancellationToken: cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidDataException("Desktop source response was empty.");
+    }
+
+    public async Task<JobView> CompleteLocalAsync(
+        AttemptLease lease,
+        string outcome,
+        string evidenceId,
+        CancellationToken cancellationToken)
+    {
+        if (lease.Work.DeviceId is not Guid deviceId)
+            throw new UnauthorizedAccessException("worker_scope_mismatch");
+        EnsureScope(deviceId, lease);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outcome);
+        ArgumentException.ThrowIfNullOrWhiteSpace(evidenceId);
+
+        using var request = Create(
+            HttpMethod.Post,
+            $"/v1/desktop-worker/devices/{deviceId:D}/complete-local");
+        request.Content = JsonContent.Create(
+            new DesktopLocalCompletionRequest(lease, outcome, evidenceId));
+        using var response = await http.SendAsync(
+            request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<JobView>(
+            cancellationToken: cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidDataException("Local completion response was empty.");
+    }
+
     public async Task<ArtifactReceipt> UploadAsync(
         AttemptLease lease,
         string selectedLocalPath,

@@ -25,8 +25,10 @@ public sealed class SubscriptionService(
         var intent = await payments.ReadIntentAsync(
             payment.PaymentId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException("Payment was not found.");
+        var product = payments.Catalog.RequireProduct(
+            intent.Sku, intent.Provider, intent.Recurring);
         return await subscriptions.ProjectInitialPaymentAsync(
-            intent, payment, cancellationToken).ConfigureAwait(false);
+            intent, product.PlanId, payment, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<SubscriptionView> ApplyStarsRenewalAsync(

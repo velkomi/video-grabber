@@ -81,6 +81,107 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             sourceId, mediaId, title, durationMs, qualities, "server_worker")];
     }
 
+    public async Task<AnalyzedMedia> RegisterDesktopAsync(
+        Guid accountId,
+        RegisterDesktopSourceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (accountId == Guid.Empty)
+            throw new ArgumentException("Account is required.", nameof(accountId));
+        ArgumentNullException.ThrowIfNull(request);
+        if (!IsDesktopQuality(request.Quality))
+            throw new ArgumentException("Quality is invalid.", nameof(request));
+
+        await _egress.ValidatePublicTargetAsync(
+            request.Source, cancellationToken).ConfigureAwait(false);
+
+        var sourceId = "src_" + Guid.NewGuid().ToString("N");
+        var mediaId = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(request.Source.AbsoluteUri)))
+            .ToLowerInvariant()[..24];
+        var expires = _clock.GetUtcNow().AddMinutes(30);
+        var cipher = Encrypt(request.Source.AbsoluteUri);
+        var qualities = new[]
+        {
+            "best", "2160p", "1440p", "1080p", "720p", "480p", "360p"
+        };
+
+        try
+        {
+            await using var connection =
+                await _dataSource.OpenConnectionAsync(cancellationToken);
+            await using var command = new NpgsqlCommand("""
+                insert into licensing.sources(
+                  source_id,account_id,media_id,source_cipher,qualities,expires_at)
+                values(@source,@account,@media,@cipher,@qualities::jsonb,@expires)
+                """, connection);
+            command.Parameters.AddWithValue("source", sourceId);
+            command.Parameters.AddWithValue("account", accountId);
+            command.Parameters.AddWithValue("media", mediaId);
+            command.Parameters.AddWithValue("cipher", cipher);
+            command.Parameters.AddWithValue(
+                "qualities", JsonSerializer.Serialize(qualities));
+            command.Parameters.AddWithValue("expires", expires);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(cipher);
+        }
+
+        return new AnalyzedMedia(
+            sourceId,
+            mediaId,
+            request.Source.Host,
+            null,
+            qualities,
+            "desktop_worker");
+    }
+
+    public async Task<WorkerSourceDescriptor?> ResolveForDesktopAsync(
+        Guid accountId,
+        string sourceId,
+        string quality,
+        CancellationToken cancellationToken)
+    {
+        if (accountId == Guid.Empty
+            || string.IsNullOrWhiteSpace(sourceId)
+            || string.IsNullOrWhiteSpace(quality))
+            return null;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select source_cipher,qualities,expires_at
+            from licensing.sources
+            where source_id=@source and account_id=@account
+            """, connection);
+        command.Parameters.AddWithValue("source", sourceId);
+        command.Parameters.AddWithValue("account", accountId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var encrypted = reader.GetFieldValue<byte[]>(0);
+        var qualitiesJson = reader.GetFieldValue<string>(1);
+        var expires = reader.GetFieldValue<DateTimeOffset>(2);
+        if (expires <= _clock.GetUtcNow()) return null;
+
+        var qualities = JsonSerializer.Deserialize<string[]>(qualitiesJson) ?? [];
+        if (!qualities.Contains(quality, StringComparer.Ordinal)) return null;
+
+        var uriText = Decrypt(encrypted);
+        if (!Uri.TryCreate(uriText, UriKind.Absolute, out var uri)) return null;
+        await _egress.ValidatePublicTargetAsync(
+            uri, cancellationToken).ConfigureAwait(false);
+
+        var height = ParseHeight(quality);
+        var format = height is int h
+            ? $"bestvideo[height={h}]+bestaudio/best[height={h}]"
+            : "bestvideo+bestaudio/best";
+        return new WorkerSourceDescriptor(
+            sourceId, uri, format, null, height, "video/mp4", expires);
+    }
+
     public async Task<WorkerSourceDescriptor?> ResolveForWorkerAsync(
         string sourceId,
         string quality,
@@ -214,6 +315,15 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         aes.Decrypt(nonce, cipher, tag, plain);
         try { return Encoding.UTF8.GetString(plain); }
         finally { CryptographicOperations.ZeroMemory(plain); }
+    }
+
+    private static bool IsDesktopQuality(string quality)
+    {
+        if (string.Equals(quality, "best", StringComparison.Ordinal))
+            return true;
+        return quality.EndsWith('p')
+            && int.TryParse(quality.AsSpan(0, quality.Length - 1), out var height)
+            && height is >= 144 and <= 4320;
     }
 
     private static int? ParseHeight(string quality)

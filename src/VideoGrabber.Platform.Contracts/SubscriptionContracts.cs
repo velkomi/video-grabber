@@ -6,7 +6,10 @@ public sealed record SubscriptionView(
     string State,
     bool AutoRenew,
     DateTimeOffset PaidThrough,
-    string Provider);
+    string Provider)
+{
+    public string? PlanId { get; init; }
+}
 
 public sealed record RenewalEvent(
     string Provider,

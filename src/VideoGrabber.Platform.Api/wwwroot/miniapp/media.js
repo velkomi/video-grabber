@@ -83,23 +83,45 @@ function updateExecutors() {
   fillSelect($("#media-executor"), operation?.executors || []);
 }
 
-$("#media-operation").addEventListener("change", updateExecutors);
+$("#media-operation").addEventListener("change", () => {
+  updateExecutors();
+  analyzed = null;
+  $("#media-options").hidden = true;
+});
 
 $("#media-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const raw = $("#media-url").value.trim();
   try {
-    status("Анализирую источник…");
-    const rows = await api("/v1/sources/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: raw })
-    });
-    if (!rows.length) throw new Error("Media не найдено");
-    analyzed = rows[0];
+    const kind = $("#media-operation").value;
+    status(kind === "course_download"
+      ? "Проверяю ссылку курса для Windows…"
+      : "Анализирую источник…");
+
+    if (kind === "course_download") {
+      analyzed = await api("/v1/sources/register-desktop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: raw, quality: "best" })
+      });
+    } else {
+      const rows = await api("/v1/sources/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: raw })
+      });
+      if (!rows.length) throw new Error("Media не найдено");
+      analyzed = rows[0];
+    }
+
     fillSelect($("#media-quality"), analyzed.qualities);
+    updateExecutors();
     $("#media-options").hidden = false;
-    status("Источник проверен. Выберите операцию и качество.", "success");
+    status(
+      kind === "course_download"
+        ? "Курс будет скачан зарегистрированным Windows VideoGrabber. Выберите качество."
+        : "Источник проверен. Выберите качество и исполнителя.",
+      "success");
   } catch (error) {
     status("Анализ не выполнен: " + error.message, "error");
   }

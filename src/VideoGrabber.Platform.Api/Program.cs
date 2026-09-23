@@ -79,6 +79,9 @@ if (args.Length > 0 && string.Equals(args[0], "--consistency-report", StringComp
     return;
 }
 var builder = WebApplication.CreateBuilder(args);
+// ASP.NET Hosting.Diagnostics logs the raw request target, including query strings.
+// Signed URLs/OAuth-like query values must never be copied into ordinary request logs.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 var sessionJwt = SessionJwtOptions.FromConfiguration(builder.Configuration);
 var telegramSecurity = TelegramSecurityOptions.FromConfiguration(builder.Configuration);
 
@@ -127,6 +130,7 @@ builder.Services.AddRateLimiter(options =>
 });
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("TelegramBotApi").RemoveAllLoggers();
+builder.Services.AddHttpClient("SupabaseAuth").RemoveAllLoggers();
 builder.Services.AddHttpClient("YooKassa").RemoveAllLoggers();
 builder.Services.AddHttpClient("OperationsAlerts").RemoveAllLoggers();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -139,6 +143,8 @@ builder.Services.AddSingleton<IBrokerUserInfoSource, HttpBrokerUserInfoSource>()
 builder.Services.AddSingleton<IBrokerBindingStore>(sp => sp.GetRequiredService<SessionStore>());
 builder.Services.AddSingleton<IBrokerTokenValidator, BrokerTokenValidator>();
 builder.Services.AddSingleton<ProviderFlow>();
+builder.Services.AddSingleton<SupabaseAuthService>();
+builder.Services.AddSingleton<DesktopAuthHandoffStore>();
 builder.Services.AddSingleton(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -215,6 +221,7 @@ builder.Services.AddSingleton<ITelegramUpdateInbox>(sp => sp.GetRequiredService<
 builder.Services.AddSingleton<TelegramAssertionStore>();
 builder.Services.AddSingleton<ITelegramAccountResolver, TelegramAccountResolver>();
 builder.Services.AddSingleton<BotCallbackStore>();
+builder.Services.AddSingleton<TelegramAccountLinkService>();
 builder.Services.AddSingleton<IBotApiClient, BotApiClient>();
 builder.Services.AddSingleton<BotMediaHandler>();
 builder.Services.AddSingleton<BotCommandHandler>();
@@ -351,6 +358,7 @@ app.MapDeviceEndpoints();
 app.MapIdentityEndpoints();
 app.MapSessionEndpoints();
 app.MapTelegramSessionEndpoints();
+app.MapTelegramAccountLinkEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapCapabilityEndpoints();
 app.MapTelegramAdminLinkEndpoints();
