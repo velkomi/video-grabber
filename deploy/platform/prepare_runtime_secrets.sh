@@ -40,6 +40,8 @@ write_once worker_token rand_url
 write_once session_key rand_url
 write_once operations_token rand_url
 write_once source_encryption_key rand_b64_32
+write_text_once last_backup_utc "1970-01-01T00:00:00Z"
+write_text_once retention_dry_run_utc "1970-01-01T00:00:00Z"
 
 if [ ! -s "$SECRET_DIR/lease_signing_key_pkcs8" ]; then
   openssl ecparam -name prime256v1 -genkey -noout 2>/dev/null \

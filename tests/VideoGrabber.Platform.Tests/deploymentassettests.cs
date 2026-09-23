@@ -25,6 +25,8 @@ public sealed class DeploymentAssetTests
         Assert.Contains("telegram_webhook_secret", compose, StringComparison.Ordinal);
         Assert.Contains("telegram_inbox_key", compose, StringComparison.Ordinal);
         Assert.Contains("telegram_bot_user_id", compose, StringComparison.Ordinal);
+        Assert.Contains("last_backup_utc", compose, StringComparison.Ordinal);
+        Assert.Contains("retention_dry_run_utc", compose, StringComparison.Ordinal);
         Assert.Contains(
             "workerjobs:/var/lib/videograbber/jobs",
             compose,
@@ -183,6 +185,24 @@ public sealed class DeploymentAssetTests
             "cap_add: [\"SETGID\",\"SETUID\"]",
             compose,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Maintenance_timer_refreshes_backup_and_retention_markers()
+    {
+        var root = FindRepoRoot();
+        var script = File.ReadAllText(Path.Combine(root, "deploy", "platform", "videograbber-maintenance.sh"));
+        var service = File.ReadAllText(Path.Combine(root, "deploy", "platform", "videograbber-maintenance.service"));
+        var timer = File.ReadAllText(Path.Combine(root, "deploy", "platform", "videograbber-maintenance.timer"));
+
+        Assert.Contains("pg_dump", script, StringComparison.Ordinal);
+        Assert.Contains("pg_restore --list", script, StringComparison.Ordinal);
+        Assert.Contains("last_backup_utc", script, StringComparison.Ordinal);
+        Assert.Contains("retention_dry_run_utc", script, StringComparison.Ordinal);
+        Assert.Contains("unsafe", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("videograbber-maintenance.sh", service, StringComparison.Ordinal);
+        Assert.Contains("OnUnitActiveSec=10min", timer, StringComparison.Ordinal);
+        Assert.Contains("Persistent=true", timer, StringComparison.Ordinal);
     }
 
     [Fact]

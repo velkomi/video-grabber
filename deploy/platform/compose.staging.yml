@@ -126,6 +126,8 @@ services:
         export VG_PLATFORM_SESSION_SIGNING_KEY="$$(cat /run/secrets/session_key)"
         export VG_PLATFORM_LEASE_SIGNING_KEY_PKCS8="$$(cat /run/secrets/lease_signing_key_pkcs8)"
         export VG_SOURCE_ENCRYPTION_KEY="$$(cat /run/secrets/source_encryption_key)"
+        export VG_LAST_BACKUP_UTC="$$(cat /run/secrets/last_backup_utc)"
+        export VG_RETENTION_DRY_RUN_UTC="$$(cat /run/secrets/retention_dry_run_utc)"
         export VG_TELEGRAM_BOT_TOKEN="$$(cat /run/secrets/telegram_bot_token)"
         export VG_TELEGRAM_WEBHOOK_SECRET="$$(cat /run/secrets/telegram_webhook_secret)"
         export VG_TELEGRAM_INBOX_KEY="$$(cat /run/secrets/telegram_inbox_key)"
@@ -167,6 +169,8 @@ services:
       - session_key
       - lease_signing_key_pkcs8
       - source_encryption_key
+      - last_backup_utc
+      - retention_dry_run_utc
       - telegram_bot_token
       - telegram_webhook_secret
       - telegram_inbox_key
@@ -321,6 +325,10 @@ secrets:
     file: ${VG_LEASE_SIGNING_KEY_FILE:?}
   source_encryption_key:
     file: ${VG_SOURCE_ENCRYPTION_KEY_FILE:?}
+  last_backup_utc:
+    file: ${VG_LAST_BACKUP_UTC_FILE:?}
+  retention_dry_run_utc:
+    file: ${VG_RETENTION_DRY_RUN_UTC_FILE:?}
   telegram_bot_token:
     file: ${VG_TELEGRAM_BOT_TOKEN_FILE:?}
   telegram_webhook_secret:
