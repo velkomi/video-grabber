@@ -4,6 +4,7 @@ set -Eeuo pipefail
 HOST="videograbber.srv1902378.hstgr.cloud"
 NAME="videograbber-public-proxy"
 NETWORK="valery-kanev-web"
+BACKEND_NETWORK="vg-stage-videograbber_edge"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CFG="$SCRIPT_DIR/videograbber-public-nginx.conf"
 IMAGE="nginx@sha256:dc5069ad14f19660b141b21236140b91656bf89bbc3e2417c70ae650cd66104c"
@@ -18,6 +19,7 @@ getent hosts "$HOST" >/dev/null
 curl -fsS --max-time 5 http://127.0.0.1:19230/health/live >/dev/null
 
 docker network inspect "$NETWORK" >/dev/null
+docker network inspect "$BACKEND_NETWORK" >/dev/null
 docker image inspect "$IMAGE" >/dev/null 2>&1 || docker pull "$IMAGE"
 
 docker rm -f "$NAME" >/dev/null 2>&1 || true
@@ -47,6 +49,8 @@ docker run -d \
   --label traefik.http.routers.videograbber.service=videograbber \
   --label traefik.http.services.videograbber.loadbalancer.server.port=8080 \
   "$IMAGE" -g 'daemon off;'
+
+docker network connect "$BACKEND_NETWORK" "$NAME"
 
 for _ in $(seq 1 15); do
   if [ "$(docker inspect -f '{{.State.Status}}' "$NAME" 2>/dev/null || true)" = "running" ]; then

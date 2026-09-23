@@ -190,6 +190,18 @@ public sealed class DeploymentAssetTests
         Assert.Contains("Referrer-Policy \"no-referrer\"", nginx, StringComparison.Ordinal);
         Assert.Contains("SCRIPT_DIR=", publisher, StringComparison.Ordinal);
         Assert.Contains(
+            "BACKEND_NETWORK=\"vg-stage-videograbber_edge\"",
+            publisher,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "docker network connect \"$BACKEND_NETWORK\" \"$NAME\"",
+            publisher,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "proxy_pass http://api:8080;",
+            nginx,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "videograbber.srv1902378.hstgr.cloud",
             publisher,
             StringComparison.Ordinal);
