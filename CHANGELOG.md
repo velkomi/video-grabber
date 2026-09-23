@@ -3,6 +3,43 @@
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии следуют [Semantic Versioning](https://semver.org/lang/ru/).
 
 ## [Unreleased]
+
+## [0.1.10-preview.32-rc.1] - 2026-09-23
+
+### Добавлено
+
+- единый VideoGrabber account для Web, Managed Windows и Telegram;
+- публичный Web-интерфейс на `https://videograbber.srv1902378.hstgr.cloud/` с кабинетом, устройствами, очередью и тарифами;
+- вход через существующий Supabase Auth: Google OAuth и passwordless e-mail Magic Link;
+- одноразовый безопасный Web → Managed Windows handoff без передачи Supabase token в loopback callback;
+- self-service привязка Telegram через `/link` в `@VideoGra_bot`;
+- тарифы Free / Start / Unlimited Video / Full Course с отдельным правом `course_download`;
+- Free starter = 10 lifetime-загрузок один раз на внутренний account;
+- Start = максимум 10 логических загрузок за UTC-сутки с конкурентной атомарной квотой;
+- Web → Desktop local-only completion: готовые видео/курсы остаются на компьютере и не обязаны загружаться на VPS;
+- online/offline Windows-device status по криптографически подтверждённому heartbeat;
+- отдельный production egress proxy, runtime PostgreSQL roles/RLS, root-only secrets и readiness endpoint;
+- maintenance/backup/retention timer с проверкой backup и safe-path gate перед очисткой server artifacts.
+
+### Изменено
+
+- Managed Windows использует тот же Web/Supabase login, что и сайт;
+- Telegram-only аккаунт не может скачивать или покупать до привязки к основному Google/e-mail account;
+- при merge/link временный Free starter не переносится и не удваивает lifetime-лимит;
+- Telegram Bot API настроен для `@VideoGra_bot`: webhook, Mini App menu, команды и профиль;
+- публичная команда Stars-покупки скрыта до настройки реальных XTR-цен; прямой handler остаётся fail-closed;
+- server artifact retention после успешной Telegram-доставки сокращается, а cleanup выполняется только после квалифицированного backup/dry-run.
+
+### Проверено
+
+- Platform tests: 325/325;
+- Core: 32/32;
+- Worker: 31/31;
+- Windows Infrastructure: 677 passed, 14 прежних integration skips, 0 failed;
+- production readiness: `/health/ready` = 200;
+- production acceptance временным внутренним account: Free-10, тарифный каталог, desktop source, waiting-for-worker job, Full Course denial на Free и полный cleanup;
+- Managed автономный bundle с yt-dlp, FFmpeg, FFprobe, Deno и Whisper.
+
 - Preview.27 ships a full self-contained media runtime with the application: yt-dlp, FFmpeg, FFprobe, Deno, whisper.cpp CLI and a multilingual `ggml-base` model. Normal use no longer downloads or installs these components at runtime; a missing bundled tool is reported as a damaged/incomplete distribution instead of starting a background installer.
 - Local transcription now always uses the bundled Whisper CLI/model. The Components page is now an informational `Встроенные инструменты` page, and the `Звук и текст` block explains MP3 vs text+SRT clearly. Its pause button is now actually visible.
 - Local media controls explicitly explain when they are disabled by an active course/download operation and re-enable automatically afterward. Invalid/corrupted media now gets a direct FFprobe-readable error instead of being confused with a file that merely has no audio track.

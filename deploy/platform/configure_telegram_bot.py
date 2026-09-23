@@ -82,7 +82,7 @@ def main() -> int:
         "commands": [
             "start", "download", "course", "mp3", "media", "jobs",
             "account", "subscription", "devices", "settings", "link",
-            "buy", "payments", "help",
+            "payments", "help",
         ],
     }
     print(json.dumps(plan, ensure_ascii=False, indent=2))
@@ -102,7 +102,6 @@ def main() -> int:
         {"command": "devices", "description": "Мои Windows-компьютеры"},
         {"command": "settings", "description": "Открыть Mini App"},
         {"command": "link", "description": "Привязать способ входа"},
-        {"command": "buy", "description": "Оплата в Telegram Stars"},
         {"command": "payments", "description": "Платежи и поддержка"},
         {"command": "help", "description": "Справка"},
     ]

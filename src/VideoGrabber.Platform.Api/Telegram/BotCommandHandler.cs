@@ -423,7 +423,8 @@ public sealed class BotCommandHandler(
            "/media — редактор, trim/join/transcribe\n/jobs — очередь\n\n" +
            "Аккаунт:\n/account — профиль\n/subscription — тариф и лимиты\n" +
            "/devices — компьютеры\n/settings — Mini App\n/link — способы входа\n\n" +
-           "Платежи:\n/buy <sku> [recurring] — Stars\n/payments — история и поддержка\n\n" +
+           "Платежи:\n/payments — история и поддержка\n\n" +
+           "Покупки через Telegram Stars будут опубликованы после настройки реальных XTR-цен.\n" +
            "/help — эта справка. /admin доступен только owner_admin.";
 
     private static string PlanLabel(AccessSnapshot access)
