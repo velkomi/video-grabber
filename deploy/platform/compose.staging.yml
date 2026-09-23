@@ -20,6 +20,7 @@ services:
       retries: 20
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
+    cap_add: ["CHOWN","DAC_OVERRIDE","FOWNER","SETGID","SETUID"]
 
   migrator:
     image: ${VG_API_IMAGE:?pinned api image required}
@@ -38,6 +39,7 @@ services:
     tmpfs: ["/tmp:size=64m,mode=1777"]
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
+    cap_add: ["SETGID","SETUID"]
 
   role-provisioner:
     image: ${VG_POSTGRES_IMAGE:?pinned postgres image required}
@@ -163,6 +165,7 @@ services:
       - /tmp:size=128m,mode=1777
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
+    cap_add: ["CHOWN","SETGID","SETUID"]
     pids_limit: 256
     mem_limit: 1g
     cpus: 1.5
@@ -200,6 +203,7 @@ services:
       - /tmp:size=256m,mode=1777
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
+    cap_add: ["CHOWN","SETGID","SETUID"]
     pids_limit: 128
     mem_limit: 2g
     cpus: 2.0

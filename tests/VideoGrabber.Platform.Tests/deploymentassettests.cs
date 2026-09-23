@@ -144,6 +144,27 @@ public sealed class DeploymentAssetTests
     }
 
     [Fact]
+    public void Bootstrap_services_have_only_caps_required_for_uid_and_volume_setup()
+    {
+        var root = FindRepoRoot();
+        var compose = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "compose.staging.yml"));
+
+        Assert.Contains(
+            "cap_add: [\"CHOWN\",\"DAC_OVERRIDE\",\"FOWNER\",\"SETGID\",\"SETUID\"]",
+            compose,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "cap_add: [\"CHOWN\",\"SETGID\",\"SETUID\"]",
+            compose,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "cap_add: [\"SETGID\",\"SETUID\"]",
+            compose,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Public_edge_does_not_log_one_time_auth_query_tokens()
     {
         var root = FindRepoRoot();
