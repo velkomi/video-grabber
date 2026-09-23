@@ -136,7 +136,7 @@ services:
       VG_SESSION_JWT_ISSUER: ${VG_AUTH_ISSUER:?}
       VG_SESSION_JWT_AUDIENCE: videograbber
       Security__AllowedOrigins__0: https://${VG_STAGE_HOST:?}
-      VG_PAYMENT_CATALOG_PATH: ${VG_PAYMENT_CATALOG_PATH:-}
+      VG_PAYMENT_CATALOG_PATH: ${VG_PAYMENT_CATALOG_PATH:-/etc/videograbber/payment-catalog.json}
       VG_PAYMENT_RECONCILIATION_ENABLED: "false"
       VG_DELIVERY_WORKER_ENABLED: "true"
       VG_ARTIFACT_UPLOAD_ROOT: /var/lib/videograbber/jobs/uploads
@@ -175,6 +175,7 @@ services:
       - "127.0.0.1:${VG_STAGE_HTTP_PORT:-19230}:8080"
     volumes:
       - workerjobs:/var/lib/videograbber/jobs
+      - ./payment-catalog.stage.example.json:/etc/videograbber/payment-catalog.json:ro
     networks: [internal, edge]
     read_only: true
     tmpfs:

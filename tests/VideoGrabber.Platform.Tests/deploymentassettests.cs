@@ -34,6 +34,14 @@ public sealed class DeploymentAssetTests
             compose,
             StringComparison.Ordinal);
         Assert.Contains(
+            "./payment-catalog.stage.example.json:/etc/videograbber/payment-catalog.json:ro",
+            compose,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "VG_PAYMENT_CATALOG_PATH: ${VG_PAYMENT_CATALOG_PATH:-/etc/videograbber/payment-catalog.json}",
+            compose,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "VG_RETENTION_ROOT: /var/lib/videograbber/jobs",
             compose,
             StringComparison.Ordinal);
