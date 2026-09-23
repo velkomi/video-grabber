@@ -138,6 +138,14 @@ public sealed class DeploymentAssetTests
             compose,
             StringComparison.Ordinal);
         Assert.Contains(
+            "chown 10001:10001 /var/lib/videograbber/jobs",
+            compose,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "exec gosu 10001:10001 sh -ec 'mkdir -p -m 0700 /var/lib/videograbber/jobs/uploads; exec dotnet VideoGrabber.Platform.Api.dll'",
+            compose,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "exec gosu 10001:10001 dotnet VideoGrabber.Platform.Worker.dll",
             compose,
             StringComparison.Ordinal);

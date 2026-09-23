@@ -113,8 +113,8 @@ services:
         export VG_TELEGRAM_WEBHOOK_SECRET="$$(cat /run/secrets/telegram_webhook_secret)"
         export VG_TELEGRAM_INBOX_KEY="$$(cat /run/secrets/telegram_inbox_key)"
         export VG_TELEGRAM_BOT_USER_ID="$$(cat /run/secrets/telegram_bot_user_id)"
-        install -d -o 10001 -g 10001 -m 0700 /var/lib/videograbber/jobs /var/lib/videograbber/jobs/uploads
-        exec gosu 10001:10001 dotnet VideoGrabber.Platform.Api.dll
+        chown 10001:10001 /var/lib/videograbber/jobs
+        exec gosu 10001:10001 sh -ec 'mkdir -p -m 0700 /var/lib/videograbber/jobs/uploads; exec dotnet VideoGrabber.Platform.Api.dll'
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:8080
       VG_SESSION_JWT_ISSUER: ${VG_AUTH_ISSUER:?}
@@ -186,7 +186,7 @@ services:
     command:
       - |
         export VG_SERVER_WORKER_TOKEN="$$(cat /run/secrets/worker_token)"
-        install -d -o 10001 -g 10001 -m 0700 /var/lib/videograbber/jobs
+        chown 10001:10001 /var/lib/videograbber/jobs
         exec gosu 10001:10001 dotnet VideoGrabber.Platform.Worker.dll
     environment:
       VG_PLATFORM_API_URL: http://api:8080
