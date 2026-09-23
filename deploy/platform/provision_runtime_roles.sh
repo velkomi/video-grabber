@@ -49,6 +49,11 @@ GRANT vg_ledger TO vg_ledger_login;
 GRANT vg_device TO vg_device_login;
 GRANT vg_operations TO vg_operations_login;
 
+-- /health/ready proves that at least one migration is applied.
+-- The runtime API gets read-only visibility of the migration ledger only.
+GRANT USAGE ON SCHEMA vg_migrations TO vg_api;
+GRANT SELECT ON TABLE vg_migrations.applied_migrations TO vg_api;
+
 GRANT CONNECT ON DATABASE videograbber TO
   vg_api_login,
   vg_identity_login,

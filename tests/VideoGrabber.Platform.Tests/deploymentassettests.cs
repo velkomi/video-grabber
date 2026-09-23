@@ -129,6 +129,14 @@ public sealed class DeploymentAssetTests
                 StringComparison.Ordinal);
         Assert.Contains("NOINHERIT", provision, StringComparison.Ordinal);
         Assert.Contains("REVOKE CONNECT ON DATABASE videograbber FROM PUBLIC", provision, StringComparison.Ordinal);
+        Assert.Contains(
+            "GRANT USAGE ON SCHEMA vg_migrations TO vg_api",
+            provision,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "GRANT SELECT ON TABLE vg_migrations.applied_migrations TO vg_api",
+            provision,
+            StringComparison.Ordinal);
     }
 
     [Fact]
