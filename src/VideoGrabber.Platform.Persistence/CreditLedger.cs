@@ -88,6 +88,9 @@ public sealed class CreditLedger : IAsyncDisposable
         var planId = await ReadActivePlanIdAsync(
             connection, transaction, accountId, now, cancellationToken);
 
+        if (request.Operation == "premium_media" && planId == "free")
+            throw new ReservationUnavailableException();
+
         if (request.Operation == "course_download")
         {
             if (planId != "full_course")
@@ -584,7 +587,7 @@ public sealed class CreditLedger : IAsyncDisposable
         if (request.IntentId == Guid.Empty) throw new ArgumentException("Intent id is required.");
         if (string.IsNullOrWhiteSpace(request.RequestHash) || request.RequestHash.Length > 256)
             throw new ArgumentException("Request hash is invalid.");
-        if (request.Operation is not ("download" or "course_download"))
+        if (request.Operation is not ("download" or "premium_media" or "course_download"))
             throw new ArgumentException("Unsupported reservation operation.");
         if (request.Executor is not ("server_worker" or "desktop_worker"))
             throw new ArgumentException("Unsupported executor.");

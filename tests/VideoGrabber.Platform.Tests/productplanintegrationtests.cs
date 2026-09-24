@@ -35,6 +35,50 @@ public sealed class ProductPlanIntegrationTests
     }
 
     [Fact]
+    public async Task Free_allows_ten_basic_downloads_but_rejects_premium_media()
+    {
+        await using var f = await ApiFixture.StartAsync();
+        var account = await f.AccountAsync("email", "free-premium-gate", includeStarter: true);
+        var ledger = f.Service<CreditLedger>();
+
+        await Assert.ThrowsAsync<ReservationUnavailableException>(() =>
+            ledger.ReserveAsync(
+                account.Id,
+                new ReservationRequest(
+                    Guid.NewGuid(), "free-premium", "premium_media", "server_worker", null),
+                CancellationToken.None));
+
+        Assert.Equal((10L, 0L), await ReadFreeStateAsync(f, account.Id));
+
+        var basic = await ledger.ReserveAsync(
+            account.Id,
+            new ReservationRequest(
+                Guid.NewGuid(), "free-basic", "download", "server_worker", null),
+            CancellationToken.None);
+        Assert.True(basic.UsesCredit);
+        Assert.Equal((9L, 1L), await ReadFreeStateAsync(f, account.Id));
+    }
+
+    [Fact]
+    public async Task Start_plan_allows_premium_media_and_counts_it_in_daily_quota()
+    {
+        await using var f = await ApiFixture.StartAsync();
+        var account = await f.AccountAsync("email", "start-premium-media");
+        await AddTimedPlanAsync(f, account.Id, "start");
+        var ledger = f.Service<CreditLedger>();
+
+        var receipt = await ledger.ReserveAsync(
+            account.Id,
+            new ReservationRequest(
+                Guid.NewGuid(), "start-premium", "premium_media", "server_worker", null),
+            CancellationToken.None);
+
+        Assert.False(receipt.UsesCredit);
+        var date = DateOnly.FromDateTime(f.Clock.GetUtcNow().UtcDateTime);
+        Assert.Equal((1L, 0L), await ReadStartUsageAsync(f, account.Id, date));
+    }
+
+    [Fact]
     public async Task Start_concurrent_reservations_cannot_exceed_ten_per_utc_day()
     {
         await using var f = await ApiFixture.StartAsync();

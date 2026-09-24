@@ -52,8 +52,15 @@ public sealed partial class MainWindow
         _lastDownloadedMediaPath = path;
         if (_transcribeDownloadedButton is not null)
         {
+#if VIDEOGRABBER_MANAGED
+            var canEdit = !string.IsNullOrWhiteSpace(_managedAccessToken)
+                && (_managedAccessSnapshot?.CanEdit ?? false);
+            _transcribeDownloadedButton.IsEnabled =
+                !_operations.IsBusy && !_courseDownloadActive && canEdit;
+#else
             _transcribeDownloadedButton.IsEnabled =
                 !_operations.IsBusy && !_courseDownloadActive;
+#endif
             _transcribeDownloadedButton.Content =
                 "Транскрибировать скачанное";
         }
@@ -77,7 +84,7 @@ public sealed partial class MainWindow
     }
 
     private Task DownloadWholeGetCourseAsync()
-        => RunWholeGetCourseAsync(resume: false);
+        => RunManagedWholeCourseAsync(resume: false);
 
     private async Task ResumeWholeGetCourseAsync()
     {
@@ -89,7 +96,37 @@ public sealed partial class MainWindow
                 return;
         }
 
-        await RunWholeGetCourseAsync(resume: true);
+        await RunManagedWholeCourseAsync(resume: true);
+    }
+
+    private async Task RunManagedWholeCourseAsync(bool resume)
+    {
+        var source = (resume ? _cachedCourseRoot : _browserPageUri)?.AbsoluteUri ?? "course";
+        var operation = CreateLocalOperation(
+            "course_download",
+            source,
+            SelectedCourseQuality(),
+            resume ? "resume" : "new");
+        try
+        {
+            await _managedCoordinator.RunAsync(
+                operation,
+                async token =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    await RunWholeGetCourseAsync(resume);
+                    return OperationOutcome.Succeeded;
+                },
+                ManagedReport,
+                _windowLifetime.Token);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _browserHint.Text = ex.Message == "managed_sign_in_required"
+                ? "Сначала войдите в VideoGrabber-аккаунт. Полный курс доступен только после авторизации и на тарифе Full Course."
+                : "Скачивание полного курса недоступно на текущем тарифе. Нужен Full Course.";
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task<bool> LoadCourseResumeProjectAsync()
@@ -2646,21 +2683,29 @@ public sealed partial class MainWindow
     private void UpdateCourseControls()
     {
         var busy = _courseDownloadActive || _operations.IsBusy;
+#if VIDEOGRABBER_MANAGED
+        var signedIn = !string.IsNullOrWhiteSpace(_managedAccessToken);
+        var canEdit = signedIn && (_managedAccessSnapshot?.CanEdit ?? false);
+        var canCourse = signedIn && (_managedAccessSnapshot?.CanDownloadCourse ?? false);
+#else
+        const bool canEdit = true;
+        const bool canCourse = true;
+#endif
 
         if (_mp3Button is not null)
-            _mp3Button.IsEnabled = !busy;
+            _mp3Button.IsEnabled = !busy && canEdit;
         if (_textButton is not null)
-            _textButton.IsEnabled = !busy;
+            _textButton.IsEnabled = !busy && canEdit;
         UpdateLocalMediaAvailabilityHint();
 
         if (_courseDownloadButton is not null)
-            _courseDownloadButton.IsEnabled = !busy;
+            _courseDownloadButton.IsEnabled = !busy && canCourse;
 
         if (_courseQualityBox is not null)
-            _courseQualityBox.IsEnabled = !busy;
+            _courseQualityBox.IsEnabled = !busy && canCourse;
 
         if (_courseResumeButton is not null)
-            _courseResumeButton.IsEnabled = !busy;
+            _courseResumeButton.IsEnabled = !busy && canCourse;
 
         if (_courseClearCacheButton is not null)
             _courseClearCacheButton.IsEnabled = !busy;
@@ -2668,6 +2713,7 @@ public sealed partial class MainWindow
         if (_transcribeDownloadedButton is not null)
             _transcribeDownloadedButton.IsEnabled =
                 !busy
+                && canEdit
                 && !string.IsNullOrWhiteSpace(
                     _lastDownloadedMediaPath)
                 && File.Exists(_lastDownloadedMediaPath);

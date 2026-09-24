@@ -54,7 +54,7 @@ public sealed class LicensingApiClient(
         var reservation = new ReservationRequest(
             operation.IntentId,
             operation.RequestHash,
-            "download",
+            operation.Kind == "course_download" ? "course_download" : "download",
             operation.Executor,
             selectedDevice);
         try

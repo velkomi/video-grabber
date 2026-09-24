@@ -1,5 +1,11 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { csrf: "", profile: null };
+const state = { csrf: "", profile: null, access: null };
+let readyResolve;
+let readyReject;
+const ready = new Promise((resolve, reject) => {
+  readyResolve = resolve;
+  readyReject = reject;
+});
 
 function setStatus(message, kind = "") {
   const node = $("#status");
@@ -37,17 +43,61 @@ function makeItem(text) {
   return { row, label };
 }
 
+function planLabel(planId, profile) {
+  const labels = { free: "Free", start: "Start", unlimited_video: "Unlimited Video", full_course: "Full Course" };
+  return labels[planId] || (profile?.role === "owner_admin" ? "Owner" : "Legacy");
+}
+
+function primaryAccountReady(profile = state.profile) {
+  return profile?.role === "owner_admin"
+    || profile?.primaryAuthProvider === "google"
+    || profile?.primaryAuthProvider === "email";
+}
+
 function renderProfile(profile, access) {
   state.profile = profile;
-  $("#profile").textContent =
-    `Роль: ${profile.role}. Блокировка: ${profile.blocked ? "да" : "нет"}.`;
-  $("#balance").textContent = access.unlimited
-    ? "Безлимит"
-    : String(access.remainingDownloads) + " загрузок";
+  state.access = access;
+  const plan = planLabel(access.planId, profile);
+  const primaryReady = primaryAccountReady(profile);
+  const telegramLinked = (profile.linkedProviders || [])
+    .some((provider) => String(provider).toLowerCase() === "telegram");
+
+  $("#plan-chip").textContent = plan;
+  $("#profile").textContent = "ID: " + profile.accountId + "\nРоль: " + profile.role + "\nБлокировка: " + (profile.blocked ? "да" : "нет") + ".";
+
+  if (access.unlimited) {
+    $("#balance").textContent = "∞";
+    $("#quota-caption").textContent = "Без лимита на отдельные загрузки";
+    $("#quota-bar").style.width = "100%";
+  } else if (access.planId === "start") {
+    $("#balance").textContent = "10/день";
+    $("#quota-caption").textContent = "Дневной лимит обновляется по UTC";
+    $("#quota-bar").style.width = "100%";
+  } else {
+    const remaining = Math.max(0, Number(access.remainingDownloads || 0));
+    $("#balance").textContent = String(remaining) + " / 10";
+    $("#quota-caption").textContent = remaining > 0 ? "Бесплатные загрузки остались" : "Бесплатный лимит исчерпан";
+    $("#quota-bar").style.width = String(Math.max(0, Math.min(100, (remaining / 10) * 100))) + "%";
+  }
+
   $("#access-reason").textContent = access.reason || "—";
   $("#access-until").textContent = access.validUntil
-    ? "Доступ до: " + new Date(access.validUntil).toLocaleString()
-    : "Срок доступа: —";
+    ? new Date(access.validUntil).toLocaleString()
+    : "Без срока";
+  $("#primary-provider").textContent = primaryReady
+    ? "Основной вход: " + (profile.primaryAuthProvider || "owner")
+    : "Основной аккаунт ещё не привязан";
+
+  if (primaryReady && telegramLinked) {
+    $("#sync-state").textContent = "Синхронизировано: Web · Windows · Telegram";
+  } else if (primaryReady) {
+    $("#sync-state").textContent = "Web · Windows синхронизированы";
+  } else {
+    $("#sync-state").textContent = "Telegram нужно связать с основным аккаунтом";
+  }
+
+  $("#link-main-account").hidden = primaryReady;
+  document.body.dataset.primaryAccount = primaryReady ? "ready" : "link-required";
   $("#admin").hidden = profile.role !== "owner_admin";
 }
 
@@ -139,15 +189,28 @@ function renderDestinations(destinations) {
   }
 }
 function renderCapabilities(capabilities) {
-  const mediaButton = $("#media-action");
-  if (capabilities.mediaAvailable) {
-    $("#capability").textContent = "Media worker доступен.";
-    mediaButton.disabled = false;
+  const analyze = $("#media-analyze");
+  const create = $("#media-create");
+  const allowed = capabilities.mediaAvailable && primaryAccountReady()
+    && state.access?.canDownload === true;
+  $("#capability").textContent = capabilities.mediaAvailable
+    ? "Media worker доступен."
+    : "Media worker сейчас недоступен: " + capabilities.reason;
+  if (analyze) analyze.disabled = !allowed;
+  if (create) create.disabled = !allowed;
+  const lock = $("#media-lock");
+  if (!lock) return;
+  if (!primaryAccountReady()) {
+    lock.hidden = false;
+    lock.className = "notice error";
+    lock.textContent = "Telegram ещё не связан с основным VideoGrabber-аккаунтом. Отправьте /link боту @VideoGra_bot и войдите через Google или e-mail.";
+  } else if (!state.access?.canDownload) {
+    lock.hidden = false;
+    lock.className = "notice error";
+    lock.textContent = "Лимит загрузок исчерпан. Выберите подписку, чтобы продолжить.";
   } else {
-    $("#capability").textContent =
-      "Media пока недоступно: нужен авторизованный worker (P5). Причина: " +
-      capabilities.reason;
-    mediaButton.disabled = true;
+    lock.hidden = true;
+    lock.textContent = "";
   }
 }
 async function loadAll() {
@@ -246,15 +309,44 @@ $("#admin-search").addEventListener("submit", async (event) => {
   }
 });
 
-window.VideoGrabberApi = { api, loadAll, setStatus };
+function currentAccess() { return state.access; }
+
+window.VideoGrabberApi = {
+  api,
+  loadAll,
+  setStatus,
+  ready,
+  currentAccess,
+  isPrimaryAccount: primaryAccountReady
+};
+
+document.querySelectorAll("[data-tab-target]").forEach((button) => {
+  button.addEventListener("click", () => {
+    document.querySelectorAll("[data-tab-target]").forEach((item) =>
+      item.classList.toggle("active", item === button));
+    document.querySelectorAll("[data-tab-panel]").forEach((panel) =>
+      panel.classList.toggle("active", panel.id === button.dataset.tabTarget));
+  });
+});
+
+$("#link-main-account").addEventListener("click", () => {
+  const webApp = window.Telegram?.WebApp;
+  if (webApp?.openTelegramLink) webApp.openTelegramLink("https://t.me/VideoGra_bot");
+  else location.href = "https://t.me/VideoGra_bot";
+});
 
 async function start() {
   try {
-    window.Telegram?.WebApp?.ready();
-    window.Telegram?.WebApp?.expand();
+    const webApp = window.Telegram?.WebApp;
+    webApp?.ready();
+    webApp?.expand();
+    try { webApp?.setHeaderColor?.("#0d1522"); } catch {}
+    try { webApp?.setBackgroundColor?.("#0c1320"); } catch {}
     await establishSession();
     await loadAll();
+    readyResolve(true);
   } catch (error) {
+    readyReject(error);
     setStatus("Не удалось открыть Mini App: " + error.message, "error");
   }
 }

@@ -34,6 +34,13 @@ public sealed class MiniAppUiTests
         Assert.Contains("textContent", js);
         Assert.DoesNotContain("innerHTML", js, StringComparison.OrdinalIgnoreCase);
         var paymentsJs = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.Platform.Api", "wwwroot", "miniapp", "payments.js"));
+        var mediaJs = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.Platform.Api", "wwwroot", "miniapp", "media.js"));
+        Assert.Contains("await window.VideoGrabberApi.ready", paymentsJs);
+        Assert.Contains("await window.VideoGrabberApi.ready", mediaJs);
+        Assert.DoesNotContain("#media-action", js, StringComparison.Ordinal);
+        Assert.Contains("id=\"plan-chip\"", html);
+        Assert.Contains("id=\"sync-state\"", html);
+        Assert.Contains("id=\"media-lock\"", html);
         Assert.Contains("/v1/payment-products?surface=telegram", paymentsJs);
         Assert.Contains("provider: \"stars\"", paymentsJs);
         Assert.Contains("openInvoice", paymentsJs);

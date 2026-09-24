@@ -983,7 +983,12 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         => new(
             request.IntentId,
             request.RequestHash,
-            request.Kind == "course_download" ? "course_download" : "download",
+            request.Kind switch
+            {
+                "course_download" => "course_download",
+                "download" => "download",
+                _ => "premium_media"
+            },
             request.Executor,
             request.DeviceId);
 

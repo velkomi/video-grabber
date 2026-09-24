@@ -71,9 +71,19 @@ function fillSelect(select, values) {
 
 async function loadCapabilities() {
   capabilities = await api("/v1/capabilities");
-  fillSelect(
-    $("#media-operation"),
-    capabilities.operations.filter((x) => x.available).map((x) => x.operation));
+  const access = window.VideoGrabberApi.currentAccess();
+  const permitted = capabilities.operations
+    .filter((x) => x.available)
+    .filter((x) => {
+      if (x.operation === "course_download") return access?.canDownloadCourse === true;
+      if (["mp3", "trim", "join", "transcribe", "transcription"].includes(x.operation))
+        return access?.canEdit === true;
+      return access?.canDownload === true;
+    })
+    .map((x) => x.operation);
+  fillSelect($("#media-operation"), permitted);
+  $("#media-analyze").disabled =
+    !window.VideoGrabberApi.isPrimaryAccount() || permitted.length === 0;
   updateExecutors();
 }
 
@@ -93,6 +103,11 @@ $("#media-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const raw = $("#media-url").value.trim();
   try {
+    if (!window.VideoGrabberApi.isPrimaryAccount())
+      throw new Error("Сначала свяжите Telegram с основным аккаунтом через /link");
+    const access = window.VideoGrabberApi.currentAccess();
+    if (!access?.canDownload)
+      throw new Error("Лимит загрузок исчерпан. Выберите подписку.");
     const kind = $("#media-operation").value;
     status(kind === "course_download"
       ? "Проверяю ссылку курса для Windows…"
@@ -130,6 +145,11 @@ $("#media-form").addEventListener("submit", async (event) => {
 $("#media-create").addEventListener("click", async () => {
   if (!analyzed) return;
   try {
+    if (!window.VideoGrabberApi.isPrimaryAccount())
+      throw new Error("Сначала свяжите Telegram с основным аккаунтом через /link");
+    const access = window.VideoGrabberApi.currentAccess();
+    if (!access?.canDownload)
+      throw new Error("Лимит загрузок исчерпан. Выберите подписку.");
     const kind = $("#media-operation").value;
     const executor = $("#media-executor").value;
     const inputs = parseInputs();
@@ -344,6 +364,7 @@ async function boot() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   if (!window.VideoGrabberApi) return;
   try {
+    await window.VideoGrabberApi.ready;
     await loadCapabilities();
     await refreshDestinations();
     await refreshJobs();

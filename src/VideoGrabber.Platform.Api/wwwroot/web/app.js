@@ -388,21 +388,33 @@ function renderAccount() {
   );
   $("#telegram-value").textContent = telegram ? "Привязан" : "Не привязан";
 
-  const option = $('#operation option[value="course_download"]');
-  option.disabled = !access.canDownloadCourse;
-  if (!access.canDownloadCourse && $("#operation").value === "course_download")
+  const courseOption = $('#operation option[value="course_download"]');
+  const mp3Option = $('#operation option[value="mp3"]');
+  courseOption.disabled = !access.canDownloadCourse;
+  mp3Option.disabled = !access.canEdit;
+  if ((!access.canDownloadCourse && $("#operation").value === "course_download")
+      || (!access.canEdit && $("#operation").value === "mp3"))
     $("#operation").value = "download";
   renderCourseHint();
 }
 
 function renderCourseHint() {
   if (!state.access) return;
-  const isCourse = $("#operation").value === "course_download";
-  $("#course-hint").textContent = isCourse
-    ? state.access.canDownloadCourse
+  const kind = $("#operation").value;
+  if (kind === "course_download") {
+    $("#course-hint").textContent = state.access.canDownloadCourse
       ? "Курс будет сохранён локально через встроенную авторизованную сессию Windows VideoGrabber."
-      : "Полный курс доступен только на Full Course или owner account."
-    : "Видео/MP3 будут скачаны напрямую в сохранённую папку Windows VideoGrabber.";
+      : "Полный курс доступен только на Full Course или owner account.";
+  } else if (kind === "mp3") {
+    $("#course-hint").textContent = state.access.canEdit
+      ? "MP3 входит в расширенные функции текущего тарифа."
+      : "Free даёт 10 обычных загрузок видео. MP3 доступен после перехода на платный тариф.";
+  } else {
+    $("#course-hint").textContent = state.access.planId === "free"
+      ? "Free: 10 обычных загрузок видео на единый аккаунт Web · Windows · Telegram."
+      : "Видео будет скачано напрямую в сохранённую папку Windows VideoGrabber.";
+  }
+  renderSelectedDevice();
 }
 
 function renderDevices() {
@@ -465,7 +477,13 @@ function renderSelectedDevice() {
   const online = isOnline(device);
   pill.className = "pill " + (online ? "online" : "offline");
   pill.textContent = online ? "Windows online" : "Windows offline · можно поставить в очередь";
-  $("#submit-job").disabled = false;
+
+  const kind = $("#operation").value;
+  const access = state.access;
+  const allowed = access?.canDownload === true
+    && (kind !== "mp3" || access.canEdit === true)
+    && (kind !== "course_download" || access.canDownloadCourse === true);
+  $("#submit-job").disabled = !allowed;
 }
 
 function renderJobs() {
@@ -613,6 +631,14 @@ async function submitJob(event) {
 
   if (!deviceId) {
     setStatus("#job-status", "Сначала зарегистрируйте Windows VideoGrabber.", "error");
+    return;
+  }
+  if (!state.access?.canDownload) {
+    setStatus("#job-status", "Лимит загрузок исчерпан. Выберите подписку, чтобы продолжить.", "error");
+    return;
+  }
+  if (kind === "mp3" && !state.access?.canEdit) {
+    setStatus("#job-status", "Free разрешает 10 обычных загрузок видео. MP3 доступен на платном тарифе.", "error");
     return;
   }
   if (kind === "course_download" && !state.access?.canDownloadCourse) {

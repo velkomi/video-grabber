@@ -188,6 +188,7 @@ public sealed partial class MainWindow
 
     private void SetManagedSignedOut(string message)
     {
+        _managedAccessSnapshot = null;
         SetAccountStatus(message);
         AccountUi(() =>
         {
@@ -197,6 +198,7 @@ public sealed partial class MainWindow
             RenderManagedIdentities([]);
             RenderManagedDevices([]);
         });
+        SetOperationControls(false);
     }
 
     private async Task LoadManagedAccountAsync()
@@ -215,6 +217,7 @@ public sealed partial class MainWindow
             var devices = await ManagedGetAsync<DeviceReceipt[]>("/v1/devices", _windowLifetime.Token);
             var identities = await ManagedGetAsync<LinkedIdentity[]>("/v1/identities", _windowLifetime.Token);
             _managedAccountId = profile.AccountId;
+            _managedAccessSnapshot = access;
 
             await EnsureManagedDeviceAndLeaseAsync(profile, access, devices);
             devices = await ManagedGetAsync<DeviceReceipt[]>("/v1/devices", _windowLifetime.Token);
@@ -233,6 +236,7 @@ public sealed partial class MainWindow
                 RenderManagedDevices(devices);
                 _accountStatus.Text = "Данные аккаунта обновлены.";
             });
+            SetOperationControls(false);
             await RefreshManagedPaymentProductsAsync();
             await RefreshManagedSubscriptionsAsync();
         }

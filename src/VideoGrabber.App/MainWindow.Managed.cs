@@ -32,6 +32,7 @@ public sealed partial class MainWindow
     private string? _managedAccessToken;
     private Guid? _managedAccountId;
     private Guid? _managedDeviceId;
+    private VideoGrabber.Platform.Contracts.AccessSnapshot? _managedAccessSnapshot;
     private SavedQueue _managedRestoredQueue = new(1, Guid.Empty, []);
     private readonly SemaphoreSlim _managedQueueWriteLock = new(1, 1);
 #endif

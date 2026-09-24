@@ -3,81 +3,142 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
   <title>VideoGrabber</title>
   <link rel="stylesheet" href="/miniapp/styles.css">
 </head>
 <body>
-<main class="shell">
-  <header class="hero">
-    <div><p class="eyebrow">VideoGrabber</p><h1>Аккаунт</h1></div>
-    <button id="refresh" type="button">Обновить</button>
-  </header>
-  <p id="status" class="status" role="status" aria-live="polite">Подключение…</p>
-  <section class="card"><h2>Профиль</h2><p id="profile">—</p></section>
-  <section class="card"><h2>Баланс и доступ</h2>
-    <p id="balance" class="metric">—</p><p id="access-reason">—</p><p id="access-until">—</p>
-  </section>
-  <section class="card"><h2>Способы входа</h2><div id="providers" class="list"></div></section>
-  <section class="card"><h2>Компьютеры</h2><div id="devices" class="list"></div></section>
-  <section class="card"><h2>Media</h2>
-    <p id="capability">Проверяю доступность worker…</p>
-    <form id="media-form">
-      <label for="media-url">URL источника</label>
-      <input id="media-url" type="url" autocomplete="off" required>
-      <label for="media-operation">Операция</label>
-      <select id="media-operation"></select>
-      <button id="media-analyze" type="submit">Проверить источник</button>
-    </form>
-    <div id="media-options" hidden>
-      <label for="media-quality">Качество</label>
-      <select id="media-quality"></select>
-      <label for="media-executor">Исполнитель</label>
-      <select id="media-executor"></select>
-      <label for="media-inputs">Artifact ID через запятую (для trim/join/transcribe)</label>
-      <input id="media-inputs" autocomplete="off">
-      <div class="row">
-        <input id="media-trim-start" inputmode="numeric" placeholder="start ms">
-        <input id="media-trim-duration" inputmode="numeric" placeholder="duration ms">
-      </div>
-      <button id="media-create" type="button">Добавить в очередь</button>
+<div class="app-shell">
+  <header class="appbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">⇩</span>
+      <div><strong>VideoGrabber</strong><small>Web · Windows · Telegram</small></div>
     </div>
-    <label for="media-destination">Получатель готового файла</label>
-    <select id="media-destination"></select>
-    <div id="media-jobs" class="list"></div>
-    <div id="media-deliveries" class="list"></div>
-  </section>
-  <section class="card"><h2>Получатели</h2>
-    <p>Для привязки сервер заново проверит права вашего Telegram-аккаунта и бота.</p>
-    <form id="destination-form">
-      <label for="destination-chat">Telegram chat ID</label>
-      <input id="destination-chat" inputmode="numeric" autocomplete="off" required>
-      <label for="destination-title">Название</label>
-      <input id="destination-title" maxlength="80" autocomplete="off" required>
-      <button type="submit">Проверить и привязать</button>
-    </form>
-    <div id="destinations" class="list"></div>
-  </section>
-  <section id="payments" class="card">
-    <h2>Оплата</h2>
-    <p>В Telegram цифровые услуги оплачиваются только Telegram Stars. Доступ появляется только после подтверждения платежа сервером.</p>
-    <label for="payment-product">Товар</label>
-    <select id="payment-product"></select>
-    <label class="item"><span>Автопродление (если доступно)</span><input id="payment-recurring" type="checkbox"></label>
-    <button id="payment-buy" type="button">Оплатить Stars</button>
-    <div id="payment-history" class="list"></div>
-    <h3>Подписки</h3>
-    <div id="subscription-list" class="list"></div>
-  </section>
-  <section id="admin" class="card" hidden>
-    <h2>Admin</h2>
-    <form id="admin-search">
-      <label for="admin-identity">ID провайдера или подтверждённый email</label>
-      <div class="row"><input id="admin-identity" autocomplete="off" required><button>Найти</button></div>
-    </form>
-    <div id="admin-results" class="list"></div>
-    <a class="button-link" href="/admin/">Открыть MFA-защищённую консоль</a>
-  </section>
-</main>
+    <button id="refresh" class="icon-button" type="button" aria-label="Обновить">↻</button>
+  </header>
+
+  <main class="shell">
+    <section class="account-hero">
+      <div class="hero-line">
+        <div><p class="eyebrow">Единый аккаунт</p><h1>Аккаунт и доступ</h1></div>
+        <span id="plan-chip" class="plan-chip">—</span>
+      </div>
+      <div class="quota-grid">
+        <div class="quota-main">
+          <span class="quota-label">Доступ</span>
+          <strong id="balance">—</strong>
+          <span id="quota-caption" class="muted">Проверяю тариф…</span>
+        </div>
+        <div class="sync-box">
+          <span class="sync-dot"></span>
+          <div><strong id="sync-state">Подключение…</strong><small id="primary-provider">—</small></div>
+        </div>
+      </div>
+      <div class="quota-track"><span id="quota-bar"></span></div>
+      <p id="status" class="status" role="status" aria-live="polite">Подключаю защищённую Telegram-сессию…</p>
+      <button id="link-main-account" class="button secondary" type="button" hidden>Связать Telegram с основным аккаунтом</button>
+    </section>
+
+    <nav class="tabs" aria-label="Разделы Mini App">
+      <button class="tab active" type="button" data-tab-target="account-panel">Аккаунт</button>
+      <button class="tab" type="button" data-tab-target="media-panel">Загрузки</button>
+      <button class="tab" type="button" data-tab-target="billing-panel">Подписка</button>
+    </nav>
+
+    <section id="account-panel" class="tab-panel active" data-tab-panel>
+      <section class="card">
+        <div class="card-title"><span class="card-icon">●</span><h2>Профиль</h2></div>
+        <p id="profile">—</p>
+        <div class="access-facts">
+          <div><span>Статус</span><b id="access-reason">—</b></div>
+          <div><span>Срок доступа</span><b id="access-until">—</b></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-title"><span class="card-icon">⌁</span><h2>Способы входа</h2></div>
+        <div id="providers" class="list"></div>
+      </section>
+      <section class="card">
+        <div class="card-title"><span class="card-icon">▣</span><h2>Компьютеры</h2></div>
+        <p class="muted compact">Один аккаунт и один тариф используются здесь, на сайте и в VideoGrabber Managed.</p>
+        <div id="devices" class="list"></div>
+      </section>
+      <section class="card">
+        <div class="card-title"><span class="card-icon">➤</span><h2>Telegram-получатели</h2></div>
+        <p class="muted compact">Сервер проверяет права вашего Telegram-аккаунта и бота перед привязкой.</p>
+        <form id="destination-form" class="form-stack">
+          <label for="destination-chat">Telegram chat ID</label>
+          <input id="destination-chat" inputmode="numeric" autocomplete="off" required>
+          <label for="destination-title">Название</label>
+          <input id="destination-title" maxlength="80" autocomplete="off" required>
+          <button class="button primary" type="submit">Проверить и привязать</button>
+        </form>
+        <div id="destinations" class="list"></div>
+      </section>
+      <section id="admin" class="card" hidden>
+        <div class="card-title"><span class="card-icon">⚙</span><h2>Admin</h2></div>
+        <form id="admin-search" class="form-stack">
+          <label for="admin-identity">ID провайдера или подтверждённый e-mail</label>
+          <input id="admin-identity" autocomplete="off" required>
+          <button class="button primary">Найти</button>
+        </form>
+        <div id="admin-results" class="list"></div>
+        <a class="button-link" href="/admin/">Открыть MFA-консоль</a>
+      </section>
+    </section>
+
+    <section id="media-panel" class="tab-panel" data-tab-panel>
+      <section class="card media-card">
+        <div class="card-title"><span class="card-icon">⇩</span><div><h2>Загрузчик</h2><p id="capability" class="muted compact">Проверяю worker…</p></div></div>
+        <div id="media-lock" class="notice" hidden></div>
+        <form id="media-form" class="form-stack">
+          <label for="media-url">URL источника</label>
+          <input id="media-url" type="url" autocomplete="off" placeholder="https://…" required>
+          <label for="media-operation">Операция</label>
+          <select id="media-operation"></select>
+          <button id="media-analyze" class="button primary" type="submit">Проверить источник</button>
+        </form>
+        <div id="media-options" hidden>
+          <label for="media-quality">Качество</label>
+          <select id="media-quality"></select>
+          <label for="media-executor">Исполнитель</label>
+          <select id="media-executor"></select>
+          <label for="media-inputs">Artifact ID через запятую</label>
+          <input id="media-inputs" autocomplete="off">
+          <div class="row">
+            <input id="media-trim-start" inputmode="numeric" placeholder="start ms">
+            <input id="media-trim-duration" inputmode="numeric" placeholder="duration ms">
+          </div>
+          <button id="media-create" class="button primary" type="button">Добавить в очередь</button>
+        </div>
+        <label for="media-destination">Получатель готового файла</label>
+        <select id="media-destination"></select>
+      </section>
+      <section class="card"><div class="card-title"><span class="card-icon">≡</span><h2>Очередь</h2></div><div id="media-jobs" class="list"></div></section>
+      <section class="card"><div class="card-title"><span class="card-icon">✓</span><h2>Доставка</h2></div><div id="media-deliveries" class="list"></div></section>
+    </section>
+
+    <section id="billing-panel" class="tab-panel" data-tab-panel>
+      <section id="payments" class="card">
+        <div class="card-title"><span class="card-icon">★</span><h2>Подписка</h2></div>
+        <p class="muted">В Telegram цифровые услуги оплачиваются Telegram Stars. Тариф активируется только после серверного подтверждения платежа.</p>
+        <div id="payment-availability" class="notice"></div>
+        <label for="payment-product">Тариф</label>
+        <select id="payment-product"></select>
+        <label class="switch-row"><span>Автопродление (если доступно)</span><input id="payment-recurring" type="checkbox"></label>
+        <button id="payment-buy" class="button primary" type="button">Оплатить Stars</button>
+        <div id="payment-history" class="list"></div>
+      </section>
+      <section class="card"><div class="card-title"><span class="card-icon">∞</span><h2>Активные подписки</h2></div><div id="subscription-list" class="list"></div></section>
+      <section class="plans-preview">
+        <article><b>Free</b><strong>10</strong><span>загрузок навсегда</span></article>
+        <article><b>Start</b><strong>10/день</strong><span>расширенные функции</span></article>
+        <article><b>Unlimited</b><strong>∞</strong><span>отдельные видео</span></article>
+        <article><b>Full Course</b><strong>∞ + курс</strong><span>максимальный доступ</span></article>
+      </section>
+    </section>
+  </main>
+</div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script type="module" src="/miniapp/app.js"></script>
 <script type="module" src="/miniapp/media.js"></script>

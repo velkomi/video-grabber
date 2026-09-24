@@ -154,7 +154,15 @@ public sealed partial class MainWindow
 
     private void SetOperationControls(bool busy)
     {
+#if VIDEOGRABBER_MANAGED
+        var signedIn = !string.IsNullOrWhiteSpace(_managedAccessToken);
+        var canDownload = signedIn && (_managedAccessSnapshot?.CanDownload ?? false);
+        var canEdit = signedIn && (_managedAccessSnapshot?.CanEdit ?? false);
+        _downloadButton.IsEnabled = !busy && !_courseDownloadActive && canDownload;
+        _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive && canEdit;
+#else
         _downloadButton.IsEnabled = _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive;
+#endif
         _cancelButton.IsEnabled = busy || _courseDownloadActive;
         UpdatePauseButtonsAvailability(busy || _courseDownloadActive);
         UpdateCourseControls();

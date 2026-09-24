@@ -36,7 +36,12 @@ function updateRecurring() {
 async function loadProducts() {
   catalog = await api("/v1/payment-products?surface=telegram");
   const select = $("#payment-product");
+  const buy = $("#payment-buy");
+  const availability = $("#payment-availability");
   select.replaceChildren();
+  buy.disabled = true;
+  availability.className = "notice";
+  availability.textContent = "Проверяю доступные тарифы Telegram Stars…";
   for (const product of catalog.products || []) {
     const price = product.prices?.stars;
     if (!price) continue;
@@ -47,6 +52,19 @@ async function loadProducts() {
     select.append(option);
   }
   updateRecurring();
+  const hasProducts = select.options.length > 0;
+  const primaryReady = window.VideoGrabberApi.isPrimaryAccount();
+  buy.disabled = !hasProducts || !primaryReady;
+  if (!primaryReady) {
+    availability.className = "notice error";
+    availability.textContent = "Сначала свяжите Telegram с основным аккаунтом через /link. Покупка на временный Telegram-аккаунт заблокирована.";
+  } else if (!hasProducts) {
+    availability.className = "notice";
+    availability.textContent = "Продажи через Stars ещё не опубликованы: сервер ожидает утверждённые цены XTR.";
+  } else {
+    availability.className = "notice success";
+    availability.textContent = "Telegram Stars доступны для этого аккаунта.";
+  }
 }
 
 async function refreshSubscriptions() {
@@ -155,6 +173,7 @@ async function boot() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   if (!window.VideoGrabberApi) return;
   try {
+    await window.VideoGrabberApi.ready;
     await loadProducts();
     await refreshPayments();
     await refreshSubscriptions();
