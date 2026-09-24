@@ -507,9 +507,19 @@ public sealed partial class MainWindow
                 VerticalAlignment = VerticalAlignment.Center
             };
             var unlink = SecondaryButton("Отвязать");
-            unlink.IsEnabled = canUnlink;
+            unlink.IsEnabled = true;
             var id = identity.IdentityId;
-            unlink.Click += async (_, _) => await UnlinkManagedIdentityAsync(id);
+            unlink.Click += async (_, _) =>
+            {
+                if (!canUnlink)
+                {
+                    await ShowOperationalHelpAsync(
+                        "Нельзя отвязать единственный способ входа",
+                        "У аккаунта должен остаться хотя бы один способ входа. Сначала привяжите Google или e-mail в этом разделе, затем текущий способ можно будет безопасно отвязать.");
+                    return;
+                }
+                await UnlinkManagedIdentityAsync(id);
+            };
             _accountIdentitiesPanel.Children.Add(TwoColumn(label, unlink, secondAuto: true));
         }
         _accountIdentitiesPanel.Children.Add(MutedText(
@@ -529,10 +539,21 @@ public sealed partial class MainWindow
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var revoke = SecondaryButton("Отозвать");
-            revoke.IsEnabled = !device.Revoked;
+            var revoke = SecondaryButton(device.Revoked ? "Уже отозван" : "Отозвать");
+            revoke.IsEnabled = true;
             var id = device.DeviceId;
-            revoke.Click += async (_, _) => await RevokeManagedDeviceAsync(id);
+            var alreadyRevoked = device.Revoked;
+            revoke.Click += async (_, _) =>
+            {
+                if (alreadyRevoked)
+                {
+                    await ShowOperationalHelpAsync(
+                        "Устройство уже отозвано",
+                        "Это устройство больше не может получать задания или обновлять офлайн-доступ. Если оно снова понадобится, войдите на нём в VideoGrabber и зарегистрируйте его заново.");
+                    return;
+                }
+                await RevokeManagedDeviceAsync(id);
+            };
             _accountDevicesPanel.Children.Add(TwoColumn(label, revoke, secondAuto: true));
         }
         if (_accountDevicesPanel.Children.Count == 1)

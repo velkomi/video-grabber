@@ -52,15 +52,8 @@ public sealed partial class MainWindow
         _lastDownloadedMediaPath = path;
         if (_transcribeDownloadedButton is not null)
         {
-#if VIDEOGRABBER_MANAGED
-            var canEdit = !string.IsNullOrWhiteSpace(_managedAccessToken)
-                && (_managedAccessSnapshot?.CanEdit ?? false);
-            _transcribeDownloadedButton.IsEnabled =
-                !_operations.IsBusy && !_courseDownloadActive && canEdit;
-#else
             _transcribeDownloadedButton.IsEnabled =
                 !_operations.IsBusy && !_courseDownloadActive;
-#endif
             _transcribeDownloadedButton.Content =
                 "Транскрибировать скачанное";
         }
