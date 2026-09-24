@@ -196,6 +196,24 @@ public sealed class ManagedSessionTests
     }
 
     [Fact]
+    public async Task Licensing_client_routes_mp3_through_premium_media_reservation()
+    {
+        var device = Guid.NewGuid();
+        var handler = new ReservationCaptureHandler();
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://licensing.example.test/") };
+        var client = new LicensingApiClient(http, () => "access-token", () => device);
+
+        var permit = await client.AuthorizeAsync(
+            new ManagedOperation(Guid.NewGuid(), "hash-mp3", "mp3", "desktop_worker", device),
+            CancellationToken.None);
+
+        Assert.Equal("premium_media", handler.Operation);
+        Assert.Equal(device, handler.DeviceId);
+        Assert.NotNull(permit.ReservationId);
+        Assert.False(permit.Offline);
+    }
+
+    [Fact]
     public async Task Refresh_rotates_protected_secret_and_logout_removes_only_session_file()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -254,6 +272,29 @@ public sealed class ManagedSessionTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict));
     }
+    private sealed class ReservationCaptureHandler : HttpMessageHandler
+    {
+        public string? Operation { get; private set; }
+        public Guid? DeviceId { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.AbsolutePath != "/v1/reservations")
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            var body = await request.Content!.ReadFromJsonAsync<ReservationRequest>(
+                cancellationToken: cancellationToken) ?? throw new InvalidDataException();
+            Operation = body.Operation;
+            DeviceId = body.DeviceId;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new ReservationReceipt(
+                    Guid.NewGuid(), body.IntentId, "reserved", true, DateTimeOffset.UtcNow.AddMinutes(10)))
+            };
+        }
+    }
+
     private sealed class BrowserFlowHandler : HttpMessageHandler
     {
         public Uri? ReturnUri { get; private set; }

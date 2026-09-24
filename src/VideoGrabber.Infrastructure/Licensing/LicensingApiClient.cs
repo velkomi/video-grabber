@@ -54,7 +54,12 @@ public sealed class LicensingApiClient(
         var reservation = new ReservationRequest(
             operation.IntentId,
             operation.RequestHash,
-            operation.Kind == "course_download" ? "course_download" : "download",
+            operation.Kind switch
+            {
+                "course_download" => "course_download",
+                "mp3" => "premium_media",
+                _ => "download"
+            },
             operation.Executor,
             selectedDevice);
         try
@@ -102,7 +107,7 @@ public sealed class LicensingApiClient(
     }
 
     private static bool RequiresTimeAccess(string kind)
-        => kind is "edit" or "mp3" or "transcription";
+        => kind is "edit" or "transcription";
 
     private static HttpRequestMessage Create(HttpMethod method, string path, string token)
     {
