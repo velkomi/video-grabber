@@ -4,6 +4,33 @@
 
 ## [Unreleased]
 
+## [0.1.10-preview.33-rc.1] - 2026-09-24
+
+### Добавлено
+
+- переработанный Telegram Mini App в тёмном стиле VideoGrabber Managed с вкладками «Аккаунт», «Загрузки» и «Подписка»;
+- единый визуальный статус синхронизации Web · Windows · Telegram, текущего тарифа и остатка Free-лимита;
+- отдельная подсказка/блокировка Mini App до привязки Telegram к основному Google/e-mail аккаунту;
+- серверная операция `premium_media` для явного разделения бесплатных обычных видео и платных расширенных функций.
+
+### Исправлено
+
+- устранена гонка запуска Mini App: media/payments теперь ждут завершения Telegram session, поэтому случайный `HTTP 401` при открытии разделов больше не возникает;
+- исправлен сбой общего Mini App refresh из-за обращения к отсутствующей кнопке `#media-action`;
+- Free теперь серверно разрешает 10 обычных загрузок видео на единый аккаунт и не открывает MP3/редактор/транскрибацию/полный курс;
+- сайт блокирует MP3/Full Course согласно тому же `AccessSnapshot`, который используют Telegram и Windows;
+- VideoGrabber Managed блокирует загрузку до авторизации, показывает права текущего аккаунта и не позволяет обойти тариф прямыми локальными кнопками;
+- прямое «Скачать весь курс» в Managed теперь проходит через общий Managed authorization coordinator и требует Full Course.
+
+### Проверено
+
+- Core: 32/32;
+- Platform: 328/328;
+- Worker: 31/31, включая реальный HLS proxy test с yt-dlp/FFmpeg/FFprobe;
+- Windows Infrastructure: 677 passed, 14 предусмотренных integration skips, 0 failed;
+- Managed Windows Release build: 0 warnings, 0 errors;
+- Mini App JavaScript и Web JavaScript: синтаксическая проверка Node.js пройдена.
+
 ## [0.1.10-preview.32-rc.1] - 2026-09-23
 
 ### Добавлено

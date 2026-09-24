@@ -1,4 +1,14 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.33-rc.1] - 2026-09-24
+
+- Status: unified account / subscription / Telegram Mini App synchronization candidate.
+- Previous version: 0.1.10-preview.32-rc.1.
+- Mini App: redesigned in the dark VideoGrabber style; account, downloads and subscription tabs share the same backend account/access state.
+- Auth/session: media and payment modules wait for verified Telegram session creation; the previous startup race that surfaced HTTP 401 is removed.
+- Free policy: one account receives 10 lifetime ordinary video downloads. MP3, editor/transcription and whole-course access are paid capabilities; enforcement is server-side and mirrored in Web, Windows and Telegram UI.
+- Managed Windows: download controls require a restored authenticated session; whole-course download is routed through Managed authorization and requires Full Course.
+- Verification: Core 32/32; Platform 328/328; Worker 31/31; Windows Infrastructure 677 passed / 14 environment integration skips / 0 failed; Managed Release build 0 warnings/errors.
+
 ## [0.1.10-preview.27] - 2026-09-19
 
 - Status: full self-contained desktop runtime / built-in transcription candidate.
