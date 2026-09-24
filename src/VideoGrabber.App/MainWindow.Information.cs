@@ -40,6 +40,64 @@ public sealed partial class MainWindow
         capabilities.Children.Add(MutedText("• MP3, быстрая обрезка/склейка, локальная расшифровка встроенным Whisper и точечная маршрутизация сайтов."));
         capabilities.Children.Add(MutedText("• Полный комплект уже содержит yt-dlp, FFmpeg, FFprobe, Deno, Whisper и модель распознавания — отдельная установка для обычной работы не требуется."));
         body.Children.Add(Card(capabilities));
+
+#if VIDEOGRABBER_MANAGED
+        var plans = Vertical(10);
+        plans.Children.Add(SectionHeading("Тарифы и доступ"));
+        plans.Children.Add(MutedText(
+            "Один аккаунт и один тариф действуют одновременно на сайте, в Windows VideoGrabber и в Telegram."));
+        plans.Children.Add(new TextBlock
+        {
+            Text = "Free — 0 ₽",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
+        plans.Children.Add(MutedText(
+            "10 обычных загрузок видео за всё время аккаунта. Полный курс, MP3, редактор и транскрибация не входят."));
+        plans.Children.Add(new TextBlock
+        {
+            Text = "Start — 1 500 ₽ / 30 дней",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
+        plans.Children.Add(MutedText(
+            "До 10 загрузок в сутки. Включены MP3, редактор и локальная транскрибация. Полный курс не входит."));
+        plans.Children.Add(new TextBlock
+        {
+            Text = "Unlimited Video — 2 500 ₽ / 30 дней",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
+        plans.Children.Add(MutedText(
+            "Отдельные видео без лимита + MP3, редактор и локальная транскрибация. Полный курс не входит."));
+        plans.Children.Add(new TextBlock
+        {
+            Text = "Full Course — 5 000 ₽ / 30 дней",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
+        plans.Children.Add(MutedText(
+            "Максимальный тариф: отдельные видео без лимита, MP3, редактор, транскрибация и скачивание полного курса GetCourse с локальным сохранением структуры."));
+        plans.Children.Add(MutedText(
+            "Если функция не входит в текущий тариф, кнопка остаётся нажимаемой: VideoGrabber покажет объяснение и предложит подходящий тариф. Никакое списание не происходит без перехода на сайт и подтверждения оплаты."));
+        var plansButton = PrimaryButton("Тарифы и оплата на сайте");
+        plansButton.Click += (_, _) => OpenPricingPage();
+        plans.Children.Add(plansButton);
+        body.Children.Add(Card(plans));
+#endif
+
+        var controlsHelp = Vertical(8);
+        controlsHelp.Children.Add(SectionHeading("Почему кнопка нажимается, но действие не начинается"));
+        controlsHelp.Children.Add(MutedText(
+            "• «Пауза» нажимается всегда. Если операции ещё нет, появится подсказка, когда её использовать. Во время работы она временно приостанавливает процесс и превращается в «Продолжить»."));
+        controlsHelp.Children.Add(MutedText(
+            "• «Отменить всё» при отсутствии активной работы показывает пояснение. Во время операции она останавливает текущую работу, не удаляя уже готовые локальные файлы."));
+        controlsHelp.Children.Add(MutedText(
+            "• Тарифные функции не выглядят сломанными или навсегда выключенными: при нехватке доступа открывается окно с причиной, возможностями тарифов и переходом к выбору тарифа."));
+        controlsHelp.Children.Add(MutedText(
+            "• Если для действия сначала нужен файл, найденное видео, активная очередь или открытый курс, VideoGrabber объясняет этот шаг вместо молчаливого отказа."));
+        body.Children.Add(Card(controlsHelp));
+
         var getCourse = Vertical(8);
         getCourse.Children.Add(SectionHeading("Как скачать с GetCourse"));
         getCourse.Children.Add(MutedText("1. Вставьте ссылку на урок и нажмите «Открыть во встроенном браузере»."));

@@ -68,11 +68,16 @@ public sealed partial class MainWindow
 
     private async Task TranscribeLastDownloadedAsync()
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                "Транскрибация доступна на платных тарифах"))
+            return;
+
         var path = _lastDownloadedMediaPath;
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
-            _browserHint.Text =
-                "Сначала успешно скачайте видео.";
+            _browserHint.Text = "Сначала успешно скачайте видео.";
+            await ExplainMissingDownloadedMediaAsync();
             return;
         }
 
@@ -101,6 +106,11 @@ public sealed partial class MainWindow
 
     private async Task RunManagedWholeCourseAsync(bool resume)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.FullCourse,
+                "Скачивание полного курса доступно на Full Course"))
+            return;
+
         var source = (resume ? _cachedCourseRoot : _browserPageUri)?.AbsoluteUri ?? "course";
         var operation = CreateLocalOperation(
             "course_download",
@@ -125,6 +135,10 @@ public sealed partial class MainWindow
             _browserHint.Text = ex.Message == "managed_sign_in_required"
                 ? "Сначала войдите в VideoGrabber-аккаунт. Полный курс доступен только после авторизации и на тарифе Full Course."
                 : "Скачивание полного курса недоступно на текущем тарифе. Нужен Full Course.";
+            await ShowFeatureAccessDialogAsync(
+                FeatureAccessKind.FullCourse,
+                "Скачивание полного курса недоступно",
+                ex.Message);
         }
         catch (OperationCanceledException) { }
     }
@@ -2683,44 +2697,30 @@ public sealed partial class MainWindow
     private void UpdateCourseControls()
     {
         var busy = _courseDownloadActive || _operations.IsBusy;
-#if VIDEOGRABBER_MANAGED
-        var signedIn = !string.IsNullOrWhiteSpace(_managedAccessToken);
-        var canEdit = signedIn && (_managedAccessSnapshot?.CanEdit ?? false);
-        var canCourse = signedIn && (_managedAccessSnapshot?.CanDownloadCourse ?? false);
-#else
-        const bool canEdit = true;
-        const bool canCourse = true;
-#endif
 
         if (_mp3Button is not null)
-            _mp3Button.IsEnabled = !busy && canEdit;
+            _mp3Button.IsEnabled = !busy;
         if (_textButton is not null)
-            _textButton.IsEnabled = !busy && canEdit;
+            _textButton.IsEnabled = !busy;
         UpdateLocalMediaAvailabilityHint();
 
         if (_courseDownloadButton is not null)
-            _courseDownloadButton.IsEnabled = !busy && canCourse;
+            _courseDownloadButton.IsEnabled = !busy;
 
         if (_courseQualityBox is not null)
-            _courseQualityBox.IsEnabled = !busy && canCourse;
+            _courseQualityBox.IsEnabled = !busy;
 
         if (_courseResumeButton is not null)
-            _courseResumeButton.IsEnabled = !busy && canCourse;
+            _courseResumeButton.IsEnabled = !busy;
 
         if (_courseClearCacheButton is not null)
             _courseClearCacheButton.IsEnabled = !busy;
 
         if (_transcribeDownloadedButton is not null)
-            _transcribeDownloadedButton.IsEnabled =
-                !busy
-                && canEdit
-                && !string.IsNullOrWhiteSpace(
-                    _lastDownloadedMediaPath)
-                && File.Exists(_lastDownloadedMediaPath);
+            _transcribeDownloadedButton.IsEnabled = !busy;
 
         if (_cancelButton is not null)
-            _cancelButton.IsEnabled =
-                busy || _isInstallingComponents;
+            _cancelButton.IsEnabled = true;
 
         UpdatePauseButtonsAvailability(busy || _isInstallingComponents);
     }

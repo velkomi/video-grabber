@@ -705,7 +705,8 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("Child = new Image", shell);
         Assert.Contains("BrandLogoAssetPath", shell);
         Assert.Contains("После завершения всех загрузок", shell);
-        Assert.Contains("button.IsHitTestVisible = busy", shell);
+        Assert.Contains("button.IsHitTestVisible = true", shell);
+        Assert.Contains("TogglePauseOrExplainAsync", shell);
         Assert.Contains("⏸  Пауза", shell);
 
         Assert.Contains(@"D:\VideoGrabber", preferences);

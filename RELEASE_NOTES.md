@@ -1,4 +1,15 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.34-rc.1] - 2026-09-24
+
+- Status: interactive tariff guidance / Windows download candidate.
+- Previous version: 0.1.10-preview.33-rc.1.
+- Web: pricing cards are clickable and open a plan detail dialog; MP3 / Full Course remain selectable and explain plan requirements rather than disappearing.
+- Download: official /download/windows route points to the current GitHub Release package; the site also surfaces Windows 10/11 x64 requirements, release hashes and macOS development status.
+- Managed Windows: tariff-gated actions stay clickable and open a contextual plan dialog; Pause and Cancel explain their use when no operation is running.
+- Entitlement: top-level audio-only download now reserves premium_media, closing the remaining Free-to-MP3 presentation path.
+- Information page: documents all four plans, common button behavior and direct tariff/payment navigation.
+- Payment UX: Windows directs plan selection to the official website; server-side payment verification remains authoritative.
+
 ## [0.1.10-preview.33-rc.1] - 2026-09-24
 
 - Status: unified account / subscription / Telegram Mini App synchronization candidate.

@@ -17,6 +17,11 @@ public sealed partial class MainWindow
 
     private async void Download_Click(object sender, RoutedEventArgs e)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.IndividualDownload,
+                "Загрузка недоступна на текущем тарифе"))
+            return;
+
         if (!UrlPolicy.TryValidate(_urlBox.Text, out var uri, out var error) || uri is null)
         {
             SetDownloadState(error, null, true);
@@ -24,6 +29,11 @@ public sealed partial class MainWindow
             return;
         }
         var intent = CaptureDownloadIntent(uri);
+        if (intent.AudioOnly
+            && !await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                "MP3 доступен на платных тарифах"))
+            return;
         await DownloadSourceAsync(intent);
     }
 
@@ -33,7 +43,10 @@ public sealed partial class MainWindow
             (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString(), Volatile.Read(ref _browserDiscoveryGeneration));
 
     private Task<OperationOutcome> DownloadSourceAsync(UserDownloadIntent intent)
-        => RunDownloadOperationAsync(intent, new BrowserDownloadPreparation(this));
+        => RunDownloadOperationAsync(
+            intent,
+            new BrowserDownloadPreparation(this),
+            managedKind: intent.AudioOnly ? "mp3" : "direct_download");
 
     private async Task<OperationOutcome> RunDownloadOperationAsync(UserDownloadIntent intent,
         IBrowserDownloadPreparation preparation, bool resetCookieSelectionAfterUse = true,
@@ -50,6 +63,10 @@ public sealed partial class MainWindow
         catch (UnauthorizedAccessException ex)
         {
             SetDownloadState("Доступ к управляемой операции не разрешён.", ex.Message, true);
+            await ShowFeatureAccessDialogAsync(
+                FeatureAccessKind.IndividualDownload,
+                "Загрузка недоступна на текущем тарифе",
+                ex.Message);
             return OperationOutcome.Failed;
         }
         catch (OperationCanceledException)
@@ -154,16 +171,9 @@ public sealed partial class MainWindow
 
     private void SetOperationControls(bool busy)
     {
-#if VIDEOGRABBER_MANAGED
-        var signedIn = !string.IsNullOrWhiteSpace(_managedAccessToken);
-        var canDownload = signedIn && (_managedAccessSnapshot?.CanDownload ?? false);
-        var canEdit = signedIn && (_managedAccessSnapshot?.CanEdit ?? false);
-        _downloadButton.IsEnabled = !busy && !_courseDownloadActive && canDownload;
-        _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive && canEdit;
-#else
-        _downloadButton.IsEnabled = _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive;
-#endif
-        _cancelButton.IsEnabled = busy || _courseDownloadActive;
+        _downloadButton.IsEnabled = !busy && !_courseDownloadActive;
+        _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive;
+        _cancelButton.IsEnabled = true;
         UpdatePauseButtonsAvailability(busy || _courseDownloadActive);
         UpdateCourseControls();
     }

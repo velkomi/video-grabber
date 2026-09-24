@@ -17,10 +17,10 @@ public sealed partial class MainWindow
     private FrameworkElement BuildManagedPaymentsCard()
     {
         var panel = Vertical(8);
-        panel.Children.Add(SectionHeading("Покупка доступа"));
+        panel.Children.Add(SectionHeading("Тарифы и оплата"));
         panel.Children.Add(MutedText(
-            "На Windows внешний checkout открывается только через серверный YooKassa URL. " +
-            "Возврат браузера сам по себе не подтверждает оплату — доступ обновляется только после проверки провайдера сервером."));
+            "Выбор и оплата тарифа выполняются на официальной странице VideoGrabber. " +
+            "После подтверждения оплаты сервер обновит единый доступ для сайта, Windows и Telegram."));
         _managedPaymentProduct = new ComboBox
         {
             PlaceholderText = "Выберите товар",
@@ -39,8 +39,12 @@ public sealed partial class MainWindow
             await RefreshManagedPaymentProductsAsync();
             await RefreshManagedSubscriptionsAsync();
         };
-        var buy = PrimaryButton("Перейти к оплате YooKassa");
-        buy.Click += async (_, _) => await StartManagedYooKassaPurchaseAsync();
+        var buy = PrimaryButton("Выбрать тариф на сайте");
+        buy.Click += (_, _) =>
+        {
+            var planId = (_managedPaymentProduct.SelectedItem as DesktopPaymentProduct)?.PlanId;
+            OpenPricingPage(planId);
+        };
         panel.Children.Add(Horizontal(refresh, buy));
         _managedPaymentStatus = MutedText(
             "До входа покупка недоступна. Live-каталог не включается автоматически.");
@@ -213,7 +217,8 @@ public sealed partial class MainWindow
         long Credits,
         int Days,
         bool RecurringAllowed,
-        Dictionary<string, DesktopPaymentPrice> Prices)
+        Dictionary<string, DesktopPaymentPrice> Prices,
+        string? PlanId = null)
     {
         public string Display
         {

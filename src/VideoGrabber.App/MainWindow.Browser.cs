@@ -159,7 +159,10 @@ public sealed partial class MainWindow
 
         panel.Children.Add(SectionHeading("После скачивания"));
         _transcribeDownloadedButton = SecondaryButton("Транскрибировать скачанное");
-        _transcribeDownloadedButton.IsEnabled = false;
+        _transcribeDownloadedButton.IsEnabled = true;
+        ToolTipService.SetToolTip(
+            _transcribeDownloadedButton,
+            "Если видео ещё не скачано или тариф не подходит, VideoGrabber объяснит, что нужно сделать.");
         _transcribeDownloadedButton.Click += async (_, _) => await TranscribeLastDownloadedAsync();
         panel.Children.Add(_transcribeDownloadedButton);
         panel.Children.Add(SectionHeading("Очередь загрузок"));

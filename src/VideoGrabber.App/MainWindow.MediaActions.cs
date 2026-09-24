@@ -64,7 +64,7 @@ public sealed partial class MainWindow
         _textButton.Click += async (_, _) => await RunLocalMediaAsync(true);
         var mediaPauseButton = PauseButton();
         var cancel = DangerButton("Отменить всё");
-        cancel.Click += (_, _) => CancelOperation();
+        cancel.Click += async (_, _) => await CancelOrExplainAsync();
         _localMediaStatus = MutedText(LocalMediaReadyHint);
         panel.Children.Add(TwoColumn(_localMediaBox, choose, secondAuto: true));
         panel.Children.Add(_localOutputBaseBox);
@@ -87,6 +87,13 @@ public sealed partial class MainWindow
     }
     private async Task RunLocalMediaAsync(bool text)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                text
+                    ? "Транскрибация доступна на платных тарифах"
+                    : "MP3 доступен на платных тарифах"))
+            return;
+
         var input = _localMediaBox.Text.Trim().Trim('"');
         var output = _localOutputBaseBox.Text.Trim().Trim('"');
         if (!File.Exists(input) || string.IsNullOrWhiteSpace(output))
@@ -104,6 +111,12 @@ public sealed partial class MainWindow
         catch (UnauthorizedAccessException ex)
         {
             _localMediaStatus.Text = "Доступ к операции не разрешён: " + ex.Message;
+            await ShowFeatureAccessDialogAsync(
+                FeatureAccessKind.PaidTools,
+                text
+                    ? "Транскрибация недоступна на текущем тарифе"
+                    : "MP3 недоступен на текущем тарифе",
+                ex.Message);
         }
         catch (OperationCanceledException) { }
     }

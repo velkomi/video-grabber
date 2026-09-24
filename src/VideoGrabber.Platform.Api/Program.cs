@@ -376,6 +376,10 @@ app.MapSourceEndpoints();
 app.MapArtifactUploadEndpoints();
 app.MapPlatformHealthEndpoints();
 app.MapOperationsEndpoints();
+app.MapGet("/download/windows", () => Results.Redirect(
+    "https://github.com/velkomi/video-grabber/releases/download/v0.1.10-preview.34-rc.1/VideoGrabber-0.1.10-preview.34-rc.1-Managed.zip",
+    permanent: false))
+    .AllowAnonymous();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

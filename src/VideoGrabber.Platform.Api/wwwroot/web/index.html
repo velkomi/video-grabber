@@ -16,6 +16,7 @@
     </a>
     <nav aria-label="Основная навигация">
       <a href="#how">Как работает</a>
+      <a href="#download">Скачать</a>
       <a href="#pricing">Тарифы</a>
       <a href="#app">Кабинет</a>
     </nav>
@@ -32,8 +33,9 @@
           заберёт задание из защищённой очереди и сохранит результат прямо в выбранную папку.
         </p>
         <div class="hero-actions">
-          <a class="button button-primary" href="#app">Открыть загрузчик</a>
-          <a class="button button-quiet" href="#pricing">Посмотреть тарифы</a>
+          <a class="button button-primary" href="/download/windows">Скачать для Windows</a>
+          <a class="button button-quiet" href="#app">Открыть загрузчик</a>
+          <a class="button button-quiet" href="#pricing">Тарифы</a>
         </div>
         <div class="trust-line" aria-label="Принципы хранения">
           <span>Без постоянного хранения медиа на сервере</span>
@@ -69,34 +71,65 @@
       </div>
     </section>
 
+    <section id="download" class="section download-section">
+      <div class="download-card">
+        <div>
+          <p class="eyebrow">Приложение для компьютера</p>
+          <h2>VideoGrabber для Windows</h2>
+          <p class="download-lead">
+            Windows 10/11 x64. Полный пакет уже содержит yt-dlp, FFmpeg, FFprobe,
+            Deno и Whisper — после распаковки можно запускать VideoGrabber.Managed.exe.
+          </p>
+          <div class="download-actions">
+            <a class="button button-primary" href="/download/windows">Скачать Windows-версию</a>
+            <a class="button button-quiet" href="https://github.com/velkomi/video-grabber/releases" target="_blank" rel="noopener">Все версии и SHA-256</a>
+          </div>
+        </div>
+        <aside class="platform-note">
+          <span class="platform-chip">macOS</span>
+          <strong>Версия для Mac ещё разрабатывается</strong>
+          <p>
+            Пользуетесь Mac и хотите VideoGrabber для macOS? Напишите, какие сценарии
+            вам нужны — это поможет определить приоритет разработки.
+          </p>
+          <a class="text-link" href="https://t.me/Velkoshkin" target="_blank" rel="noopener">Написать Валерию в Telegram →</a>
+        </aside>
+      </div>
+    </section>
+
     <section id="pricing" class="section pricing-section">
       <div class="section-head">
         <p class="eyebrow">Простые правила</p>
         <h2>Тарифы без скрытых «кредитов»</h2>
       </div>
       <div class="pricing-grid">
-        <article class="price-card">
+        <article class="price-card" data-plan="free" tabindex="0" role="button" aria-label="Подробнее о тарифе Free">
           <p class="plan">Free</p><p class="price">0 ₽</p>
-          <p>10 загрузок видео за всё время аккаунта.</p>
-          <ul><li>10 lifetime-загрузок</li><li>Windows / Web / Telegram account</li><li>Без полного курса</li></ul>
+          <p>Попробуйте VideoGrabber без оплаты.</p>
+          <ul><li>10 обычных видео за всё время аккаунта</li><li>Windows / Web / Telegram — один аккаунт</li><li>Без MP3, редактора, ASR и полного курса</li></ul>
+          <button class="plan-action" type="button">Начать бесплатно</button>
         </article>
-        <article class="price-card">
+        <article class="price-card" data-plan="start" tabindex="0" role="button" aria-label="Подробнее о тарифе Start">
           <p class="plan">Start</p><p class="price">1 500 ₽<small>/30 дней</small></p>
           <p>Для регулярных небольших загрузок.</p>
-          <ul><li>До 10 загрузок в сутки</li><li>Сброс лимита по серверным UTC-суткам</li><li>Без полного курса</li></ul>
+          <ul><li>До 10 загрузок в сутки</li><li>MP3, редактор и локальная транскрибация</li><li>Полный курс не включён</li></ul>
+          <button class="plan-action" type="button">Выбрать Start</button>
         </article>
-        <article class="price-card featured">
+        <article class="price-card featured" data-plan="unlimited_video" tabindex="0" role="button" aria-label="Подробнее о тарифе Unlimited Video">
           <span class="badge">Видео без лимита</span>
           <p class="plan">Unlimited Video</p><p class="price">2 500 ₽<small>/30 дней</small></p>
-          <p>Неограниченные отдельные видео.</p>
-          <ul><li>Без лимита на отдельные видео</li><li>Web → Desktop</li><li>Полный курс не включён</li></ul>
+          <p>Для частых загрузок отдельных видео.</p>
+          <ul><li>Отдельные видео без лимита</li><li>MP3, редактор и локальная транскрибация</li><li>Полный курс не включён</li></ul>
+          <button class="plan-action" type="button">Выбрать Unlimited</button>
         </article>
-        <article class="price-card">
+        <article class="price-card" data-plan="full_course" tabindex="0" role="button" aria-label="Подробнее о тарифе Full Course">
           <p class="plan">Full Course</p><p class="price">5 000 ₽<small>/30 дней</small></p>
           <p>Максимальный режим VideoGrabber.</p>
-          <ul><li>Видео без лимита</li><li>Скачивание полного курса</li><li>Локальное сохранение структуры курса</li></ul>
+          <ul><li>Отдельные видео без лимита</li><li>MP3, редактор и локальная транскрибация</li><li>Скачивание и локальная структура полного курса</li></ul>
+          <button class="plan-action" type="button">Выбрать Full Course</button>
         </article>
       </div>
+      <p class="pricing-note">Нажмите любой тариф — откроется подробное описание и переход к оформлению. Никакое списание не начинается простым нажатием на карточку.</p>
     </section>
 
     <section id="app" class="section app-section">
@@ -202,6 +235,20 @@
     <span>VideoGrabber</span>
     <span>Медиа на сервере — временно. Локальный результат — на вашем компьютере.</span>
   </footer>
+
+  <dialog id="plan-dialog" class="plan-dialog" aria-labelledby="plan-dialog-title">
+    <button id="plan-dialog-x" class="dialog-x" type="button" aria-label="Закрыть">×</button>
+    <p class="eyebrow">Тариф VideoGrabber</p>
+    <h2 id="plan-dialog-title">—</h2>
+    <p id="plan-dialog-price" class="dialog-price">—</p>
+    <p id="plan-dialog-description" class="dialog-description"></p>
+    <ul id="plan-dialog-features"></ul>
+    <p id="plan-dialog-reason" class="dialog-reason" hidden></p>
+    <div class="dialog-actions">
+      <button id="plan-dialog-action" class="button button-primary" type="button">Перейти к оформлению</button>
+      <button id="plan-dialog-close" class="button button-quiet" type="button">Закрыть</button>
+    </div>
+  </dialog>
 
   <script src="/web/app.js" defer></script>
 </body>

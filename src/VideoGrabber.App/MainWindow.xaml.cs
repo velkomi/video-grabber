@@ -300,8 +300,8 @@ public sealed partial class MainWindow : Window
         _downloadButton = PrimaryButton("Скачать");
         _downloadButton.Click += Download_Click;
         _cancelButton = DangerButton("Отменить всё");
-        _cancelButton.IsEnabled = false;
-        _cancelButton.Click += (_, _) => CancelOperation();
+        _cancelButton.IsEnabled = true;
+        _cancelButton.Click += async (_, _) => await CancelOrExplainAsync();
         var browserButton = BrowserActionButton("Открыть во встроенном браузере");
         browserButton.Click += OpenBrowser_Click;
         var browserButtonHint = new TextBlock
@@ -423,7 +423,7 @@ public sealed partial class MainWindow : Window
         _editorInfo.Visibility = Visibility.Collapsed;
         body.Children.Add(_editorInfo);
         var cancelEdit = DangerButton("Отменить всё");
-        cancelEdit.Click += (_, _) => CancelOperation();
+        cancelEdit.Click += async (_, _) => await CancelOrExplainAsync();
         body.Children.Add(cancelEdit);
         return PageScrollViewer(body);
     }
@@ -528,6 +528,11 @@ public sealed partial class MainWindow : Window
 
     private async void Trim_Click(object sender, RoutedEventArgs e)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                "Обрезка видео доступна на платных тарифах"))
+            return;
+
         if (!File.Exists(_trimInputBox.Text) ||
             string.IsNullOrWhiteSpace(_trimOutputBox.Text) ||
             !TimeSpan.TryParse(_trimStartBox.Text, out var start) ||
@@ -559,6 +564,11 @@ public sealed partial class MainWindow : Window
 
     private async void Join_Click(object sender, RoutedEventArgs e)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                "Склейка видео доступна на платных тарифах"))
+            return;
+
         if (_joinFiles.Count < 2 || string.IsNullOrWhiteSpace(_joinOutputBox.Text))
         {
             ShowEditorMessage("Выберите минимум два видео и путь сохранения.", InfoBarSeverity.Error);
@@ -580,6 +590,10 @@ public sealed partial class MainWindow : Window
         catch (UnauthorizedAccessException ex)
         {
             ShowEditorMessage("Доступ к редактированию не разрешён: " + ex.Message, InfoBarSeverity.Error);
+            await ShowFeatureAccessDialogAsync(
+                FeatureAccessKind.PaidTools,
+                "Редактор недоступен на текущем тарифе",
+                ex.Message);
         }
         catch (OperationCanceledException) { }
     }
@@ -990,10 +1004,14 @@ public sealed partial class MainWindow : Window
         button.HorizontalContentAlignment = HorizontalAlignment.Center;
         button.FontWeight = FontWeights.SemiBold;
         button.IsEnabled = true;
-        button.IsHitTestVisible = false;
-        button.IsTabStop = false;
+        button.IsHitTestVisible = true;
+        button.IsTabStop = true;
+        button.Tag = false;
         button.Opacity = 1;
-        button.Click += (_, _) => TogglePause();
+        ToolTipService.SetToolTip(
+            button,
+            "Во время операции — поставить на паузу. Если работа ещё не запущена, нажмите для пояснения.");
+        button.Click += async (_, _) => await TogglePauseOrExplainAsync();
         _pauseButtons.Add(button);
         UpdatePauseButtonVisual(button);
         return button;
@@ -1027,8 +1045,9 @@ public sealed partial class MainWindow : Window
             // Keep the caption fully visible even while pause is unavailable.
             // WinUI dims disabled button content too aggressively on Windows 10.
             button.IsEnabled = true;
-            button.IsHitTestVisible = busy;
-            button.IsTabStop = busy;
+            button.IsHitTestVisible = true;
+            button.IsTabStop = true;
+            button.Tag = busy;
             button.Opacity = 1;
             UpdatePauseButtonVisual(button);
         }
@@ -1044,7 +1063,7 @@ public sealed partial class MainWindow : Window
             button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 22, 163, 74));
             button.Foreground = new SolidColorBrush(Colors.White);
         }
-        else if (button.IsHitTestVisible)
+        else if (button.Tag is true)
         {
             button.Content = "⏸  Пауза";
             button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 250, 204, 21));

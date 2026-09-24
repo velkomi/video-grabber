@@ -338,6 +338,128 @@ function planName(planId) {
   })[planId] || (state.profile?.role === "owner_admin" ? "Owner" : "Legacy");
 }
 
+const planCatalog = {
+  free: {
+    name: "Free",
+    price: "0 ₽",
+    description: "Попробуйте основные загрузки VideoGrabber без оплаты.",
+    features: [
+      "10 обычных загрузок видео за всё время аккаунта",
+      "Один аккаунт для сайта, Windows и Telegram",
+      "Без MP3, редактора, транскрибации и полного курса"
+    ]
+  },
+  start: {
+    name: "Start",
+    price: "1 500 ₽ / 30 дней",
+    description: "Для регулярных небольших загрузок и расширенных локальных инструментов.",
+    features: [
+      "До 10 загрузок в сутки",
+      "MP3, редактор и локальная транскрибация",
+      "Полный курс не включён"
+    ]
+  },
+  unlimited_video: {
+    name: "Unlimited Video",
+    price: "2 500 ₽ / 30 дней",
+    description: "Для частых загрузок отдельных видео без дневного лимита.",
+    features: [
+      "Отдельные видео без лимита",
+      "MP3, редактор и локальная транскрибация",
+      "Полный курс не включён"
+    ]
+  },
+  full_course: {
+    name: "Full Course",
+    price: "5 000 ₽ / 30 дней",
+    description: "Максимальный режим VideoGrabber для отдельных видео и полного курса.",
+    features: [
+      "Отдельные видео без лимита",
+      "MP3, редактор и локальная транскрибация",
+      "Скачивание полного курса и локальное сохранение структуры"
+    ]
+  }
+};
+
+let requestedPlan = null;
+
+function recommendedPlanForOperation(kind) {
+  if (kind === "course_download") return "full_course";
+  if (kind === "mp3") return "start";
+  return "start";
+}
+
+function openPlanDialog(planId, reason = "") {
+  const plan = planCatalog[planId] || planCatalog.start;
+  requestedPlan = planId in planCatalog ? planId : "start";
+
+  $("#plan-dialog-title").textContent = plan.name;
+  $("#plan-dialog-price").textContent = plan.price;
+  $("#plan-dialog-description").textContent = plan.description;
+
+  const features = $("#plan-dialog-features");
+  features.replaceChildren();
+  for (const text of plan.features) {
+    const item = document.createElement("li");
+    item.textContent = text;
+    features.append(item);
+  }
+
+  const reasonNode = $("#plan-dialog-reason");
+  reasonNode.hidden = !reason;
+  reasonNode.textContent = reason || "";
+
+  const action = $("#plan-dialog-action");
+  action.textContent = requestedPlan === "free"
+    ? "Начать бесплатно"
+    : "Перейти к оформлению";
+  $("#plan-dialog").showModal();
+}
+
+function closePlanDialog() {
+  if ($("#plan-dialog").open) $("#plan-dialog").close();
+}
+
+function selectBillingProduct(planId) {
+  if (!planId) return false;
+  const node = document.querySelector(
+    '.billing-product[data-plan="' + CSS.escape(planId) + '"]'
+  );
+  if (!node) return false;
+  $$(".billing-product").forEach((item) => item.classList.remove("selected"));
+  node.classList.add("selected");
+  node.scrollIntoView({ behavior: "smooth", block: "center" });
+  return true;
+}
+
+function handlePlanAction(planId) {
+  closePlanDialog();
+
+  if (planId === "free") {
+    $("#app").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!accessToken()) $("#google-login")?.focus();
+    return;
+  }
+
+  if (!accessToken()) {
+    setStatus(
+      "#auth-status",
+      "Сначала войдите. После входа выбранный тариф можно оформить в кабинете."
+    );
+    $("#app").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  if (!selectBillingProduct(planId)) {
+    setStatus(
+      "#job-status",
+      "Тариф выбран. Онлайн-оплата появится здесь после подключения платёжного каталога. Ваш выбор сохранён на этой странице.",
+      "error"
+    );
+    $("#app").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
 function operationName(kind) {
   return ({
     download: "Видео",
@@ -388,13 +510,8 @@ function renderAccount() {
   );
   $("#telegram-value").textContent = telegram ? "Привязан" : "Не привязан";
 
-  const courseOption = $('#operation option[value="course_download"]');
-  const mp3Option = $('#operation option[value="mp3"]');
-  courseOption.disabled = !access.canDownloadCourse;
-  mp3Option.disabled = !access.canEdit;
-  if ((!access.canDownloadCourse && $("#operation").value === "course_download")
-      || (!access.canEdit && $("#operation").value === "mp3"))
-    $("#operation").value = "download";
+  // Keep every operation selectable. If the tariff does not include it,
+  // the submit action opens a clear plan explanation instead of looking broken.
   renderCourseHint();
 }
 
@@ -480,10 +597,9 @@ function renderSelectedDevice() {
 
   const kind = $("#operation").value;
   const access = state.access;
-  const allowed = access?.canDownload === true
-    && (kind !== "mp3" || access.canEdit === true)
-    && (kind !== "course_download" || access.canDownloadCourse === true);
-  $("#submit-job").disabled = !allowed;
+  // The button stays clickable even when access is insufficient.
+  // submitJob() explains the tariff requirement and offers the right plan.
+  $("#submit-job").disabled = false;
 }
 
 function renderJobs() {
@@ -534,6 +650,7 @@ function renderBilling() {
     const price = product.prices.yookassa;
     const card = document.createElement("div");
     card.className = "billing-product";
+    card.dataset.plan = product.planId;
     const name = document.createElement("b");
     name.textContent = labels[product.planId] || product.sku;
     const amount = document.createElement("span");
@@ -634,15 +751,27 @@ async function submitJob(event) {
     return;
   }
   if (!state.access?.canDownload) {
-    setStatus("#job-status", "Лимит загрузок исчерпан. Выберите подписку, чтобы продолжить.", "error");
+    setStatus("#job-status", "Лимит загрузок исчерпан. Выберите тариф, чтобы продолжить.", "error");
+    openPlanDialog(
+      recommendedPlanForOperation(kind),
+      "Эта операция сейчас недоступна: бесплатный лимит исчерпан."
+    );
     return;
   }
   if (kind === "mp3" && !state.access?.canEdit) {
-    setStatus("#job-status", "Free разрешает 10 обычных загрузок видео. MP3 доступен на платном тарифе.", "error");
+    setStatus("#job-status", "MP3 доступен на платных тарифах.", "error");
+    openPlanDialog(
+      "start",
+      "Free предназначен для 10 обычных загрузок видео. MP3 входит в расширенные тарифы."
+    );
     return;
   }
   if (kind === "course_download" && !state.access?.canDownloadCourse) {
-    setStatus("#job-status", "Текущий тариф не разрешает скачивание полного курса.", "error");
+    setStatus("#job-status", "Полный курс доступен на тарифе Full Course.", "error");
+    openPlanDialog(
+      "full_course",
+      "Скачивание полного курса — функция максимального тарифа Full Course."
+    );
     return;
   }
 
@@ -793,6 +922,34 @@ async function refreshDevicesQuietly() {
 async function start() {
   captureTelegramAccountLink();
   captureDesktopFlow();
+
+  for (const card of $$(".price-card[data-plan]")) {
+    const activate = () => openPlanDialog(card.dataset.plan);
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("a")) return;
+      activate();
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        activate();
+      }
+    });
+  }
+
+  $("#plan-dialog-close").addEventListener("click", closePlanDialog);
+  $("#plan-dialog-x").addEventListener("click", closePlanDialog);
+  $("#plan-dialog-action").addEventListener("click", () =>
+    handlePlanAction(requestedPlan || "start")
+  );
+  $("#plan-dialog").addEventListener("click", (event) => {
+    if (event.target === $("#plan-dialog")) closePlanDialog();
+  });
+
+  const initial = new URLSearchParams(location.search).get("plan");
+  if (initial && planCatalog[initial]) {
+    setTimeout(() => openPlanDialog(initial), 80);
+  }
 
   $("#google-login").addEventListener("click", async () => {
     try {
