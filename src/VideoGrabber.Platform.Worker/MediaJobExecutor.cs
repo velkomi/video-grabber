@@ -41,6 +41,7 @@ public sealed class MediaJobExecutor(
     IWorkerArtifactResolver artifacts,
     string jobRoot,
     Uri proxyUri,
+    Uri? socialProxyUri = null,
     string? whisperModel = null,
     Uri? youtubePotProviderUri = null,
     string denoPath = "/usr/local/bin/deno") : IMediaJobExecutor
@@ -89,11 +90,14 @@ public sealed class MediaJobExecutor(
 
         var outputTemplate = Path.Combine(
             attemptRoot, audioOnly ? "result.%(ext)s" : "result.%(ext)s");
+        var selectedProxy = IsSocialVideoHost(source.Source) && socialProxyUri is not null
+            ? socialProxyUri
+            : proxyUri;
         var arguments = new List<string>
         {
             "--no-playlist", "--no-progress", "--no-overwrites",
             "--js-runtimes", "deno:" + denoPath,
-            "--proxy", proxyUri.AbsoluteUri,
+            "--proxy", selectedProxy.AbsoluteUri,
             "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg
         };
 
@@ -145,6 +149,9 @@ public sealed class MediaJobExecutor(
             or "m.youtube.com" or "music.youtube.com"
             || host.EndsWith(".youtube.com", StringComparison.Ordinal);
     }
+
+    private static bool IsSocialVideoHost(Uri source)
+        => IsYouTube(source) || NeedsBrowserImpersonation(source);
 
     private static bool NeedsBrowserImpersonation(Uri source)
     {

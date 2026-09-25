@@ -718,6 +718,7 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("DownloadFolder", media);
 
         Assert.Contains("ScheduleCompletionActionAfterDownloads(\"direct\")", download);
+        Assert.Contains("RunOnUiThreadAsync", download);
         Assert.Contains("ScheduleCompletionActionAfterDownloads(\"queue\")", queue);
         Assert.Contains("ScheduleCompletionActionAfterDownloads(\"course\")", course);
 

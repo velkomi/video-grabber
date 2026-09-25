@@ -17,6 +17,7 @@ public sealed class SourceAnalysisService : IAsyncDisposable
     private readonly string _ytDlp;
     private readonly string _denoPath;
     private readonly Uri _proxyUri;
+    private readonly Uri? _socialProxyUri;
     private readonly Uri? _youtubePotProviderUri;
 
     public SourceAnalysisService(
@@ -52,6 +53,16 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             || !string.IsNullOrEmpty(parsedProxy.UserInfo))
             throw new InvalidOperationException("Validated worker egress proxy URI is required.");
         _proxyUri = parsedProxy;
+
+        var socialProxy = configuration["VG_SOCIAL_EGRESS_PROXY_URI"];
+        if (!string.IsNullOrWhiteSpace(socialProxy))
+        {
+            if (!Uri.TryCreate(socialProxy, UriKind.Absolute, out var parsedSocial)
+                || parsedSocial.Scheme is not ("http" or "https" or "socks5" or "socks5h")
+                || !string.IsNullOrEmpty(parsedSocial.UserInfo))
+                throw new InvalidOperationException("Social egress proxy URI is invalid.");
+            _socialProxyUri = parsedSocial;
+        }
     }
 
     public async Task<AnalyzedMedia[]> AnalyzeAsync(
@@ -231,11 +242,14 @@ public sealed class SourceAnalysisService : IAsyncDisposable
 
     private async Task<JsonElement> ProbeAsync(Uri source, CancellationToken cancellationToken)
     {
+        var selectedProxy = IsSocialVideoHost(source) && _socialProxyUri is not null
+            ? _socialProxyUri
+            : _proxyUri;
         var arguments = new List<string>
         {
             "--dump-single-json", "--no-playlist", "--skip-download",
             "--no-warnings", "--js-runtimes", "deno:" + _denoPath,
-            "--proxy", _proxyUri.AbsoluteUri
+            "--proxy", selectedProxy.AbsoluteUri
         };
 
         if (NeedsBrowserImpersonation(source))
@@ -292,6 +306,9 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             or "m.youtube.com" or "music.youtube.com"
             || host.EndsWith(".youtube.com", StringComparison.Ordinal);
     }
+
+    private static bool IsSocialVideoHost(Uri source)
+        => IsYouTube(source) || NeedsBrowserImpersonation(source);
 
     private static bool NeedsBrowserImpersonation(Uri source)
     {

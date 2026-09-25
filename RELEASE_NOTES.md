@@ -3,7 +3,9 @@
 
 - Status: social-video / Windows reservation correctness candidate.
 - Public URL pipeline: YouTube and Shorts, Instagram/Reels, TikTok, Pinterest video pins.
-- YouTube server path: Deno 2.9.6 + bgutil PO-token provider 2.0.0 + mweb player client.
+- YouTube server path: Deno 2.9.6 + bgutil PO-token provider 2.0.0 + mweb player client + isolated WARP/wireproxy social egress for datacenter-IP bot challenges.
+- Social egress is userspace-only and scoped to yt-dlp traffic; it does not replace the VPS host route or SSH path.
+- Managed Windows dispatches authorized local UI work back through DispatcherQueue before touching WinUI controls.
 - TikTok / Instagram / Pinterest path: yt-dlp browser impersonation backed by curl_cffi.
 - Windows Managed: refreshes expired API session during reservation; failed/cancelled local work releases the reservation; successful local work commits the Free credit through a dedicated account/device-scoped endpoint.
 - Support correction before this release: six preview.36 UI failures were released from reserved back to available, leaving the user Free grant at 10 available / 0 reserved.

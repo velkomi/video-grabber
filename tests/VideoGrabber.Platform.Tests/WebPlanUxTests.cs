@@ -81,6 +81,9 @@ public sealed class WebPlanUxTests
         Assert.Contains("COPY --from=deno_bin /deno /usr/local/bin/deno", apiDocker);
         Assert.Contains("youtube-pot-provider:", compose);
         Assert.Contains("VG_YOUTUBE_POT_PROVIDER_URL", compose);
+        Assert.Contains("social-egress:", compose);
+        Assert.Contains("VG_SOCIAL_EGRESS_PROXY_URI", compose);
+        Assert.Contains("warp_wireproxy_config", compose);
         Assert.Contains("deno:", analysis);
         Assert.Contains("deno:", worker);
         Assert.Contains("youtubepot-bgutilhttp", analysis);

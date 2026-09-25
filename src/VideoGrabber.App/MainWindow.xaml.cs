@@ -607,7 +607,8 @@ public sealed partial class MainWindow : Window
         try
         {
             await _managedCoordinator.RunAsync(managed,
-                token => RunAuthorizedEditAsync(request, token), ManagedReport, _windowLifetime.Token);
+                token => RunOnUiThreadAsync(() => RunAuthorizedEditAsync(request, token)),
+                ManagedReport, _windowLifetime.Token);
         }
         catch (UnauthorizedAccessException ex)
         {

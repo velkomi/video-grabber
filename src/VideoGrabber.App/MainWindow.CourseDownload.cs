@@ -122,12 +122,12 @@ public sealed partial class MainWindow
         {
             await _managedCoordinator.RunAsync(
                 operation,
-                async token =>
+                token => RunOnUiThreadAsync(async () =>
                 {
                     token.ThrowIfCancellationRequested();
                     await RunWholeGetCourseAsync(resume);
                     return OperationOutcome.Succeeded;
-                },
+                }),
                 ManagedReport,
                 _windowLifetime.Token);
         }

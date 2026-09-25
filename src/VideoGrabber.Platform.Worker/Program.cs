@@ -7,6 +7,7 @@ var apiUrl = Environment.GetEnvironmentVariable("VG_PLATFORM_API_URL");
 var workerToken = Environment.GetEnvironmentVariable("VG_SERVER_WORKER_TOKEN");
 var workerIdRaw = Environment.GetEnvironmentVariable("VG_WORKER_ID");
 var proxyRaw = Environment.GetEnvironmentVariable("VG_EGRESS_PROXY_URI");
+var socialProxyRaw = Environment.GetEnvironmentVariable("VG_SOCIAL_EGRESS_PROXY_URI");
 var potProviderRaw = Environment.GetEnvironmentVariable("VG_YOUTUBE_POT_PROVIDER_URL");
 var denoPath = Environment.GetEnvironmentVariable("VG_DENO_PATH")
     ?? "/usr/local/bin/deno";
@@ -24,6 +25,15 @@ if (!Uri.TryCreate(proxyRaw, UriKind.Absolute, out var proxyUri)
     || proxyUri.Scheme is not ("http" or "https")
     || !string.IsNullOrEmpty(proxyUri.UserInfo))
     throw new InvalidOperationException("VG_EGRESS_PROXY_URI is required.");
+
+Uri? socialProxyUri = null;
+if (!string.IsNullOrWhiteSpace(socialProxyRaw))
+{
+    if (!Uri.TryCreate(socialProxyRaw, UriKind.Absolute, out socialProxyUri)
+        || socialProxyUri.Scheme is not ("http" or "https" or "socks5" or "socks5h")
+        || !string.IsNullOrEmpty(socialProxyUri.UserInfo))
+        throw new InvalidOperationException("VG_SOCIAL_EGRESS_PROXY_URI is invalid.");
+}
 
 Uri? youtubePotProviderUri = null;
 if (!string.IsNullOrWhiteSpace(potProviderRaw))
@@ -63,6 +73,7 @@ builder.Services.AddSingleton<IMediaJobExecutor>(sp => new MediaJobExecutor(
     sp.GetRequiredService<IWorkerArtifactResolver>(),
     jobRoot,
     proxyUri,
+    socialProxyUri,
     Environment.GetEnvironmentVariable("VG_WORKER_WHISPER_MODEL"),
     youtubePotProviderUri,
     denoPath));

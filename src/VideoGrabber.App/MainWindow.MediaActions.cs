@@ -106,7 +106,8 @@ public sealed partial class MainWindow
         try
         {
             await _managedCoordinator.RunAsync(managed,
-                token => RunAuthorizedLocalMediaAsync(text, token), ManagedReport, _windowLifetime.Token);
+                token => RunOnUiThreadAsync(() => RunAuthorizedLocalMediaAsync(text, token)),
+                ManagedReport, _windowLifetime.Token);
         }
         catch (UnauthorizedAccessException ex)
         {

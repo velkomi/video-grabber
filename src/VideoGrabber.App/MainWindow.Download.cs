@@ -56,8 +56,8 @@ public sealed partial class MainWindow
         try
         {
             return await _managedCoordinator.RunAsync(managed,
-                token => RunAuthorizedDownloadOperationAsync(intent, preparation,
-                    resetCookieSelectionAfterUse, queuedEntry, token),
+                token => RunOnUiThreadAsync(() => RunAuthorizedDownloadOperationAsync(
+                    intent, preparation, resetCookieSelectionAfterUse, queuedEntry, token)),
                 ManagedReport, _windowLifetime.Token);
         }
         catch (UnauthorizedAccessException ex)
