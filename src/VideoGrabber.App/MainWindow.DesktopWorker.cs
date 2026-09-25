@@ -106,6 +106,7 @@ public sealed partial class MainWindow
     {
         try
         {
+            var unauthorizedRefreshAttempted = false;
             while (!cancellationToken.IsCancellationRequested)
             {
                 var secret = await ReadManagedDeviceSecretAsync();
@@ -125,8 +126,22 @@ public sealed partial class MainWindow
                 }
                 catch (UnauthorizedAccessException)
                 {
+                    if (!unauthorizedRefreshAttempted)
+                    {
+                        unauthorizedRefreshAttempted = true;
+                        try
+                        {
+                            SetDesktopWorkerStatus("Сессия истекла. Обновляю вход…");
+                            await RefreshManagedSensitiveSessionAsync();
+                            continue;
+                        }
+                        catch (Exception ex) when (ex is UnauthorizedAccessException or HttpRequestException)
+                        {
+                            // Fall through to the terminal message below.
+                        }
+                    }
                     SetDesktopWorkerStatus(
-                        "Устройство отозвано или сессия недействительна. Worker остановлен.");
+                        "Не удалось обновить сессию или устройство отозвано. Войдите в аккаунт заново.");
                     StopDesktopWorkerLoop();
                     return;
                 }
@@ -138,6 +153,7 @@ public sealed partial class MainWindow
                     continue;
                 }
 
+                unauthorizedRefreshAttempted = false;
                 if (lease is null)
                 {
                     SetDesktopWorkerStatus("Ожидаю задания…");

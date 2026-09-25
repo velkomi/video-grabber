@@ -971,9 +971,17 @@ async function submitJob(event) {
         ? "Лимит тарифа исчерпан или операция не входит в тариф."
         : error.message === "job_source_unavailable"
           ? "Источник или выбранное качество сейчас недоступны."
-          : error.message === "source_analysis_failed"
-            ? "Не удалось определить видео по этой ссылке. Для закрытых страниц используйте Windows VideoGrabber."
-            : "Не удалось создать задание: " + error.message;
+          : error.message === "source_unavailable"
+            ? "YouTube сообщает, что этот ролик недоступен. Проверьте, открывается ли именно эта ссылка в обычном браузере. Бесплатная загрузка за такую попытку не списывается."
+            : error.message === "source_login_required"
+              ? "Для этой ссылки YouTube требует вход или доступ к закрытому контенту. Используйте Windows VideoGrabber со встроенным браузером."
+              : error.message === "source_rate_limited"
+                ? "YouTube временно ограничил серверные запросы. Попробуйте ещё раз позже или отправьте загрузку в Windows VideoGrabber. Бесплатная загрузка не списывается."
+                : error.message === "source_runtime_incomplete"
+                  ? "Серверный модуль загрузки временно недоступен. Бесплатная загрузка не списывается."
+                  : error.message === "source_analysis_failed"
+                    ? "Не удалось определить видео по этой ссылке. Бесплатная загрузка не списывается; для закрытых страниц используйте Windows VideoGrabber."
+                    : "Не удалось создать задание: " + error.message;
     setStatus("#job-status", message, "error");
   }
 }

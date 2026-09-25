@@ -56,6 +56,30 @@ public sealed class WebPlanUxTests
         Assert.Contains("/v1/downloads/{ticket}", jobs);
     }
 
+    [Fact]
+    public void Server_youtube_runtime_is_complete_and_failures_are_user_facing()
+    {
+        var root = FindRepoRoot();
+        var apiDocker = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "api.Dockerfile"));
+        var workerDocker = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "worker.Dockerfile"));
+        var analysis = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "Jobs", "SourceAnalysisService.cs"));
+        var worker = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Worker", "MediaJobExecutor.cs"));
+        var web = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web", "app.js"));
+
+        Assert.Contains("python3 nodejs", apiDocker);
+        Assert.Contains("python3 nodejs", workerDocker);
+        Assert.Contains("\"--js-runtimes\", \"node\"", analysis);
+        Assert.Contains("\"--js-runtimes\", \"node\"", worker);
+        Assert.Contains("source_unavailable", analysis);
+        Assert.Contains("source_rate_limited", analysis);
+        Assert.Contains("Бесплатная загрузка за такую попытку не списывается", web);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

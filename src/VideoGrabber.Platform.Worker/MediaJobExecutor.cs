@@ -90,6 +90,7 @@ public sealed class MediaJobExecutor(
         var arguments = new List<string>
         {
             "--no-playlist", "--no-progress", "--no-overwrites",
+            "--js-runtimes", "node",
             "--proxy", proxyUri.AbsoluteUri,
             "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg
         };

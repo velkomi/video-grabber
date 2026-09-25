@@ -1,4 +1,15 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.36-rc.1] - 2026-09-25
+
+- Status: YouTube server-runtime / Free-reservation hotfix.
+- Previous version: 0.1.10-preview.35-rc.1.
+- API image now contains Python 3 and Node.js; SourceAnalysisService invokes yt-dlp with the Node JavaScript runtime.
+- Worker image also contains Node.js and uses the same runtime for actual downloads.
+- Source analysis reports stable user-facing reasons: source_unavailable, source_login_required, source_rate_limited, source_runtime_incomplete.
+- Failed source analysis happens before job admission and does not reserve Free quota.
+- Windows desktop-worker refreshes an expired managed session once before treating a device as revoked/offline.
+- Support correction: one legacy review-required desktop reservation from the preview.35 migration window was released with an auditable ledger release; Free returned to 10 available / 0 reserved.
+
 ## [0.1.10-preview.35-rc.1] - 2026-09-25
 
 - Status: direct web download / simplified desktop UX candidate.

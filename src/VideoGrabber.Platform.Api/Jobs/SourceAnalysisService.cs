@@ -227,7 +227,8 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         foreach (var argument in new[]
         {
             "--dump-single-json", "--no-playlist", "--skip-download",
-            "--no-warnings", "--proxy", _proxyUri.AbsoluteUri, "--", source.AbsoluteUri
+            "--no-warnings", "--js-runtimes", "node", "--proxy", _proxyUri.AbsoluteUri,
+            "--", source.AbsoluteUri
         }) start.ArgumentList.Add(argument);
         using var process = Process.Start(start)
             ?? throw new InvalidOperationException("yt-dlp could not be started.");
@@ -242,11 +243,30 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             throw;
         }
         var stdout = await stdoutTask.ConfigureAwait(false);
-        _ = await stderrTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
         if (process.ExitCode != 0)
-            throw new InvalidDataException("yt-dlp source analysis failed.");
+            throw new InvalidDataException(ClassifyYtDlpFailure(stderr));
         using var document = JsonDocument.Parse(stdout);
         return document.RootElement.Clone();
+    }
+
+    private static string ClassifyYtDlpFailure(string stderr)
+    {
+        if (stderr.Contains("This video is unavailable", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("Video unavailable", StringComparison.OrdinalIgnoreCase))
+            return "source_unavailable";
+        if (stderr.Contains("Private video", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("Sign in to confirm", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("members-only", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("login required", StringComparison.OrdinalIgnoreCase))
+            return "source_login_required";
+        if (stderr.Contains("HTTP Error 429", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase))
+            return "source_rate_limited";
+        if (stderr.Contains("python3", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("No such file or directory", StringComparison.OrdinalIgnoreCase))
+            return "source_runtime_incomplete";
+        return "source_analysis_failed";
     }
 
     private static async Task<string> ReadBoundedAsync(
