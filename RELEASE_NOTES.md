@@ -1,4 +1,13 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.37-rc.1] - 2026-09-25
+
+- Status: social-video / Windows reservation correctness candidate.
+- Public URL pipeline: YouTube and Shorts, Instagram/Reels, TikTok, Pinterest video pins.
+- YouTube server path: Deno 2.9.6 + bgutil PO-token provider 2.0.0 + mweb player client.
+- TikTok / Instagram / Pinterest path: yt-dlp browser impersonation backed by curl_cffi.
+- Windows Managed: refreshes expired API session during reservation; failed/cancelled local work releases the reservation; successful local work commits the Free credit through a dedicated account/device-scoped endpoint.
+- Support correction before this release: six preview.36 UI failures were released from reserved back to available, leaving the user Free grant at 10 available / 0 reserved.
+
 ## [0.1.10-preview.36-rc.1] - 2026-09-25
 
 - Status: YouTube server-runtime / Free-reservation hotfix.

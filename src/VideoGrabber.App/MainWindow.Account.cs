@@ -421,11 +421,15 @@ public sealed partial class MainWindow
         RebuildManagedCoordinator();
     }
 
-    private async Task RefreshManagedSensitiveSessionAsync()
+    private async Task RefreshManagedSensitiveSessionAsync(
+        CancellationToken cancellationToken = default)
     {
         var lifecycle = new SystemBrowserSignIn(_managedHttp, "email",
             timeout: TimeSpan.FromMinutes(5), sessionStore: _managedSessionStore);
-        var session = await lifecycle.RefreshAsync(_windowLifetime.Token);
+        var token = cancellationToken.CanBeCanceled
+            ? cancellationToken
+            : _windowLifetime.Token;
+        var session = await lifecycle.RefreshAsync(token);
         _managedAccessToken = session.AccessToken;
         RebuildManagedCoordinator();
     }

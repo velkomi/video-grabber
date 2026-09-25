@@ -1,3 +1,4 @@
+FROM denoland/deno:bin-2.9.6@sha256:4cf0029b9aeeeed5efcbb71828737f0d7c8c8a20072df960e51a5679ef0d21ba AS deno_bin
 ARG SDK_IMAGE=mcr.microsoft.com/dotnet/sdk@sha256:4beef5b8919dcaa2dc924233bd069257e883cc7a061e09088a97d152d6a48510
 ARG RUNTIME_IMAGE=mcr.microsoft.com/dotnet/aspnet@sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c
 FROM ${SDK_IMAGE} AS build
@@ -11,7 +12,9 @@ FROM ${RUNTIME_IMAGE} AS runtime
 ARG YTDLP_VERSION=2026.09.16.232951
 ARG YTDLP_SHA256=f8ca14db511702a5dbfc5a527056312907ddd0914d0b4036f108d6849e17ef61
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl gosu python3 nodejs \
+ && apt-get install -y --no-install-recommends ca-certificates curl gosu python3 python3-pip \
+ && python3 -m pip install --break-system-packages --no-cache-dir \
+      curl-cffi==0.16.0 bgutil-ytdlp-pot-provider==2.0.0 \
  && rm -rf /var/lib/apt/lists/* \
  && curl -fsSL "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/${YTDLP_VERSION}/yt-dlp" -o /usr/local/bin/yt-dlp \
  && echo "${YTDLP_SHA256}  /usr/local/bin/yt-dlp" | sha256sum -c - \
@@ -20,6 +23,7 @@ RUN apt-get update \
  && useradd --system --uid 10001 --gid 10001 --create-home --home-dir /var/lib/videograbber vgapi \
  && install -d -o 10001 -g 10001 -m 0700 /var/lib/videograbber/jobs/uploads
 WORKDIR /app
+COPY --from=deno_bin /deno /usr/local/bin/deno
 COPY --from=build /out/ .
 USER 10001
 ENV ASPNETCORE_URLS=http://0.0.0.0:8080 \

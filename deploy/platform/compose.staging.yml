@@ -86,6 +86,26 @@ services:
     mem_limit: 256m
     cpus: 0.5
 
+  youtube-pot-provider:
+    image: ${VG_YOUTUBE_POT_IMAGE:?pinned YouTube PO-token provider image required}
+    restart: unless-stopped
+    depends_on:
+      egress-proxy:
+        condition: service_started
+    environment:
+      HTTP_PROXY: ${VG_EGRESS_PROXY_URI:?}
+      HTTPS_PROXY: ${VG_EGRESS_PROXY_URI:?}
+      NO_PROXY: localhost,127.0.0.1
+    networks: [internal]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+
   volume-init:
     image: ${VG_POSTGRES_IMAGE:?pinned postgres image required}
     restart: "no"
@@ -111,6 +131,8 @@ services:
       volume-init:
         condition: service_completed_successfully
       egress-proxy:
+        condition: service_started
+      youtube-pot-provider:
         condition: service_started
     entrypoint: ["/bin/sh","-ec"]
     command:
@@ -151,6 +173,7 @@ services:
       VG_LAST_BACKUP_UTC: ${VG_LAST_BACKUP_UTC:-}
       VG_TELEGRAM_API_BASE_URL: ${VG_TELEGRAM_API_BASE_URL:-https://api.telegram.org}
       VG_EGRESS_PROXY_URI: ${VG_EGRESS_PROXY_URI:?}
+      VG_YOUTUBE_POT_PROVIDER_URL: http://youtube-pot-provider:4416
       VG_PLATFORM_LEASE_KEY_ID: ${VG_PLATFORM_LEASE_KEY_ID:-vg-lease-2026-09}
       VG_TELEGRAM_MINIAPP_URL: ${VG_TELEGRAM_MINIAPP_URL:?}
       VG_PLATFORM_PUBLIC_URL: ${VG_PLATFORM_PUBLIC_URL:?}
@@ -203,6 +226,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      youtube-pot-provider:
+        condition: service_started
     entrypoint: ["/bin/sh","-ec"]
     command:
       - |
@@ -212,6 +237,7 @@ services:
       VG_PLATFORM_API_URL: http://api:8080
       VG_WORKER_ID: ${VG_WORKER_ID:?}
       VG_EGRESS_PROXY_URI: ${VG_EGRESS_PROXY_URI:?}
+      VG_YOUTUBE_POT_PROVIDER_URL: http://youtube-pot-provider:4416
       VG_WORKER_JOB_ROOT: /var/lib/videograbber/jobs
       VG_RETENTION_ENABLED: ${VG_RETENTION_ENABLED:-false}
     secrets: [worker_token]

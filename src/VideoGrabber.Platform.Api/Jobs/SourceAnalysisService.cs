@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -15,7 +15,9 @@ public sealed class SourceAnalysisService : IAsyncDisposable
     private readonly EgressProxy _egress;
     private readonly byte[] _key;
     private readonly string _ytDlp;
+    private readonly string _denoPath;
     private readonly Uri _proxyUri;
+    private readonly Uri? _youtubePotProviderUri;
 
     public SourceAnalysisService(
         IConfiguration configuration,
@@ -32,6 +34,18 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         _ytDlp = string.IsNullOrWhiteSpace(configuration["VG_YTDLP_PATH"])
             ? "yt-dlp"
             : configuration["VG_YTDLP_PATH"]!.Trim();
+        _denoPath = string.IsNullOrWhiteSpace(configuration["VG_DENO_PATH"])
+            ? "/usr/local/bin/deno"
+            : configuration["VG_DENO_PATH"]!.Trim();
+        var potProvider = configuration["VG_YOUTUBE_POT_PROVIDER_URL"];
+        if (!string.IsNullOrWhiteSpace(potProvider))
+        {
+            if (!Uri.TryCreate(potProvider, UriKind.Absolute, out var parsedPot)
+                || parsedPot.Scheme is not ("http" or "https")
+                || !string.IsNullOrEmpty(parsedPot.UserInfo))
+                throw new InvalidOperationException("YouTube PO-token provider URL is invalid.");
+            _youtubePotProviderUri = parsedPot;
+        }
         var proxy = configuration["VG_EGRESS_PROXY_URI"];
         if (!Uri.TryCreate(proxy, UriKind.Absolute, out var parsedProxy)
             || parsedProxy.Scheme is not ("http" or "https")
@@ -217,6 +231,28 @@ public sealed class SourceAnalysisService : IAsyncDisposable
 
     private async Task<JsonElement> ProbeAsync(Uri source, CancellationToken cancellationToken)
     {
+        var arguments = new List<string>
+        {
+            "--dump-single-json", "--no-playlist", "--skip-download",
+            "--no-warnings", "--js-runtimes", "deno:" + _denoPath,
+            "--proxy", _proxyUri.AbsoluteUri
+        };
+
+        if (NeedsBrowserImpersonation(source))
+            arguments.AddRange(["--impersonate", "chrome"]);
+
+        if (IsYouTube(source) && _youtubePotProviderUri is not null)
+        {
+            arguments.AddRange([
+                "--extractor-args",
+                "youtube:player_client=mweb",
+                "--extractor-args",
+                "youtubepot-bgutilhttp:base_url=" + _youtubePotProviderUri.AbsoluteUri.TrimEnd('/')
+            ]);
+        }
+
+        arguments.AddRange(["--", source.AbsoluteUri]);
+
         var start = new ProcessStartInfo(_ytDlp)
         {
             UseShellExecute = false,
@@ -224,12 +260,9 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-        foreach (var argument in new[]
-        {
-            "--dump-single-json", "--no-playlist", "--skip-download",
-            "--no-warnings", "--js-runtimes", "node", "--proxy", _proxyUri.AbsoluteUri,
-            "--", source.AbsoluteUri
-        }) start.ArgumentList.Add(argument);
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
+
         using var process = Process.Start(start)
             ?? throw new InvalidOperationException("yt-dlp could not be started.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -242,12 +275,34 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
             throw;
         }
+
         var stdout = await stdoutTask.ConfigureAwait(false);
         var stderr = await stderrTask.ConfigureAwait(false);
         if (process.ExitCode != 0)
             throw new InvalidDataException(ClassifyYtDlpFailure(stderr));
+
         using var document = JsonDocument.Parse(stdout);
         return document.RootElement.Clone();
+    }
+
+    private static bool IsYouTube(Uri source)
+    {
+        var host = source.Host.TrimEnd('.').ToLowerInvariant();
+        return host is "youtu.be" or "youtube.com" or "www.youtube.com"
+            or "m.youtube.com" or "music.youtube.com"
+            || host.EndsWith(".youtube.com", StringComparison.Ordinal);
+    }
+
+    private static bool NeedsBrowserImpersonation(Uri source)
+    {
+        var host = source.Host.TrimEnd('.').ToLowerInvariant();
+        return host == "tiktok.com"
+            || host.EndsWith(".tiktok.com", StringComparison.Ordinal)
+            || host == "instagram.com"
+            || host.EndsWith(".instagram.com", StringComparison.Ordinal)
+            || host == "pinterest.com"
+            || host.EndsWith(".pinterest.com", StringComparison.Ordinal)
+            || host == "pin.it";
     }
 
     private static string ClassifyYtDlpFailure(string stderr)

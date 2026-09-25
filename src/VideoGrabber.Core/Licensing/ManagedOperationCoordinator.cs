@@ -15,22 +15,31 @@ public sealed class ManagedOperationCoordinator(IManagedAccessClient access)
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var permit = await access.AuthorizeAsync(operation, cancellationToken).ConfigureAwait(false);
+        var permit = await access.AuthorizeAsync(operation, cancellationToken);
+
+        T value;
         try
         {
-            var value = await run(cancellationToken).ConfigureAwait(false);
-            await access.ReportAsync(permit, reportOutcome(value), CancellationToken.None).ConfigureAwait(false);
-            return value;
+            value = await run(cancellationToken);
         }
         catch (OperationCanceledException)
         {
-            await access.ReportAsync(permit, "cancel_requested", CancellationToken.None).ConfigureAwait(false);
+            await access.ReportAsync(permit, "cancel_requested", CancellationToken.None);
             throw;
         }
         catch
         {
-            await access.ReportAsync(permit, "failed", CancellationToken.None).ConfigureAwait(false);
+            await access.ReportAsync(permit, "failed", CancellationToken.None);
             throw;
         }
+
+        // Keep finalization outside the operation catch block. If a successful
+        // local download cannot be committed server-side, never reinterpret it
+        // as a failed operation and release its already-delivered credit.
+        await access.ReportAsync(
+            permit,
+            reportOutcome(value),
+            CancellationToken.None);
+        return value;
     }
 }

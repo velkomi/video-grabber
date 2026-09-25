@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [0.1.10-preview.37-rc.1] - 2026-09-25
+
+### Добавлено
+
+- единый публичный social-video pipeline для YouTube/Shorts, Instagram/Reels, TikTok и видео-pin Pinterest;
+- Deno 2.9.6 как поддерживаемый yt-dlp JavaScript runtime;
+- browser impersonation через curl_cffi для TikTok/Instagram/Pinterest;
+- отдельный bgutil PO-token provider для YouTube, подключённый к API и server worker через mweb client;
+- явное освобождение локальной Free-резервации при сбое Windows до успешной загрузки и commit только после успешного локального результата.
+
+### Исправлено
+
+- Windows Managed больше не оставляет Free-кредиты в reserved при локальной ошибке до старта;
+- reservation-запрос автоматически обновляет истёкший access token и повторяется один раз;
+- устранён XAML cross-thread путь в ManagedOperationCoordinator;
+- успешная локальная загрузка и ошибка финализации серверного учёта больше не переинтерпретируются как failed с ошибочным release;
+- YouTube Shorts на VPS получают Deno/PO-token fallback вместо немедленного предложения вручную войти при антибот-проверке.
+
+
 ## [0.1.10-preview.36-rc.1] - 2026-09-25
 
 ### Исправлено

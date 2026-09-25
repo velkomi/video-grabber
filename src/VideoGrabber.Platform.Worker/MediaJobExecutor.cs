@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using VideoGrabber.Platform.Contracts;
 
@@ -41,7 +41,9 @@ public sealed class MediaJobExecutor(
     IWorkerArtifactResolver artifacts,
     string jobRoot,
     Uri proxyUri,
-    string? whisperModel = null) : IMediaJobExecutor
+    string? whisperModel = null,
+    Uri? youtubePotProviderUri = null,
+    string denoPath = "/usr/local/bin/deno") : IMediaJobExecutor
 {
     public async Task<ArtifactReceipt> ExecuteAsync(
         AttemptLease lease,
@@ -90,10 +92,24 @@ public sealed class MediaJobExecutor(
         var arguments = new List<string>
         {
             "--no-playlist", "--no-progress", "--no-overwrites",
-            "--js-runtimes", "node",
+            "--js-runtimes", "deno:" + denoPath,
             "--proxy", proxyUri.AbsoluteUri,
             "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg
         };
+
+        if (NeedsBrowserImpersonation(source.Source))
+            arguments.AddRange(["--impersonate", "chrome"]);
+
+        if (IsYouTube(source.Source) && youtubePotProviderUri is not null)
+        {
+            arguments.AddRange([
+                "--extractor-args",
+                "youtube:player_client=mweb",
+                "--extractor-args",
+                "youtubepot-bgutilhttp:base_url="
+                    + youtubePotProviderUri.AbsoluteUri.TrimEnd('/')
+            ]);
+        }
         if (audioOnly)
         {
             arguments.AddRange(["-x", "--audio-format", "mp3", "--audio-quality", "0"]);
@@ -120,6 +136,26 @@ public sealed class MediaJobExecutor(
             audioOnly ? null : source.Height,
             audioOnly ? "audio/mpeg" : source.MediaType,
             Evidence(lease), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsYouTube(Uri source)
+    {
+        var host = source.Host.TrimEnd('.').ToLowerInvariant();
+        return host is "youtu.be" or "youtube.com" or "www.youtube.com"
+            or "m.youtube.com" or "music.youtube.com"
+            || host.EndsWith(".youtube.com", StringComparison.Ordinal);
+    }
+
+    private static bool NeedsBrowserImpersonation(Uri source)
+    {
+        var host = source.Host.TrimEnd('.').ToLowerInvariant();
+        return host == "tiktok.com"
+            || host.EndsWith(".tiktok.com", StringComparison.Ordinal)
+            || host == "instagram.com"
+            || host.EndsWith(".instagram.com", StringComparison.Ordinal)
+            || host == "pinterest.com"
+            || host.EndsWith(".pinterest.com", StringComparison.Ordinal)
+            || host == "pin.it";
     }
 
     private async Task<ArtifactReceipt> ExtractMp3Async(

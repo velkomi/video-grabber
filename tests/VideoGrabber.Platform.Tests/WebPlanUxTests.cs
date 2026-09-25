@@ -21,9 +21,7 @@ public sealed class WebPlanUxTests
         Assert.Contains("data-plan=\"full_course\"", html);
         Assert.Contains("id=\"plan-dialog\"", html);
         Assert.Contains("href=\"/download/windows\"", html);
-        Assert.Contains("Версия для Mac ещё разрабатывается", html);
         Assert.Contains("https://t.me/Velkoshkin", html);
-
         Assert.Contains("openPlanDialog", js);
         Assert.Contains("recommendedPlanForOperation", js);
         Assert.DoesNotContain("courseOption.disabled", js, StringComparison.Ordinal);
@@ -46,24 +44,29 @@ public sealed class WebPlanUxTests
 
         Assert.Contains("id=\"download-target\"", html);
         Assert.Contains("value=\"browser\" selected", html);
-        Assert.Contains("без приложения", html);
         Assert.Contains("/assets/videograbber-icon.png", html);
         Assert.Contains("/assets/videograbber-icon.png", mini);
-        Assert.Contains("executor: target === \"browser\" ? \"server_worker\" : \"desktop_worker\"", js);
+        Assert.Contains(
+            "executor: target === \"browser\" ? \"server_worker\" : \"desktop_worker\"",
+            js);
         Assert.Contains("downloadJobResult", js);
-        Assert.Contains("/v1/jobs/\" + encodeURIComponent(jobId) + \"/download-link", js);
+        Assert.Contains(
+            "/v1/jobs/\" + encodeURIComponent(jobId) + \"/download-link",
+            js);
         Assert.Contains("/v1/jobs/{jobId:guid}/download-link", jobs);
         Assert.Contains("/v1/downloads/{ticket}", jobs);
     }
 
     [Fact]
-    public void Server_youtube_runtime_is_complete_and_failures_are_user_facing()
+    public void Social_video_runtime_has_deno_impersonation_and_youtube_pot_provider()
     {
         var root = FindRepoRoot();
         var apiDocker = File.ReadAllText(Path.Combine(
             root, "deploy", "platform", "api.Dockerfile"));
         var workerDocker = File.ReadAllText(Path.Combine(
             root, "deploy", "platform", "worker.Dockerfile"));
+        var compose = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "compose.staging.yml"));
         var analysis = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "Jobs", "SourceAnalysisService.cs"));
         var worker = File.ReadAllText(Path.Combine(
@@ -71,13 +74,23 @@ public sealed class WebPlanUxTests
         var web = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web", "app.js"));
 
-        Assert.Contains("python3 nodejs", apiDocker);
-        Assert.Contains("python3 nodejs", workerDocker);
-        Assert.Contains("\"--js-runtimes\", \"node\"", analysis);
-        Assert.Contains("\"--js-runtimes\", \"node\"", worker);
+        Assert.Contains("python3 python3-pip", apiDocker);
+        Assert.Contains("python3 python3-pip", workerDocker);
+        Assert.Contains("curl-cffi==0.16.0", apiDocker);
+        Assert.Contains("bgutil-ytdlp-pot-provider==2.0.0", apiDocker);
+        Assert.Contains("COPY --from=deno_bin /deno /usr/local/bin/deno", apiDocker);
+        Assert.Contains("youtube-pot-provider:", compose);
+        Assert.Contains("VG_YOUTUBE_POT_PROVIDER_URL", compose);
+        Assert.Contains("deno:", analysis);
+        Assert.Contains("deno:", worker);
+        Assert.Contains("youtubepot-bgutilhttp", analysis);
+        Assert.Contains("\"--impersonate\", \"chrome\"", analysis);
+        Assert.Contains("tiktok.com", analysis);
+        Assert.Contains("instagram.com", analysis);
+        Assert.Contains("pinterest.com", analysis);
         Assert.Contains("source_unavailable", analysis);
         Assert.Contains("source_rate_limited", analysis);
-        Assert.Contains("Бесплатная загрузка за такую попытку не списывается", web);
+        Assert.Contains("source_runtime_incomplete", web);
     }
 
     private static string FindRepoRoot()

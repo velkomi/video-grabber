@@ -11,7 +11,8 @@ public sealed class LicensingApiClient(
     Func<string?> accessToken,
     Func<Guid?> deviceId,
     OfflineAccessCache? offlineCache = null,
-    Func<DateTimeOffset>? utcNow = null) : IManagedAccessClient
+    Func<DateTimeOffset>? utcNow = null,
+    Func<CancellationToken, Task<string?>>? refreshAccessToken = null) : IManagedAccessClient
 {
     public async Task<OperationPermit> AuthorizeAsync(
         ManagedOperation operation,
@@ -64,18 +65,35 @@ public sealed class LicensingApiClient(
             selectedDevice);
         try
         {
-            using var reserve = Create(HttpMethod.Post, "/v1/reservations", token);
-            reserve.Content = JsonContent.Create(reservation);
-            using var reserved = await http.SendAsync(reserve, cancellationToken).ConfigureAwait(false);
-            if (!reserved.IsSuccessStatusCode)
+            var reserved = await SendReservationAsync(
+                reservation, token, cancellationToken).ConfigureAwait(false);
+            if (reserved.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                && refreshAccessToken is not null)
             {
-                var reason = reserved.StatusCode == System.Net.HttpStatusCode.Conflict
-                    ? "access_unavailable" : "reservation_failed";
-                throw new UnauthorizedAccessException(reason);
+                reserved.Dispose();
+                token = await refreshAccessToken(cancellationToken).ConfigureAwait(false)
+                    ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(token))
+                    throw new UnauthorizedAccessException("managed_sign_in_required");
+                reserved = await SendReservationAsync(
+                    reservation, token, cancellationToken).ConfigureAwait(false);
             }
-            var receipt = await reserved.Content.ReadFromJsonAsync<ReservationReceipt>(cancellationToken)
-                .ConfigureAwait(false) ?? throw new InvalidDataException("Reservation response was empty.");
-            return new(operation.IntentId, receipt.ReservationId, false);
+            using (reserved)
+            {
+                if (!reserved.IsSuccessStatusCode)
+                {
+                    var reason = reserved.StatusCode == System.Net.HttpStatusCode.Conflict
+                        ? "access_unavailable"
+                        : reserved.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                            ? "managed_sign_in_required"
+                            : "reservation_failed";
+                    throw new UnauthorizedAccessException(reason);
+                }
+                var receipt = await reserved.Content.ReadFromJsonAsync<ReservationReceipt>(
+                    cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidDataException("Reservation response was empty.");
+                return new(operation.IntentId, receipt.ReservationId, false);
+            }
         }
         catch (HttpRequestException)
         {
@@ -89,15 +107,95 @@ public sealed class LicensingApiClient(
         }
     }
 
-    public Task ReportAsync(OperationPermit permit, string outcome, CancellationToken cancellationToken)
+    public async Task ReportAsync(
+        OperationPermit permit,
+        string outcome,
+        CancellationToken cancellationToken)
     {
         if (outcome is not ("completed" or "failed" or "cancel_requested"))
-            throw new ArgumentException("Unknown managed operation outcome.", nameof(outcome));
-        DiagnosticHub.Log.Write("managed.operation", outcome,
-            permit.Offline ? "signed offline time lease" :
-            permit.ReservationId is null ? "time-access operation" : "reservation outcome pending worker proof");
-        return Task.CompletedTask;
+            throw new ArgumentException(
+                "Unknown managed operation outcome.", nameof(outcome));
+
+        if (permit.Offline || permit.ReservationId is null)
+        {
+            DiagnosticHub.Log.Write(
+                "managed.operation", outcome,
+                permit.Offline ? "signed offline time lease" : "time-access operation");
+            return;
+        }
+
+        var currentDevice = deviceId();
+        if (currentDevice is not Guid device || device == Guid.Empty)
+            throw new UnauthorizedAccessException("registered_device_required");
+
+        var token = accessToken();
+        if (string.IsNullOrWhiteSpace(token))
+            throw new UnauthorizedAccessException("managed_sign_in_required");
+
+        var payload = new LocalReservationOutcomeRequest(
+            device,
+            outcome,
+            "managed-local:" + permit.IntentId.ToString("N") + ":" + outcome);
+
+        var response = await SendOutcomeAsync(
+            permit.ReservationId.Value, payload, token, cancellationToken)
+            .ConfigureAwait(false);
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+            && refreshAccessToken is not null)
+        {
+            response.Dispose();
+            token = await refreshAccessToken(cancellationToken).ConfigureAwait(false)
+                ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(token))
+                throw new UnauthorizedAccessException("managed_sign_in_required");
+            response = await SendOutcomeAsync(
+                permit.ReservationId.Value, payload, token, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+                throw new UnauthorizedAccessException(
+                    response.StatusCode == System.Net.HttpStatusCode.Conflict
+                        ? "reservation_conflict"
+                        : response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                            ? "managed_sign_in_required"
+                            : "reservation_outcome_failed");
+        }
+
+        DiagnosticHub.Log.Write(
+            "managed.operation", outcome, "local reservation finalized");
     }
+
+    private async Task<HttpResponseMessage> SendReservationAsync(
+        ReservationRequest reservation,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        using var reserve = Create(HttpMethod.Post, "/v1/reservations", token);
+        reserve.Content = JsonContent.Create(reservation);
+        return await http.SendAsync(reserve, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<HttpResponseMessage> SendOutcomeAsync(
+        Guid reservationId,
+        LocalReservationOutcomeRequest outcome,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        using var request = Create(
+            HttpMethod.Post,
+            $"/v1/reservations/{reservationId:D}/local-outcome",
+            token);
+        request.Content = JsonContent.Create(outcome);
+        return await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private sealed record LocalReservationOutcomeRequest(
+        Guid DeviceId,
+        string Outcome,
+        string EvidenceId);
 
     private bool TryOffline(ManagedOperation operation, out OperationPermit? permit)
     {

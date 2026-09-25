@@ -61,7 +61,12 @@ public sealed partial class MainWindow
             _managedHttp,
             () => _managedAccessToken,
             () => _managedDeviceId,
-            _managedOfflineCache));
+            _managedOfflineCache,
+            refreshAccessToken: async cancellationToken =>
+            {
+                await RefreshManagedSensitiveSessionAsync(cancellationToken);
+                return _managedAccessToken;
+            }));
 
     private static Uri ResolveManagedApiBaseUri()
     {

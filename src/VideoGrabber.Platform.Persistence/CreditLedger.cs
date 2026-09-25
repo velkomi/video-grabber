@@ -210,6 +210,105 @@ public sealed class CreditLedger : IAsyncDisposable
         }
         return row.ToReceipt(nextState, finalize.AttemptId, finalize.Fence, finalize.EvidenceId);
     }
+    public async Task<ReservationReceipt> FinalizeLocalClientAsync(
+        Guid accountId,
+        Guid deviceId,
+        Guid reservationId,
+        string outcome,
+        string evidenceId,
+        CancellationToken cancellationToken)
+    {
+        if (accountId == Guid.Empty || deviceId == Guid.Empty || reservationId == Guid.Empty
+            || string.IsNullOrWhiteSpace(evidenceId) || evidenceId.Length > 256)
+            throw new ArgumentException("Local reservation outcome is incomplete.");
+        if (outcome is not ("completed" or "failed" or "cancel_requested"))
+            throw new ArgumentException("Unsupported local reservation outcome.");
+
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted, cancellationToken);
+        await LockAccountAsync(connection, transaction, accountId, cancellationToken);
+        var row = await ReadReservationByIdAsync(
+            connection, transaction, accountId, reservationId, cancellationToken)
+            ?? throw new ReservationConflictException();
+        if (row.Executor != "desktop_worker" || row.DeviceId != deviceId)
+            throw new ReservationConflictException();
+
+        await using (var ownership = new NpgsqlCommand(
+            "select exists(select 1 from licensing.jobs where reservation_id=@reservation)",
+            connection, transaction))
+        {
+            ownership.Parameters.AddWithValue("reservation", reservationId);
+            if ((bool)(await ownership.ExecuteScalarAsync(cancellationToken))!)
+                throw new ReservationConflictException();
+        }
+
+        if (outcome is "failed" or "cancel_requested")
+        {
+            if (row.State == "released")
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return row.ToReceipt("released");
+            }
+            if (row.State != "reserved")
+                throw new ReservationConflictException();
+            if (!await ReleaseUnstartedInTransactionAsync(
+                    connection, transaction, reservationId, cancellationToken))
+                throw new ReservationConflictException();
+            await transaction.CommitAsync(cancellationToken);
+            return row.ToReceipt("released");
+        }
+
+        if (row.State == "completed")
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return row.ToReceipt();
+        }
+        if (row.State != "reserved")
+            throw new ReservationConflictException();
+
+        if (row.UsesCredit)
+        {
+            if (row.GrantId is not Guid grantId)
+                throw new InvalidDataException("Credit reservation has no grant.");
+            await LockGrantAsync(connection, transaction, grantId, cancellationToken);
+            await using var spend = new NpgsqlCommand("""
+                update licensing.entitlement_grants
+                set reserved=reserved-1
+                where grant_id=@grant and reserved>0
+                """, connection, transaction);
+            spend.Parameters.AddWithValue("grant", grantId);
+            if (await spend.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new InvalidOperationException("Reserved credit bucket is inconsistent.");
+            await InsertLedgerEventAsync(
+                connection, transaction, accountId, grantId, row.ReservationId,
+                "commit", 0, -1, +1, 0, evidenceId,
+                "verified local client output committed", cancellationToken);
+        }
+
+        if (row.QuotaPlanId == "start" && row.QuotaDate is DateOnly quotaDate)
+            await CommitDailyStartAsync(
+                connection, transaction, accountId, quotaDate,
+                _clock.GetUtcNow(), cancellationToken);
+
+        await using (var update = new NpgsqlCommand("""
+            update licensing.reservations
+            set state='completed',evidence_id=@evidence,finalized_at=@now
+            where reservation_id=@reservation and account_id=@account and state='reserved'
+            """, connection, transaction))
+        {
+            update.Parameters.AddWithValue("evidence", evidenceId);
+            update.Parameters.AddWithValue("now", _clock.GetUtcNow());
+            update.Parameters.AddWithValue("reservation", reservationId);
+            update.Parameters.AddWithValue("account", accountId);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new ReservationConflictException();
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return row.ToReceipt("completed", evidenceId: evidenceId);
+    }
+
     public async Task<bool> ReleaseUnstartedAsync(
         Guid reservationId,
         CancellationToken cancellationToken)
