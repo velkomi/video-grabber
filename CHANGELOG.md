@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+## [0.1.10-preview.38-rc.1] - 2026-09-25
+
+### Добавлено
+
+- Windows Managed направляет публичные YouTube/Shorts, Instagram/Reels, TikTok и Pinterest-ссылки в общий server social pipeline без cookies сайта по умолчанию;
+- готовый server-worker артефакт автоматически скачивается обратно в выбранную локальную папку Windows через короткоживущую защищённую ссылку;
+- явный выбор browser cookies сохраняет старый локальный путь как fallback для действительно закрытых страниц.
+
+### Исправлено
+
+- устранён повторный локальный reserve для social-загрузок в Windows: квота резервируется один раз внутри server job;
+- после пересоздания API public nginx теперь динамически резолвит Docker service `api`, поэтому deploy больше не оставляет внешний домен на старом IP и не вызывает 502;
+- освобождены legacy reserved-кредиты старой XAML-падающей сборки; баланс Free восстановлен до корректного состояния;
+- собственный адрес репозитория удалён из пользовательской поверхности и внутренних документов, распространяемых вместе с проектом; Windows ZIP и checksum выдаются с домена VideoGrabber.
+
 ## [0.1.10-preview.37-rc.1] - 2026-09-25
 
 ### Добавлено
@@ -230,12 +245,3 @@
 ### Добавлено
 
 - первый публичный выпуск VideoGrabber для Windows x64.
-
-[Unreleased]: https://github.com/velkomi/video-grabber/compare/v0.1.9...HEAD
-[0.1.9]: https://github.com/velkomi/video-grabber/compare/v0.1.8...v0.1.9
-[0.1.8]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.8
-[0.1.4]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.4
-[0.1.3]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.3
-[0.1.2]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.2
-[0.1.1]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.1
-[0.1.0]: https://github.com/velkomi/video-grabber/releases/tag/v0.1.0

@@ -1,4 +1,13 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.38-rc.1] - 2026-09-25
+
+- Status: unified public-social delivery for Web and Windows Managed.
+- Public YouTube/Shorts, Instagram/Reels, TikTok and Pinterest links use the qualified server social pipeline without site cookies by default.
+- Managed Windows downloads the verified server artifact into the selected local folder; explicit site-cookie selection keeps the local/browser-session fallback.
+- Social operations no longer double-reserve Free quota in the Windows client.
+- Public reverse proxy dynamically resolves the API Docker service to survive container recreation without 502.
+- Public distribution remains on the VideoGrabber domain; the project's own repository URL is not exposed in the product/site/docs.
+
 ## [0.1.10-preview.37-rc.1] - 2026-09-25
 
 - Status: social-video / Windows reservation correctness candidate.

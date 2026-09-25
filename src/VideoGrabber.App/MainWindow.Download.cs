@@ -42,11 +42,17 @@ public sealed partial class MainWindow
             _audioOnlyBox.IsChecked == true, _outputFolderBox.Text,
             (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString(), Volatile.Read(ref _browserDiscoveryGeneration));
 
-    private Task<OperationOutcome> DownloadSourceAsync(UserDownloadIntent intent)
-        => RunDownloadOperationAsync(
+    private async Task<OperationOutcome> DownloadSourceAsync(UserDownloadIntent intent)
+    {
+#if VIDEOGRABBER_MANAGED
+        if (ShouldUseManagedSocialServer(intent))
+            return await RunManagedSocialServerDownloadAsync(intent);
+#endif
+        return await RunDownloadOperationAsync(
             intent,
             new BrowserDownloadPreparation(this),
             managedKind: intent.AudioOnly ? "mp3" : "direct_download");
+    }
 
     private async Task<OperationOutcome> RunDownloadOperationAsync(UserDownloadIntent intent,
         IBrowserDownloadPreparation preparation, bool resetCookieSelectionAfterUse = true,
