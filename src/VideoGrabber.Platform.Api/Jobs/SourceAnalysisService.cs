@@ -327,8 +327,10 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         if (stderr.Contains("This video is unavailable", StringComparison.OrdinalIgnoreCase)
             || stderr.Contains("Video unavailable", StringComparison.OrdinalIgnoreCase))
             return "source_unavailable";
+        if (stderr.Contains("Sign in to confirm you’re not a bot", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("Sign in to confirm you're not a bot", StringComparison.OrdinalIgnoreCase))
+            return "source_bot_check";
         if (stderr.Contains("Private video", StringComparison.OrdinalIgnoreCase)
-            || stderr.Contains("Sign in to confirm", StringComparison.OrdinalIgnoreCase)
             || stderr.Contains("members-only", StringComparison.OrdinalIgnoreCase)
             || stderr.Contains("login required", StringComparison.OrdinalIgnoreCase))
             return "source_login_required";
