@@ -559,6 +559,37 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
             job.AccountId, job.JobId, cancellationToken);
     }
 
+    public async Task<WorkerArtifactDescriptor?> ReadCompletedArtifactAsync(
+        Guid accountId,
+        Guid jobId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select a.artifact_id,a.storage_path,a.media_type,a.sha256,a.bytes
+            from licensing.jobs j
+            join licensing.artifacts a
+              on a.artifact_id=j.artifact_id and a.account_id=j.account_id
+            where j.job_id=@job
+              and j.account_id=@account
+              and j.state='completed'
+              and j.executor='server_worker'
+              and a.storage_path is not null
+              and a.expired_at is null
+              and a.unavailable_reason is null
+            """, connection);
+        command.Parameters.AddWithValue("job", jobId);
+        command.Parameters.AddWithValue("account", accountId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new WorkerArtifactDescriptor(
+            reader.GetGuid(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetInt64(4));
+    }
+
     public async Task<JobView?> GetAsync(
         Guid accountId,
         Guid jobId,

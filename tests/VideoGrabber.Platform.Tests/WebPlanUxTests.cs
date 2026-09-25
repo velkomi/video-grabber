@@ -31,6 +31,31 @@ public sealed class WebPlanUxTests
         Assert.Contains("MapGet(\"/download/windows\"", program);
     }
 
+    [Fact]
+    public void Web_download_defaults_to_browser_and_uses_server_worker()
+    {
+        var root = FindRepoRoot();
+        var html = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web", "index.html"));
+        var js = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web", "app.js"));
+        var jobs = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "Jobs", "JobEndpoints.cs"));
+        var mini = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "miniapp", "index.html"));
+
+        Assert.Contains("id=\"download-target\"", html);
+        Assert.Contains("value=\"browser\" selected", html);
+        Assert.Contains("без приложения", html);
+        Assert.Contains("/assets/videograbber-icon.png", html);
+        Assert.Contains("/assets/videograbber-icon.png", mini);
+        Assert.Contains("executor: target === \"browser\" ? \"server_worker\" : \"desktop_worker\"", js);
+        Assert.Contains("downloadJobResult", js);
+        Assert.Contains("/v1/jobs/\" + encodeURIComponent(jobId) + \"/download-link", js);
+        Assert.Contains("/v1/jobs/{jobId:guid}/download-link", jobs);
+        Assert.Contains("/v1/downloads/{ticket}", jobs);
+    }
+
     private static string FindRepoRoot()
     {
         var current = new DirectoryInfo(AppContext.BaseDirectory);

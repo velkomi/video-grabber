@@ -353,7 +353,8 @@ public sealed partial class BrowserWiringRegressionTests
         var course = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
 
-        Assert.Contains("SectionHeading(\"Весь курс GetCourse\")", browser);
+        Assert.Contains("BuildCourseToolsCard()", browser);
+        Assert.Contains("SectionHeading(\"Курсы GetCourse\")", browser);
         Assert.Contains("PrimaryButton(\"Скачать весь курс\")", browser);
         Assert.Contains("DownloadWholeGetCourseAsync()", browser);
         Assert.DoesNotContain("DownloadAllVisibleCandidatesAsync()", course);
@@ -384,7 +385,7 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("SelectedBrowserQuality(candidate)", browser);
         Assert.Contains("QueueAllVisibleCandidates()", batch);
         Assert.Contains("RunDownloadOperationAsync", batch);
-        Assert.Contains("Весь курс GetCourse", browser);
+        Assert.Contains("Курсы GetCourse", browser);
         Assert.Contains("Скачать весь курс", browser);
     }
 }
@@ -565,11 +566,11 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("Выбрана папка другого курса", course);
         Assert.Contains("Directory.EnumerateDirectories", course);
 
-        Assert.Contains("сначала войдите в свой аккаунт", browser);
-        Assert.Contains("Прокрутите страницу вниз", browser);
+        Assert.Contains("войдите в свой аккаунт GetCourse", browser);
+        Assert.Contains("Открыть курс во встроенном браузере", browser);
         Assert.Contains("BrowserActionButton", shell);
         Assert.Contains("24, 94, 61", shell);
-        Assert.Contains("прокрутите эту страницу ниже", shell);
+        Assert.Contains("Развернуть дополнительные возможности", shell);
     }
 }
 

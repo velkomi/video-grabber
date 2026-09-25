@@ -284,6 +284,8 @@ public sealed partial class MainWindow : Window
         _cookiesBox.Items.Add(ComboItem("Встроенный браузер — только эта загрузка", "embedded"));
 
         _audioOnlyBox = new CheckBox { Content = "Скачать MP3 (только звук)" };
+        _audioOnlyBox.Checked += (_, _) => _downloadButton.Content = "Скачать MP3";
+        _audioOnlyBox.Unchecked += (_, _) => _downloadButton.Content = "Скачать";
 
         _completionActionBox = new ComboBox
         {
@@ -302,15 +304,6 @@ public sealed partial class MainWindow : Window
         _cancelButton = DangerButton("Отменить всё");
         _cancelButton.IsEnabled = true;
         _cancelButton.Click += async (_, _) => await CancelOrExplainAsync();
-        var browserButton = BrowserActionButton("Открыть во встроенном браузере");
-        browserButton.Click += OpenBrowser_Click;
-        var browserButtonHint = new TextBlock
-        {
-            Text = "↓ После нажатия прокрутите эту страницу ниже: встроенный браузер откроется внизу. Для закрытого курса войдите там в свой аккаунт.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = MutedBrush,
-            Margin = new Thickness(2, 4, 2, 0)
-        };
         var openFolderButton = PrimaryButton("Открыть папку загрузок");
         var topPauseButton = PauseButton();
         openFolderButton.Click += OpenOutputFolder_Click;
@@ -319,7 +312,6 @@ public sealed partial class MainWindow : Window
         downloadForm.Children.Add(_urlBox);
         downloadForm.Children.Add(TwoColumn(_outputFolderBox, chooseFolder, secondAuto: true));
         downloadForm.Children.Add(TwoColumn(_qualityBox, _cookiesBox));
-        downloadForm.Children.Add(_audioOnlyBox);
         downloadForm.Children.Add(_completionActionBox);
         downloadForm.Children.Add(MutedText(
             "Действие выполняется только после успешного завершения всех загрузок на 100%."));
@@ -328,8 +320,6 @@ public sealed partial class MainWindow : Window
             topPauseButton,
             _cancelButton,
             openFolderButton));
-        downloadForm.Children.Add(browserButton);
-        downloadForm.Children.Add(browserButtonHint);
         body.Children.Add(Card(downloadForm));
 
         _downloadStatus = new TextBlock { Text = "Готово к работе", TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontWeight = FontWeights.SemiBold };
@@ -371,8 +361,40 @@ public sealed partial class MainWindow : Window
         browserContent.Children.Add(_browserHost);
         _browserCard = Card(browserContent);
         _browserCard.Visibility = Visibility.Collapsed;
-        body.Children.Add(_browserCard);
-        body.Children.Add(BuildMediaActionsCard());
+
+        body.Children.Add(MutedText(
+            "Ниже находятся дополнительные возможности: MP3, курсы GetCourse, отдельные видео со страниц и локальная транскрибация. " +
+            "Они скрыты по умолчанию, чтобы основной загрузчик оставался простым."));
+
+        var advancedToggle = SecondaryButton("▾  Развернуть дополнительные возможности");
+        advancedToggle.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        var advancedPanel = Vertical(12);
+        advancedPanel.Visibility = Visibility.Collapsed;
+
+        var audioDownload = Vertical(8);
+        audioDownload.Children.Add(SectionHeading("MP3 по ссылке"));
+        audioDownload.Children.Add(MutedText(
+            "Отметьте режим MP3, затем используйте основную кнопку «Скачать» наверху. " +
+            "Если функция не входит в тариф, VideoGrabber покажет подходящий тариф."));
+        audioDownload.Children.Add(_audioOnlyBox);
+        advancedPanel.Children.Add(Card(audioDownload));
+
+        advancedPanel.Children.Add(BuildCourseToolsCard());
+        advancedPanel.Children.Add(_browserCard);
+        advancedPanel.Children.Add(BuildMediaActionsCard());
+
+        advancedToggle.Click += (_, _) =>
+        {
+            var expand = advancedPanel.Visibility != Visibility.Visible;
+            advancedPanel.Visibility = expand ? Visibility.Visible : Visibility.Collapsed;
+            advancedToggle.Content = expand
+                ? "▴  Свернуть дополнительные возможности"
+                : "▾  Развернуть дополнительные возможности";
+        };
+
+        body.Children.Add(advancedToggle);
+        body.Children.Add(advancedPanel);
 
         return PageScrollViewer(body);
     }

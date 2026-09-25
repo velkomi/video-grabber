@@ -104,6 +104,14 @@ public sealed partial class MainWindow
                 "Скачивание полного курса доступно на Full Course"))
             return;
 
+        if (!resume && (_mediaBrowser?.CoreWebView2 is null || _browserPageUri is null))
+        {
+            await ShowOperationalHelpAsync(
+                "Сначала откройте курс",
+                "Для полного курса вставьте ссылку в основное поле сверху, разверните дополнительные возможности и нажмите «Открыть курс во встроенном браузере». Для закрытого курса войдите в свой аккаунт GetCourse и дождитесь страницы курса. После этого нажмите «Скачать весь курс».");
+            return;
+        }
+
         var source = (resume ? _cachedCourseRoot : _browserPageUri)?.AbsoluteUri ?? "course";
         var operation = CreateLocalOperation(
             "course_download",

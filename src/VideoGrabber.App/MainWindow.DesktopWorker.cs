@@ -19,18 +19,20 @@ public sealed partial class MainWindow
 
     private string DesktopWorkerEnrollmentPath
         => Path.Combine(AppDataRoot, "desktop-worker.enabled");
+    private string DesktopWorkerOptOutPath
+        => Path.Combine(AppDataRoot, "desktop-worker.disabled");
 
     private FrameworkElement BuildDesktopWorkerCard()
     {
         var panel = Vertical(8);
         panel.Children.Add(SectionHeading("Задания с сайта и Telegram на этом компьютере"));
         panel.Children.Add(MutedText(
-            "Выключено по умолчанию. При включении VideoGrabber автоматически забирает только задания этого аккаунта и зарегистрированного устройства " +
-            "и сохраняет результат в локальную папку загрузок. Cookie, пароли и локальные пути на сервер не передаются; готовые файлы остаются на компьютере."));
+            "Включено по умолчанию после входа в аккаунт: пока VideoGrabber открыт, этот компьютер может принимать явно отправленные ему задания. " +
+            "Обычное скачивание через сайт работает и без приложения. Здесь можно отключить только режим «отправить на этот Windows-компьютер»."));
         _desktopWorkerToggle = new ToggleSwitch
         {
-            Header = "Разрешить задания с сайта и Telegram на этом компьютере",
-            IsOn = File.Exists(DesktopWorkerEnrollmentPath)
+            Header = "Принимать задания, отправленные на этот компьютер",
+            IsOn = !File.Exists(DesktopWorkerOptOutPath)
         };
         _desktopWorkerToggle.Toggled += async (_, _) =>
         {
@@ -40,8 +42,8 @@ public sealed partial class MainWindow
         panel.Children.Add(_desktopWorkerToggle);
         _desktopWorkerStatus = MutedText(
             _desktopWorkerToggle.IsOn
-                ? "Разрешение сохранено. Worker запустится после входа."
-                : "Desktop worker выключен.");
+                ? "Приём заданий включён. После входа компьютер отображается online."
+                : "Приём заданий на этот компьютер отключён.");
         panel.Children.Add(_desktopWorkerStatus);
         return Card(panel);
     }
@@ -54,17 +56,21 @@ public sealed partial class MainWindow
             Directory.CreateDirectory(AppDataRoot);
             if (enabled)
             {
+                try { if (File.Exists(DesktopWorkerOptOutPath)) File.Delete(DesktopWorkerOptOutPath); }
+                catch (IOException) { }
                 await File.WriteAllTextAsync(
                     DesktopWorkerEnrollmentPath, "enabled", _windowLifetime.Token);
-                SetDesktopWorkerStatus("Desktop worker включён.");
+                SetDesktopWorkerStatus("Приём заданий на этот компьютер включён.");
                 StartDesktopWorkerIfEnrolled();
             }
             else
             {
+                await File.WriteAllTextAsync(
+                    DesktopWorkerOptOutPath, "disabled", _windowLifetime.Token);
                 try { if (File.Exists(DesktopWorkerEnrollmentPath)) File.Delete(DesktopWorkerEnrollmentPath); }
                 catch (IOException) { }
                 StopDesktopWorkerLoop();
-                SetDesktopWorkerStatus("Desktop worker выключен. Локальные файлы не изменены.");
+                SetDesktopWorkerStatus("Приём заданий отключён. Обычное скачивание через сайт продолжит работать без приложения.");
             }
         }
         finally { _desktopWorkerToggleBusy = false; }
@@ -72,11 +78,18 @@ public sealed partial class MainWindow
 
     private void StartDesktopWorkerIfEnrolled()
     {
-        if (!File.Exists(DesktopWorkerEnrollmentPath)
+        if (File.Exists(DesktopWorkerOptOutPath)
             || string.IsNullOrWhiteSpace(_managedAccessToken)
             || _managedDeviceId is null
             || _desktopWorkerCts is not null)
             return;
+        try
+        {
+            Directory.CreateDirectory(AppDataRoot);
+            if (!File.Exists(DesktopWorkerEnrollmentPath))
+                File.WriteAllText(DesktopWorkerEnrollmentPath, "enabled");
+        }
+        catch (IOException) { }
         _desktopWorkerCts = CancellationTokenSource.CreateLinkedTokenSource(_windowLifetime.Token);
         _ = DesktopWorkerLoopAsync(_desktopWorkerCts.Token);
     }

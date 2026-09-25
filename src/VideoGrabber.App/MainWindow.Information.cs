@@ -41,6 +41,14 @@ public sealed partial class MainWindow
         capabilities.Children.Add(MutedText("• Полный комплект уже содержит yt-dlp, FFmpeg, FFprobe, Deno, Whisper и модель распознавания — отдельная установка для обычной работы не требуется."));
         body.Children.Add(Card(capabilities));
 
+        var surfaces = Vertical(8);
+        surfaces.Children.Add(SectionHeading("Сайт, Windows и дополнительные возможности"));
+        surfaces.Children.Add(MutedText("• Обычное публичное видео можно скачать прямо на сайте VideoGrabber: Windows-приложение открывать не нужно."));
+        surfaces.Children.Add(MutedText("• Windows VideoGrabber нужен для полного курса GetCourse, закрытых страниц с входом, локального редактора и случаев, когда вы хотите сохранять результат сразу в выбранную папку компьютера."));
+        surfaces.Children.Add(MutedText("• В основном окне сначала показан простой загрузчик. MP3, курсы, отдельные видео со страниц и транскрибация находятся ниже в блоке «Дополнительные возможности» — его можно развернуть и снова свернуть."));
+        surfaces.Children.Add(MutedText("• После входа приложение по умолчанию принимает задания, которые вы явно отправили именно на этот компьютер. Это можно отключить в разделе «Аккаунт». Обычное скачивание через сайт от этого не зависит."));
+        body.Children.Add(Card(surfaces));
+
 #if VIDEOGRABBER_MANAGED
         var plans = Vertical(10);
         plans.Children.Add(SectionHeading("Тарифы и доступ"));

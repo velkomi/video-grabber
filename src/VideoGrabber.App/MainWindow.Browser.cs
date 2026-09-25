@@ -67,96 +67,6 @@ public sealed partial class MainWindow
             addQueue,
             downloadAll,
             howTo));
-        panel.Children.Add(SectionHeading("Весь курс GetCourse"));
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Важно: для закрытого курса сначала войдите в свой аккаунт во встроенном браузере ниже (логин и пароль), дождитесь открытия страницы курса и только потом нажимайте «Скачать весь курс» или «Продолжить / открыть папку курса».",
-            TextWrapping = TextWrapping.Wrap,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = TextBrush
-        });
-        _courseQualityBox = new ComboBox
-        {
-            Header = "Качество видео для всего курса",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            SelectedIndex = 3
-        };
-        _courseQualityBox.Items.Add(ComboItem("Низкое — до 360p", "360p"));
-        _courseQualityBox.Items.Add(ComboItem("Среднее — до 480p", "480p"));
-        _courseQualityBox.Items.Add(ComboItem("Высокое — до 720p", "720p"));
-        _courseQualityBox.Items.Add(ComboItem("Лучшее доступное", "best"));
-        panel.Children.Add(_courseQualityBox);
-        _courseDownloadButton = PrimaryButton("Скачать весь курс");
-        _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
-
-        _courseResumeButton = SecondaryButton("Продолжить / открыть папку курса");
-        _courseResumeButton.IsEnabled = true;
-        _courseResumeButton.Click += async (_, _) => await ResumeWholeGetCourseAsync();
-
-        var coursePauseButton = PauseButton();
-
-        _courseClearCacheButton = SecondaryButton("Очистить кэш / временные файлы");
-        _courseClearCacheButton.Click += (_, _) => ClearCourseTemporaryFiles();
-
-        panel.Children.Add(ResponsiveActions(
-            _courseDownloadButton,
-            _courseResumeButton,
-            _courseClearCacheButton));
-
-        _courseNetworkWarningText = new TextBlock
-        {
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = TextBrush,
-            FontSize = 13
-        };
-        _courseNetworkWarning = new Border
-        {
-            Visibility = Visibility.Collapsed,
-            Padding = new Thickness(14, 12, 14, 12),
-            CornerRadius = new CornerRadius(10),
-            Background = BadgeBrush,
-            BorderBrush = CardBorderBrush,
-            BorderThickness = new Thickness(1),
-            Child = _courseNetworkWarningText
-        };
-        panel.Children.Add(_courseNetworkWarning);
-
-        _courseStageText = new TextBlock
-        {
-            Text = "Курс ещё не запущен.",
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap
-        };
-        _courseCurrentText = MutedText(" ");
-        _courseEtaText = MutedText(" ");
-        _courseElapsedText = MutedText("Прошло с начала: 00:00:00");
-        _courseProgressTrack = new Grid
-        {
-            Height = 8,
-            Background = ProgressTrackBrush,
-            HorizontalAlignment = HorizontalAlignment.Stretch
-        };
-        _courseProgressFill = new Border
-        {
-            Background = AccentBrush,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            CornerRadius = new CornerRadius(4),
-            Width = 0
-        };
-        _courseProgressTrack.Children.Add(_courseProgressFill);
-        _courseProgressTrack.SizeChanged += (_, _) =>
-            UpdateCourseProgressWidth();
-        _courseProgressPercent = MutedText("0%");
-
-        panel.Children.Add(_courseStageText);
-        panel.Children.Add(_courseProgressTrack);
-        panel.Children.Add(_courseProgressPercent);
-        panel.Children.Add(_courseCurrentText);
-        panel.Children.Add(_courseEtaText);
-        panel.Children.Add(_courseElapsedText);
-
-        panel.Children.Add(MutedText("Проходит доступные модули и уроки текущего GetCourse-тренинга. Для каждого урока создаётся отдельная папка: Word + HTML страницы, доступные изображения и вложения (PDF/Office/архивы) и найденные видео. Урок без видео всё равно сохраняется. Используется только ваша текущая авторизованная сессия."));
-
         panel.Children.Add(SectionHeading("После скачивания"));
         _transcribeDownloadedButton = SecondaryButton("Транскрибировать скачанное");
         _transcribeDownloadedButton.IsEnabled = true;
@@ -183,6 +93,106 @@ public sealed partial class MainWindow
         panel.Children.Add(runQueue);
         panel.Children.Add(MutedText("Для каждого найденного видео можно выбрать своё качество. Успешные пункты удаляются из очереди; оставшиеся можно продолжить позже. Отмена останавливает всю очередь."));
         panel.Children.Add(MutedText("Для закрытого урока войдите на сайте и выберите выше «Встроенный браузер — только эта загрузка». Пароль приложение не читает. DRM не обходится."));
+    }
+
+    private Border BuildCourseToolsCard()
+    {
+        var content = Vertical(10);
+        content.Children.Add(SectionHeading("Курсы GetCourse"));
+        content.Children.Add(MutedText(
+            "Полный курс — отдельная расширенная функция. Для закрытого курса вставьте ссылку выше, " +
+            "откройте её во встроенном браузере, войдите в свой аккаунт GetCourse и дождитесь страницы курса. " +
+            "Кнопка скачивания остаётся видимой и объяснит, если требуется другой тариф или сначала нужен вход."));
+
+        var openCourse = BrowserActionButton("Открыть курс во встроенном браузере");
+        openCourse.Click += OpenBrowser_Click;
+        content.Children.Add(openCourse);
+
+        _courseQualityBox = new ComboBox
+        {
+            Header = "Качество видео для всего курса",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            SelectedIndex = 3
+        };
+        _courseQualityBox.Items.Add(ComboItem("Низкое — до 360p", "360p"));
+        _courseQualityBox.Items.Add(ComboItem("Среднее — до 480p", "480p"));
+        _courseQualityBox.Items.Add(ComboItem("Высокое — до 720p", "720p"));
+        _courseQualityBox.Items.Add(ComboItem("Лучшее доступное", "best"));
+        content.Children.Add(_courseQualityBox);
+
+        _courseDownloadButton = PrimaryButton("Скачать весь курс");
+        _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
+
+        _courseResumeButton = SecondaryButton("Продолжить / открыть папку курса");
+        _courseResumeButton.IsEnabled = true;
+        _courseResumeButton.Click += async (_, _) => await ResumeWholeGetCourseAsync();
+
+        var coursePauseButton = PauseButton();
+
+        _courseClearCacheButton = SecondaryButton("Очистить кэш / временные файлы");
+        _courseClearCacheButton.Click += (_, _) => ClearCourseTemporaryFiles();
+
+        content.Children.Add(ResponsiveActions(
+            _courseDownloadButton,
+            _courseResumeButton,
+            coursePauseButton,
+            _courseClearCacheButton));
+
+        _courseNetworkWarningText = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = TextBrush,
+            FontSize = 13
+        };
+        _courseNetworkWarning = new Border
+        {
+            Visibility = Visibility.Collapsed,
+            Padding = new Thickness(14, 12, 14, 12),
+            CornerRadius = new CornerRadius(10),
+            Background = BadgeBrush,
+            BorderBrush = CardBorderBrush,
+            BorderThickness = new Thickness(1),
+            Child = _courseNetworkWarningText
+        };
+        content.Children.Add(_courseNetworkWarning);
+
+        _courseStageText = new TextBlock
+        {
+            Text = "Курс ещё не запущен.",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+        _courseCurrentText = MutedText(" ");
+        _courseEtaText = MutedText(" ");
+        _courseElapsedText = MutedText("Прошло с начала: 00:00:00");
+        _courseProgressTrack = new Grid
+        {
+            Height = 8,
+            Background = ProgressTrackBrush,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        _courseProgressFill = new Border
+        {
+            Background = AccentBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(4),
+            Width = 0
+        };
+        _courseProgressTrack.Children.Add(_courseProgressFill);
+        _courseProgressTrack.SizeChanged += (_, _) => UpdateCourseProgressWidth();
+        _courseProgressPercent = MutedText("0%");
+
+        content.Children.Add(_courseStageText);
+        content.Children.Add(_courseProgressTrack);
+        content.Children.Add(_courseProgressPercent);
+        content.Children.Add(_courseCurrentText);
+        content.Children.Add(_courseEtaText);
+        content.Children.Add(_courseElapsedText);
+        content.Children.Add(MutedText(
+            "VideoGrabber проходит доступные модули и уроки текущего GetCourse-тренинга. " +
+            "Для каждого урока создаётся отдельная папка: Word + HTML страницы, изображения, вложения и найденные видео."));
+
+        return Card(content);
     }
 
     private async void OpenBrowser_Click(object sender, RoutedEventArgs e)

@@ -517,20 +517,30 @@ function renderAccount() {
 
 function renderCourseHint() {
   if (!state.access) return;
+
   const kind = $("#operation").value;
+  const target = $("#download-target");
+  const browserOption = target.querySelector('option[value="browser"]');
+
   if (kind === "course_download") {
+    browserOption.disabled = true;
+    target.value = "desktop";
     $("#course-hint").textContent = state.access.canDownloadCourse
-      ? "Курс будет сохранён локально через встроенную авторизованную сессию Windows VideoGrabber."
-      : "Полный курс доступен только на Full Course или owner account.";
-  } else if (kind === "mp3") {
-    $("#course-hint").textContent = state.access.canEdit
-      ? "MP3 входит в расширенные функции текущего тарифа."
-      : "Free даёт 10 обычных загрузок видео. MP3 доступен после перехода на платный тариф.";
+      ? "Полный курс скачивается через Windows VideoGrabber: приложению нужна ваша авторизованная сессия курса."
+      : "Полный курс доступен на Full Course. После выбора тарифа скачивание выполняется в Windows-приложении.";
   } else {
-    $("#course-hint").textContent = state.access.planId === "free"
-      ? "Free: 10 обычных загрузок видео на единый аккаунт Web · Windows · Telegram."
-      : "Видео будет скачано напрямую в сохранённую папку Windows VideoGrabber.";
+    browserOption.disabled = false;
+    if (kind === "mp3") {
+      $("#course-hint").textContent = state.access.canEdit
+        ? "MP3 можно подготовить прямо через сайт — Windows-приложение не требуется."
+        : "MP3 относится к расширенным функциям. Нажмите «Скачать», чтобы увидеть подходящий тариф.";
+    } else {
+      $("#course-hint").textContent = $("#download-target").value === "browser"
+        ? "Обычное видео скачивается прямо через сайт. Windows-приложение можно не открывать."
+        : "Видео будет отправлено в выбранный Windows VideoGrabber и сохранено в его локальную папку.";
+    }
   }
+
   renderSelectedDevice();
 }
 
@@ -580,26 +590,43 @@ function renderDevices() {
 }
 
 function renderSelectedDevice() {
+  const target = $("#download-target").value;
+  const field = $("#device-field");
+  const pill = $("#device-pill");
+  const submit = $("#submit-job");
+
+  field.hidden = target !== "desktop";
+
+  if (target === "browser") {
+    pill.className = "pill online";
+    pill.textContent = "Скачать прямо в браузер";
+    submit.disabled = false;
+    submit.textContent = $("#operation").value === "mp3"
+      ? "Скачать MP3"
+      : "Скачать";
+    return;
+  }
+
   const id = $("#device-select").value;
   const device = state.devices.find((item) => item.deviceId === id);
-  const pill = $("#device-pill");
 
   if (!device) {
     pill.className = "pill offline";
-    pill.textContent = "Компьютер не зарегистрирован";
-    $("#submit-job").disabled = true;
+    pill.textContent = "Windows-приложение не выбрано";
+    submit.disabled = false;
+    submit.textContent = "Отправить в Windows";
     return;
   }
 
   const online = isOnline(device);
   pill.className = "pill " + (online ? "online" : "offline");
-  pill.textContent = online ? "Windows online" : "Windows offline · можно поставить в очередь";
-
-  const kind = $("#operation").value;
-  const access = state.access;
-  // The button stays clickable even when access is insufficient.
-  // submitJob() explains the tariff requirement and offers the right plan.
-  $("#submit-job").disabled = false;
+  pill.textContent = online
+    ? "Windows online"
+    : "Windows offline · можно поставить в очередь";
+  submit.disabled = false;
+  submit.textContent = $("#operation").value === "course_download"
+    ? "Скачать курс в Windows"
+    : "Отправить в Windows";
 }
 
 function renderJobs() {
@@ -614,17 +641,42 @@ function renderJobs() {
   for (const job of jobs) {
     const row = document.createElement("div");
     row.className = "job-row";
+
     const main = document.createElement("div");
     main.className = "row-main";
     const title = document.createElement("b");
     title.textContent = operationName(job.kind || job.reason || "download");
     const meta = document.createElement("small");
-    meta.textContent = job.reason || job.executor || "";
+    meta.textContent =
+      (job.executor === "server_worker" ? "Сайт" : "Windows") +
+      (job.reason ? " · " + job.reason : "");
     main.append(title, meta);
+
+    const action = document.createElement("div");
+    action.className = "job-action";
     const status = document.createElement("span");
     status.className = "state";
     status.textContent = stateName(job.state);
-    row.append(main, status);
+    action.append(status);
+
+    if (job.state === "completed"
+        && job.executor === "server_worker"
+        && job.artifactId) {
+      const download = document.createElement("button");
+      download.type = "button";
+      download.className = "text-button";
+      download.textContent = "Скачать";
+      download.addEventListener("click", async () => {
+        try {
+          await downloadJobResult(job.jobId);
+        } catch (error) {
+          setStatus("#job-status", "Не удалось скачать файл: " + error.message, "error");
+        }
+      });
+      action.append(download);
+    }
+
+    row.append(main, action);
     host.append(row);
   }
 }
@@ -737,19 +789,103 @@ async function createJobRequestHash(job) {
   return sha256Hex(canonical);
 }
 
+
+function chooseServerQuality(available, requested) {
+  const values = Array.isArray(available) ? available.filter(Boolean) : [];
+  if (values.length === 0) return "best";
+  if (requested === "best") return values[0];
+  if (values.includes(requested)) return requested;
+
+  const ceiling = Number.parseInt(requested, 10);
+  if (!Number.isFinite(ceiling)) return values[0];
+
+  const numeric = values
+    .map((value) => ({ value, height: Number.parseInt(value, 10) }))
+    .filter((item) => Number.isFinite(item.height))
+    .sort((a, b) => b.height - a.height);
+  return numeric.find((item) => item.height <= ceiling)?.value
+    || numeric.at(-1)?.value
+    || values[0];
+}
+
+async function authorizedFetch(path, options = {}, retry = true) {
+  const headers = new Headers(options.headers || {});
+  if (accessToken()) headers.set("Authorization", "Bearer " + accessToken());
+  const response = await fetch(path, { ...options, headers });
+  if (response.status === 401 && retry && refreshToken()) {
+    await refreshSession();
+    return authorizedFetch(path, options, false);
+  }
+  return response;
+}
+
+function downloadName(response, jobId) {
+  const header = response.headers.get("Content-Disposition") || "";
+  const utf8 = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8) {
+    try { return decodeURIComponent(utf8[1]); } catch {}
+  }
+  const plain = header.match(/filename="?([^";]+)"?/i);
+  return plain?.[1] || ("VideoGrabber-" + jobId.slice(0, 10));
+}
+
+function clearResultActions() {
+  $("#result-actions").replaceChildren();
+}
+
+async function downloadJobResult(jobId) {
+  setStatus("#job-status", "Файл готов. Начинаю скачивание…");
+  const link = await api(
+    "/v1/jobs/" + encodeURIComponent(jobId) + "/download-link",
+    { method: "POST" }
+  );
+  if (!link?.url) throw new Error("download_link_unavailable");
+
+  const anchor = document.createElement("a");
+  anchor.className = "button button-primary";
+  anchor.href = link.url;
+  anchor.textContent = "Скачать готовый файл";
+  $("#result-actions").replaceChildren(anchor);
+
+  anchor.click();
+  setStatus(
+    "#job-status",
+    "Готово. Скачивание началось. Если браузер его не открыл — нажмите «Скачать готовый файл».",
+    "success"
+  );
+}
+
 async function submitJob(event) {
   event.preventDefault();
+  clearResultActions();
   setStatus("#job-status", "Проверяю ссылку и создаю задание…");
 
+  const target = $("#download-target").value;
   const deviceId = $("#device-select").value;
   const url = $("#source-url").value.trim();
-  const quality = $("#quality").value;
+  const requestedQuality = $("#quality").value;
   const kind = $("#operation").value;
 
-  if (!deviceId) {
-    setStatus("#job-status", "Сначала зарегистрируйте Windows VideoGrabber.", "error");
+  if (kind === "course_download" && target !== "desktop") {
+    $("#download-target").value = "desktop";
+    renderSelectedDevice();
+    setStatus(
+      "#job-status",
+      "Полный курс скачивается через Windows VideoGrabber. Выберите компьютер и откройте приложение.",
+      "error"
+    );
     return;
   }
+
+  if (target === "desktop" && !deviceId) {
+    setStatus(
+      "#job-status",
+      "Для отправки в Windows выберите зарегистрированный компьютер. Для обычного видео можно выбрать «В браузер — без приложения».",
+      "error"
+    );
+    return;
+  }
+
   if (!state.access?.canDownload) {
     setStatus("#job-status", "Лимит загрузок исчерпан. Выберите тариф, чтобы продолжить.", "error");
     openPlanDialog(
@@ -776,18 +912,33 @@ async function submitJob(event) {
   }
 
   try {
-    const source = await api("/v1/sources/register-desktop", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: url, quality })
-    });
+    let source;
+    let quality = requestedQuality;
+
+    if (target === "browser") {
+      const analyzed = await api("/v1/sources/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: url })
+      });
+      if (!Array.isArray(analyzed) || analyzed.length === 0)
+        throw new Error("source_analysis_failed");
+      source = analyzed[0];
+      quality = chooseServerQuality(source.qualities, requestedQuality);
+    } else {
+      source = await api("/v1/sources/register-desktop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: url, quality })
+      });
+    }
 
     const job = {
       intentId: crypto.randomUUID().toLowerCase(),
       requestHash: "",
       kind,
-      executor: "desktop_worker",
-      deviceId: deviceId.toLowerCase(),
+      executor: target === "browser" ? "server_worker" : "desktop_worker",
+      deviceId: target === "browser" ? null : deviceId.toLowerCase(),
       sourceId: source.sourceId,
       quality,
       inputArtifactIds: [],
@@ -804,27 +955,31 @@ async function submitJob(event) {
 
     setStatus(
       "#job-status",
-      isOnline(state.devices.find((item) => item.deviceId === deviceId) || {})
-        ? "Задание отправлено. Windows VideoGrabber заберёт его автоматически."
-        : "Задание поставлено в очередь. Оно начнётся, когда Windows VideoGrabber станет online.",
+      target === "browser"
+        ? "Задание принято. VideoGrabber скачивает файл на сервере; Windows-приложение не требуется."
+        : isOnline(state.devices.find((item) => item.deviceId === deviceId) || {})
+          ? "Задание отправлено в Windows VideoGrabber."
+          : "Задание поставлено в очередь и начнётся, когда Windows VideoGrabber станет online.",
       "success"
     );
     $("#source-url").value = "";
     await refreshJobs();
-    watchJob(created.jobId);
+    watchJob(created.jobId, target);
   } catch (error) {
     const message =
       error.message === "access_unavailable"
         ? "Лимит тарифа исчерпан или операция не входит в тариф."
         : error.message === "job_source_unavailable"
-          ? "Ссылка истекла или источник недоступен."
-          : "Не удалось создать задание: " + error.message;
+          ? "Источник или выбранное качество сейчас недоступны."
+          : error.message === "source_analysis_failed"
+            ? "Не удалось определить видео по этой ссылке. Для закрытых страниц используйте Windows VideoGrabber."
+            : "Не удалось создать задание: " + error.message;
     setStatus("#job-status", message, "error");
   }
 }
 
-async function watchJob(jobId) {
-  for (let pass = 0; pass < 20; pass++) {
+async function watchJob(jobId, target = "browser") {
+  for (let pass = 0; pass < 600; pass++) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     if (!accessToken()) return;
     try {
@@ -833,13 +988,35 @@ async function watchJob(jobId) {
       if (index >= 0) state.jobs[index] = job;
       else state.jobs.push(job);
       renderJobs();
-      if (["completed", "cancelled", "review_required"].includes(job.state)) {
+
+      if (job.state === "completed") {
+        await loadAccessOnly();
+        if (target === "browser" || job.executor === "server_worker") {
+          try {
+            await downloadJobResult(jobId);
+          } catch (error) {
+            setStatus(
+              "#job-status",
+              "Файл готов, но браузер не начал скачивание автоматически. Нажмите «Скачать» в очереди. " + error.message,
+              "error"
+            );
+          }
+        } else {
+          setStatus(
+            "#job-status",
+            "Готово. Результат сохранён на Windows-компьютере.",
+            "success"
+          );
+        }
+        return;
+      }
+
+      if (["failed", "cancelled", "review_required"].includes(job.state)) {
         setStatus(
           "#job-status",
-          job.state === "completed"
-            ? "Готово. Результат сохранён на Windows-компьютере."
-            : "Задание завершено со статусом: " + stateName(job.state),
-          job.state === "completed" ? "success" : "error"
+          "Задание завершено со статусом: " + stateName(job.state)
+            + (job.reason ? " · " + job.reason : ""),
+          "error"
         );
         await loadAccessOnly();
         return;
@@ -848,6 +1025,12 @@ async function watchJob(jobId) {
       return;
     }
   }
+
+  setStatus(
+    "#job-status",
+    "Задание всё ещё выполняется. Его статус остаётся в очереди; можно обновить страницу позже.",
+    "error"
+  );
 }
 
 async function loadAccessOnly() {
@@ -991,6 +1174,7 @@ async function start() {
   });
   $("#download-form").addEventListener("submit", submitJob);
   $("#operation").addEventListener("change", renderCourseHint);
+  $("#download-target").addEventListener("change", renderCourseHint);
   $("#device-select").addEventListener("change", renderSelectedDevice);
   $("#refresh-jobs").addEventListener("click", async () => {
     try { await refreshJobs(); }

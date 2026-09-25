@@ -6,12 +6,13 @@
   <meta name="color-scheme" content="dark">
   <title>VideoGrabber — загрузки на ваш компьютер</title>
   <meta name="description" content="VideoGrabber: единый аккаунт для сайта, Windows и Telegram. Задания с сайта скачиваются прямо на ваш компьютер.">
+  <link rel="icon" type="image/png" href="/assets/videograbber-icon.png">
   <link rel="stylesheet" href="/web/styles.css">
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="/web/" aria-label="VideoGrabber">
-      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <img class="brand-logo" src="/assets/videograbber-icon.png" alt="" aria-hidden="true">
       <span>VideoGrabber</span>
     </a>
     <nav aria-label="Основная навигация">
@@ -29,8 +30,9 @@
         <p class="eyebrow">Сайт → ваш Windows-компьютер</p>
         <h1>Ссылка приходит сюда.<br><span>Файл остаётся у вас.</span></h1>
         <p class="hero-lead">
-          Отправьте видео или курс из браузера. VideoGrabber на вашем компьютере
-          заберёт задание из защищённой очереди и сохранит результат прямо в выбранную папку.
+          Вставьте ссылку и скачайте обычное видео прямо через сайт — Windows-приложение для этого не требуется.
+          VideoGrabber для Windows остаётся удобным локальным клиентом и нужен для полного курса,
+          закрытых страниц и расширенных сценариев.
         </p>
         <div class="hero-actions">
           <a class="button button-primary" href="/download/windows">Скачать для Windows</a>
@@ -66,8 +68,8 @@
       <div class="flow-grid">
         <article><strong>1</strong><h3>Войдите</h3><p>Google или подтверждённый e-mail связываются с одним VideoGrabber account.</p></article>
         <article><strong>2</strong><h3>Вставьте ссылку</h3><p>Выберите видео, MP3 или полный курс и нужное качество.</p></article>
-        <article><strong>3</strong><h3>Компьютер заберёт job</h3><p>Зарегистрированный VideoGrabber проверяет подпись устройства и получает только своё задание.</p></article>
-        <article><strong>4</strong><h3>Результат остаётся локально</h3><p>Видео и курсы не становятся постоянным облачным архивом VideoGrabber.</p></article>
+        <article><strong>3</strong><h3>Сайт скачает сам</h3><p>Обычное видео обрабатывается серверным worker и после завершения сразу скачивается в браузер. Windows-клиент не обязателен.</p></article>
+        <article><strong>4</strong><h3>Приложение — для расширенных задач</h3><p>Полный курс, закрытые страницы и локальные инструменты удобнее выполнять в Windows VideoGrabber.</p></article>
       </div>
     </section>
 
@@ -186,13 +188,22 @@
                   </select>
                 </label>
               </div>
-              <label>Компьютер
-                <select id="device-select"></select>
+              <label>Куда скачать
+                <select id="download-target">
+                  <option value="browser" selected>В браузер — без приложения (рекомендуется)</option>
+                  <option value="desktop">На Windows-компьютер через приложение</option>
+                </select>
               </label>
+              <div id="device-field" hidden>
+                <label>Компьютер
+                  <select id="device-select"></select>
+                </label>
+              </div>
               <p id="course-hint" class="field-note"></p>
-              <button id="submit-job" class="button button-primary button-wide" type="submit">Отправить на компьютер</button>
+              <button id="submit-job" class="button button-primary button-wide" type="submit">Скачать</button>
             </form>
             <p id="job-status" class="status" role="status"></p>
+            <div id="result-actions" class="result-actions"></div>
           </section>
 
           <aside class="panel account-panel">

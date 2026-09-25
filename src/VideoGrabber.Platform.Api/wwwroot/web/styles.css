@@ -631,3 +631,23 @@ footer {
   border-color: rgba(109,214,172,.55);
   box-shadow: 0 0 0 1px rgba(109,214,172,.12);
 }
+
+
+/* Direct browser download + real app branding */
+[hidden] { display: none !important; }
+.brand-logo {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 8px;
+}
+#device-field { margin: 13px 0; }
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+.result-actions:empty { display: none; }
+.result-actions .button { min-width: 180px; }

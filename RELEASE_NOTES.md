@@ -1,4 +1,15 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.35-rc.1] - 2026-09-25
+
+- Status: direct web download / simplified desktop UX candidate.
+- Previous version: 0.1.10-preview.34-rc.1.
+- Web: ordinary video and paid MP3 can run on the server worker and download directly in the browser; Windows is optional unless the user explicitly selects Windows delivery.
+- Browser delivery: completed server artifacts are exposed only through account-owned jobs and five-minute HMAC-scoped download tickets; large files stream normally instead of being buffered as a page Blob.
+- Managed Windows: the main downloader stays compact; MP3, GetCourse, page-video discovery and transcription are collapsed under an explicit «Дополнительные возможности» section. Whole-course buttons remain visible after expansion and explain prerequisites/tariff state.
+- Desktop worker: signed-in Windows clients accept explicitly-addressed jobs by default; a remembered opt-out remains available in Account.
+- Branding: the actual VideoGrabber application icon is used by Web and Telegram Mini App.
+- Diagnostics: the earlier OLEG offline state was caused by missing desktop-worker enrollment, not by the application process being closed.
+
 ## [0.1.10-preview.34-rc.1] - 2026-09-24
 
 - Status: interactive tariff guidance / Windows download candidate.

@@ -172,6 +172,7 @@ builder.Services.AddSingleton(sp =>
     return CreditLedger.CreateOwned(ledgerDsn, sp.GetRequiredService<TimeProvider>());
 });
 builder.Services.AddSingleton<JobStore>();
+builder.Services.AddSingleton<BrowserDownloadTicketService>();
 builder.Services.AddSingleton<PaymentStore>(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -377,7 +378,7 @@ app.MapArtifactUploadEndpoints();
 app.MapPlatformHealthEndpoints();
 app.MapOperationsEndpoints();
 app.MapGet("/download/windows", () => Results.Redirect(
-    "https://github.com/velkomi/video-grabber/releases/download/v0.1.10-preview.34-rc.1/VideoGrabber-0.1.10-preview.34-rc.1-Managed.zip",
+    "https://github.com/velkomi/video-grabber/releases/download/v0.1.10-preview.35-rc.1/VideoGrabber-0.1.10-preview.35-rc.1-Managed.zip",
     permanent: false))
     .AllowAnonymous();
 app.Run();
