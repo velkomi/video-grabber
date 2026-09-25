@@ -9,6 +9,8 @@
 - TikTok / Instagram / Pinterest path: yt-dlp browser impersonation backed by curl_cffi.
 - Windows Managed: refreshes expired API session during reservation; failed/cancelled local work releases the reservation; successful local work commits the Free credit through a dedicated account/device-scoped endpoint.
 - Support correction before this release: six preview.36 UI failures were released from reserved back to available, leaving the user Free grant at 10 available / 0 reserved.
+- Distribution privacy: the public site exposes no repository URL; Windows ZIP and current SHA-256 are served directly by the VideoGrabber domain.
+- Qualification: public YouTube Shorts, Instagram Reel, TikTok video and Pinterest video pin were all resolved through the anonymous social-video path; ledger DB tests 6/6, Worker 31/31, Core 32/32, Infrastructure 691 passed / 1 fixture skip.
 
 ## [0.1.10-preview.36-rc.1] - 2026-09-25
 

@@ -377,9 +377,29 @@ app.MapSourceEndpoints();
 app.MapArtifactUploadEndpoints();
 app.MapPlatformHealthEndpoints();
 app.MapOperationsEndpoints();
-app.MapGet("/download/windows", () => Results.Redirect(
-    "https://github.com/velkomi/video-grabber/releases/download/v0.1.10-preview.37-rc.1/VideoGrabber-0.1.10-preview.37-rc.1-Managed.zip",
-    permanent: false))
+app.MapGet("/download/windows", (IConfiguration configuration) =>
+    {
+        var path = configuration["VG_WINDOWS_DOWNLOAD_PATH"]
+            ?? "/var/lib/videograbber/downloads/VideoGrabber-Windows.zip";
+        if (!File.Exists(path))
+            return Results.NotFound(new { code = "windows_download_unavailable" });
+        return Results.File(
+            path,
+            "application/zip",
+            "VideoGrabber-Windows.zip",
+            enableRangeProcessing: true);
+    })
+    .AllowAnonymous();
+app.MapGet("/download/windows/checksum", (IConfiguration configuration) =>
+    {
+        var path = configuration["VG_WINDOWS_CHECKSUM_PATH"]
+            ?? "/var/lib/videograbber/downloads/VideoGrabber-Windows.sha256.txt";
+        if (!File.Exists(path))
+            return Results.NotFound(new { code = "windows_checksum_unavailable" });
+        return Results.Text(
+            File.ReadAllText(path),
+            "text/plain; charset=utf-8");
+    })
     .AllowAnonymous();
 app.Run();
 

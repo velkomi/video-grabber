@@ -21,6 +21,11 @@ public sealed class WebPlanUxTests
         Assert.Contains("data-plan=\"full_course\"", html);
         Assert.Contains("id=\"plan-dialog\"", html);
         Assert.Contains("href=\"/download/windows\"", html);
+        Assert.Contains("href=\"/download/windows/checksum\"", html);
+        Assert.DoesNotContain("github.com", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("github.com", program, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("VG_WINDOWS_DOWNLOAD_PATH", program);
+        Assert.Contains("VideoGrabber-Windows.zip", program);
         Assert.Contains("https://t.me/Velkoshkin", html);
         Assert.Contains("openPlanDialog", js);
         Assert.Contains("recommendedPlanForOperation", js);
@@ -65,6 +70,8 @@ public sealed class WebPlanUxTests
             root, "deploy", "platform", "api.Dockerfile"));
         var workerDocker = File.ReadAllText(Path.Combine(
             root, "deploy", "platform", "worker.Dockerfile"));
+        var socialDocker = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "social-egress.dockerfile"));
         var compose = File.ReadAllText(Path.Combine(
             root, "deploy", "platform", "compose.staging.yml"));
         var analysis = File.ReadAllText(Path.Combine(
@@ -84,6 +91,8 @@ public sealed class WebPlanUxTests
         Assert.Contains("social-egress:", compose);
         Assert.Contains("VG_SOCIAL_EGRESS_PROXY_URI", compose);
         Assert.Contains("warp_wireproxy_config", compose);
+        Assert.Contains("wireproxy", socialDocker);
+        Assert.Contains("ENTRYPOINT [\"/usr/local/bin/wireproxy\"]", socialDocker);
         Assert.Contains("deno:", analysis);
         Assert.Contains("deno:", worker);
         Assert.Contains("youtubepot-bgutilhttp", analysis);

@@ -22,7 +22,8 @@
 - успешная локальная загрузка и ошибка финализации серверного учёта больше не переинтерпретируются как failed с ошибочным release;
 - YouTube Shorts на VPS получают Deno/PO-token fallback вместо немедленного предложения вручную войти при антибот-проверке;
 - для social-video добавлен отдельный userspace Cloudflare WARP egress через wireproxy: он используется только yt-dlp для YouTube/Instagram/TikTok/Pinterest и не меняет маршруты VPS/SSH;
-- Managed UI явно возвращает локальную операцию на DispatcherQueue после серверной авторизации, устраняя XAML COMException 0x8001010E до старта загрузки.
+- Managed UI явно возвращает локальную операцию на DispatcherQueue после серверной авторизации, устраняя XAML COMException 0x8001010E до старта загрузки;
+- публичная Windows-загрузка больше не раскрывает адрес репозитория: ZIP и SHA-256 отдаются напрямую с домена VideoGrabber.
 
 
 ## [0.1.10-preview.36-rc.1] - 2026-09-25

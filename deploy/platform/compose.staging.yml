@@ -199,6 +199,8 @@ services:
       VG_WEB_AUTH_RETURN_URI: ${VG_WEB_AUTH_RETURN_URI:?}
       VG_SUPABASE_URL: ${VG_SUPABASE_URL:?}
       VG_SUPABASE_PUBLISHABLE_KEY: ${VG_SUPABASE_PUBLISHABLE_KEY:?}
+      VG_WINDOWS_DOWNLOAD_PATH: /var/lib/videograbber/downloads/VideoGrabber-Windows.zip
+      VG_WINDOWS_CHECKSUM_PATH: /var/lib/videograbber/downloads/VideoGrabber-Windows.sha256.txt
     secrets:
       - api_dsn
       - identity_dsn
@@ -221,6 +223,7 @@ services:
       - "127.0.0.1:${VG_STAGE_HTTP_PORT:-19230}:8080"
     volumes:
       - workerjobs:/var/lib/videograbber/jobs
+      - ${VG_WINDOWS_DOWNLOAD_DIR:?}:/var/lib/videograbber/downloads:ro
       - ./payment-catalog.stage.example.json:/etc/videograbber/payment-catalog.json:ro
     networks: [internal, edge]
     read_only: true
