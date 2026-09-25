@@ -89,6 +89,7 @@ services:
   social-egress:
     image: ${VG_SOCIAL_EGRESS_IMAGE:?pinned social egress image required}
     restart: unless-stopped
+    user: "10002:10002"
     command: ["-c","/run/secrets/warp_wireproxy_config","-s"]
     secrets:
       - warp_wireproxy_config
