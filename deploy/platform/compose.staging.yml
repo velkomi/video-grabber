@@ -191,7 +191,7 @@ services:
       VG_LAST_BACKUP_UTC: ${VG_LAST_BACKUP_UTC:-}
       VG_TELEGRAM_API_BASE_URL: ${VG_TELEGRAM_API_BASE_URL:-https://api.telegram.org}
       VG_EGRESS_PROXY_URI: ${VG_EGRESS_PROXY_URI:?}
-      VG_SOCIAL_EGRESS_PROXY_URI: socks5://social-egress:25344
+      VG_SOCIAL_EGRESS_PROXY_URI: socks5h://social-egress:25344
       VG_YOUTUBE_POT_PROVIDER_URL: http://youtube-pot-provider:4416
       VG_PLATFORM_LEASE_KEY_ID: ${VG_PLATFORM_LEASE_KEY_ID:-vg-lease-2026-09}
       VG_TELEGRAM_MINIAPP_URL: ${VG_TELEGRAM_MINIAPP_URL:?}
@@ -261,7 +261,7 @@ services:
       VG_PLATFORM_API_URL: http://api:8080
       VG_WORKER_ID: ${VG_WORKER_ID:?}
       VG_EGRESS_PROXY_URI: ${VG_EGRESS_PROXY_URI:?}
-      VG_SOCIAL_EGRESS_PROXY_URI: socks5://social-egress:25344
+      VG_SOCIAL_EGRESS_PROXY_URI: socks5h://social-egress:25344
       VG_YOUTUBE_POT_PROVIDER_URL: http://youtube-pot-provider:4416
       VG_WORKER_JOB_ROOT: /var/lib/videograbber/jobs
       VG_RETENTION_ENABLED: ${VG_RETENTION_ENABLED:-false}
