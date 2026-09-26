@@ -36,9 +36,15 @@ if [ "$unsafe" != "0" ]; then
   exit 4
 fi
 
+symlink_report="/home/assistant/apps/videograbber-platform/.maintenance-symlinks.txt"
 docker run --rm -v "$worker_volume:/data:ro" alpine:3.22 sh -c '
-  find /data -xdev -type l -print -quit | grep -q . && exit 5 || exit 0
-'
+  find /data -xdev -type l -print
+' > "$symlink_report"
+chmod 0644 "$symlink_report"
+if [ -s "$symlink_report" ]; then
+  echo "Symlink detected in worker volume; retention marker not advanced. See $symlink_report" >&2
+  exit 5
+fi
 
 printf '%s\n' "$iso" > "$SECRET_DIR/last_backup_utc"
 printf '%s\n' "$iso" > "$SECRET_DIR/retention_dry_run_utc"
