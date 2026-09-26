@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Исправлено
+
+- публичный reverse proxy передаёт Windows ZIP и защищённые browser-download артефакты потоково без proxy buffering/temp-file spill, поэтому большие файлы больше не обрываются при скачивании через HTTPS-домен VideoGrabber.
+
 ## [0.1.10-preview.40-rc.1] - 2026-09-26
 
 ### Исправлено

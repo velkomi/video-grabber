@@ -241,6 +241,9 @@ public sealed class DeploymentAssetTests
             "proxy_pass http://$api_host:8080;",
             nginx,
             StringComparison.Ordinal);
+        Assert.Contains("location = /download/windows", nginx, StringComparison.Ordinal);
+        Assert.Contains("location ^~ /v1/downloads/", nginx, StringComparison.Ordinal);
+        Assert.True(nginx.Split("proxy_buffering off;", StringSplitOptions.None).Length >= 4);
         Assert.Contains(
             "videograbber.srv1902378.hstgr.cloud",
             publisher,
