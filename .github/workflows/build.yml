@@ -28,7 +28,11 @@ jobs:
       - name: Build
         run: dotnet build .\VideoGrabber.slnx -c Release --no-restore
       - name: Test
-        run: dotnet test .\VideoGrabber.slnx -c Release --no-build
+        shell: pwsh
+        run: |
+          $env:VIDEOGRABBER_EVIDENCE = Join-Path $env:RUNNER_TEMP 'videograbber-evidence'
+          New-Item -ItemType Directory -Force -Path $env:VIDEOGRABBER_EVIDENCE | Out-Null
+          dotnet test .\VideoGrabber.slnx -c Release --no-build
       - name: Publish portable EXE
         run: dotnet publish .\src\VideoGrabber.App\VideoGrabber.App.csproj -c Release -r win-x64 --self-contained true -o .\artifacts\VideoGrabber-win-x64 --no-restore
       - name: Package
