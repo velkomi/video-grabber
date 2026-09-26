@@ -374,7 +374,8 @@ public sealed class ApiFixture : IAsyncDisposable
     {
         var builder = new NpgsqlConnectionStringBuilder(source.ConnectionString)
         {
-            Options = "-c role=" + role
+            Options = "-c role=" + role,
+            PersistSecurityInfo = true
         };
         if (role == "vg_ledger") builder.MaxPoolSize = 32;
         return builder.ConnectionString;
