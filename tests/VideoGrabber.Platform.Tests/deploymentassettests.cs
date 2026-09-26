@@ -209,7 +209,7 @@ public sealed class DeploymentAssetTests
         Assert.Contains("retention_dry_run_utc", script, StringComparison.Ordinal);
         Assert.Contains("unsafe", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(".maintenance-symlinks.txt", script, StringComparison.Ordinal);
-        Assert.Contains("find /data -xdev -type l -print", script, StringComparison.Ordinal);
+        Assert.Contains("find /data -xdev -type l ! -path \"*/.cache/deno/*\" -print", script, StringComparison.Ordinal);
         Assert.Contains("videograbber-maintenance.sh", service, StringComparison.Ordinal);
         Assert.Contains("OnUnitActiveSec=10min", timer, StringComparison.Ordinal);
         Assert.Contains("Persistent=true", timer, StringComparison.Ordinal);
