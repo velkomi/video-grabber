@@ -1,4 +1,12 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.39-rc.1] - 2026-09-26
+
+- Status: portrait/social quality correctness follow-up.
+- Portrait media quality is orientation-aware: 360p/720p/1080p use yt-dlp `res:<N>` instead of literal video height.
+- Storyboards and non-video formats are excluded from the quality list, preventing false 180p choices and review_required retries.
+- Public Shorts, Instagram Reel, TikTok video and Pinterest video-pin anonymous extraction were rechecked through the production social path.
+- Public product surfaces continue to expose no repository URL; Windows package and checksum stay on the VideoGrabber domain.
+
 ## [0.1.10-preview.38-rc.1] - 2026-09-25
 
 - Status: unified public-social delivery for Web and Windows Managed.

@@ -199,12 +199,13 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         await _egress.ValidatePublicTargetAsync(
             uri, cancellationToken).ConfigureAwait(false);
 
-        var height = ParseHeight(quality);
-        var format = height is int h
-            ? $"bestvideo[height={h}]+bestaudio/best[height={h}]"
-            : "bestvideo+bestaudio/best";
+        // Do not bind quality to the physical height field here.
+        // For portrait media (Shorts/Reels/TikTok), 360p is commonly 360x640,
+        // so height=360 would select the wrong/nonexistent stream. The worker
+        // applies yt-dlp's orientation-aware res:<N> sort using Work.Quality.
         return new WorkerSourceDescriptor(
-            sourceId, uri, format, null, height, "video/mp4", expires);
+            sourceId, uri, "bestvideo+bestaudio/best", null, null,
+            "video/mp4", expires);
     }
 
     public async Task<WorkerSourceDescriptor?> ResolveForWorkerAsync(
@@ -232,12 +233,13 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         var uriText = Decrypt(encrypted);
         if (!Uri.TryCreate(uriText, UriKind.Absolute, out var uri)) return null;
         await _egress.ValidatePublicTargetAsync(uri, cancellationToken).ConfigureAwait(false);
-        var height = ParseHeight(quality);
-        var format = height is int h
-            ? $"bestvideo[height={h}]+bestaudio/best[height={h}]"
-            : "bestvideo+bestaudio/best";
+        // Do not bind quality to the physical height field here.
+        // For portrait media (Shorts/Reels/TikTok), 360p is commonly 360x640,
+        // so height=360 would select the wrong/nonexistent stream. The worker
+        // applies yt-dlp's orientation-aware res:<N> sort using Work.Quality.
         return new WorkerSourceDescriptor(
-            sourceId, uri, format, null, height, "video/mp4", expires);
+            sourceId, uri, "bestvideo+bestaudio/best", null, null,
+            "video/mp4", expires);
     }
 
     private async Task<JsonElement> ProbeAsync(Uri source, CancellationToken cancellationToken)
@@ -361,20 +363,88 @@ public sealed class SourceAnalysisService : IAsyncDisposable
 
     private static string[] ReadQualities(JsonElement metadata)
     {
-        var heights = new SortedSet<int>();
+        var resolutions = new SortedSet<int>();
         if (metadata.TryGetProperty("formats", out var formats)
             && formats.ValueKind == JsonValueKind.Array)
         {
             foreach (var format in formats.EnumerateArray())
-                if (format.TryGetProperty("height", out var height)
-                    && height.ValueKind == JsonValueKind.Number
-                    && height.TryGetInt32(out var h)
-                    && h is >= 144 and <= 4320)
-                    heights.Add(h);
+            {
+                if (!IsRealVideoFormat(format))
+                    continue;
+
+                var quality = FormatQuality(format);
+                if (quality is >= 144 and <= 4320)
+                    resolutions.Add(quality.Value);
+            }
         }
-        return heights.Count == 0
+
+        return resolutions.Count == 0
             ? ["best"]
-            : heights.Reverse().Take(12).Select(h => h + "p").ToArray();
+            : resolutions.Reverse().Take(12)
+                .Select(value => value + "p")
+                .ToArray();
+    }
+
+    private static bool IsRealVideoFormat(JsonElement format)
+    {
+        if (format.TryGetProperty("vcodec", out var codec)
+            && codec.ValueKind == JsonValueKind.String)
+        {
+            var value = codec.GetString();
+            if (string.IsNullOrWhiteSpace(value)
+                || value.Equals("none", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("images", StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+        else
+        {
+            return false;
+        }
+
+        if (format.TryGetProperty("protocol", out var protocol)
+            && protocol.ValueKind == JsonValueKind.String
+            && protocol.GetString()?.Contains("mhtml", StringComparison.OrdinalIgnoreCase) == true)
+            return false;
+
+        return true;
+    }
+
+    private static int? FormatQuality(JsonElement format)
+    {
+        // yt-dlp's format_note is orientation-aware. A portrait 360p stream
+        // can be 360x640 while still reporting 360p. Prefer that label.
+        if (format.TryGetProperty("format_note", out var note)
+            && note.ValueKind == JsonValueKind.String)
+        {
+            var text = note.GetString() ?? string.Empty;
+            var p = text.IndexOf('p');
+            if (p > 0)
+            {
+                var start = p - 1;
+                while (start >= 0 && char.IsDigit(text[start]))
+                    start--;
+                start++;
+                if (start < p
+                    && int.TryParse(text.AsSpan(start, p - start), out var parsed)
+                    && parsed is >= 144 and <= 4320)
+                    return parsed;
+            }
+        }
+
+        int? width = null;
+        int? height = null;
+        if (format.TryGetProperty("width", out var widthNode)
+            && widthNode.ValueKind == JsonValueKind.Number
+            && widthNode.TryGetInt32(out var w))
+            width = w;
+        if (format.TryGetProperty("height", out var heightNode)
+            && heightNode.ValueKind == JsonValueKind.Number
+            && heightNode.TryGetInt32(out var h))
+            height = h;
+
+        if (width is int ww && height is int hh)
+            return Math.Min(ww, hh);
+        return height ?? width;
     }
 
     private static string? GetString(JsonElement root, string name)

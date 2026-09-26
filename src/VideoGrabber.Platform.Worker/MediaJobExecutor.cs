@@ -121,6 +121,8 @@ public sealed class MediaJobExecutor(
         else
         {
             arguments.AddRange(["-f", source.FormatSelector]);
+            if (TryParseQualityResolution(lease.Work.Quality, out var resolution))
+                arguments.AddRange(["-S", "res:" + resolution]);
         }
         arguments.AddRange(["-o", outputTemplate, "--", source.Source.AbsoluteUri]);
 
@@ -163,6 +165,18 @@ public sealed class MediaJobExecutor(
             || host == "pinterest.com"
             || host.EndsWith(".pinterest.com", StringComparison.Ordinal)
             || host == "pin.it";
+    }
+
+    private static bool TryParseQualityResolution(string quality, out int resolution)
+    {
+        resolution = 0;
+        if (string.IsNullOrWhiteSpace(quality)
+            || !quality.EndsWith('p')
+            || !int.TryParse(quality.AsSpan(0, quality.Length - 1), out var value)
+            || value is < 144 or > 4320)
+            return false;
+        resolution = value;
+        return true;
     }
 
     private async Task<ArtifactReceipt> ExtractMp3Async(
