@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.40-rc.1] - 2026-09-26
+
+- Status: YouTube SABR fallback follow-up.
+- YouTube analysis and server download now request `mweb,default` player clients. This preserves anonymous mweb + PO-token handling while allowing yt-dlp's current default/visionOS path when mweb is placed into YouTube's SABR-only experiment.
+- Live probe through the production social-egress resolved real Shorts formats from 144p through 2160p and completed a 360x640 MP4 download with audio, without YouTube cookies.
+- Instagram Reel, current TikTok and Pinterest video-pin anonymous probes remain successful.
+
 ## [0.1.10-preview.39-rc.1] - 2026-09-26
 
 - Status: portrait/social quality correctness follow-up.

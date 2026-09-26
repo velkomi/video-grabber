@@ -108,7 +108,7 @@ public sealed class MediaJobExecutor(
         {
             arguments.AddRange([
                 "--extractor-args",
-                "youtube:player_client=mweb",
+                "youtube:player_client=mweb,default",
                 "--extractor-args",
                 "youtubepot-bgutilhttp:base_url="
                     + youtubePotProviderUri.AbsoluteUri.TrimEnd('/')

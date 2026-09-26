@@ -96,6 +96,8 @@ public sealed class WebPlanUxTests
         Assert.Contains("deno:", analysis);
         Assert.Contains("deno:", worker);
         Assert.Contains("youtubepot-bgutilhttp", analysis);
+        Assert.Contains("youtube:player_client=mweb,default", analysis);
+        Assert.Contains("youtube:player_client=mweb,default", worker);
         Assert.Contains("\"--impersonate\", \"chrome\"", analysis);
         Assert.Contains("tiktok.com", analysis);
         Assert.Contains("instagram.com", analysis);
