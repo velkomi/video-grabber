@@ -77,17 +77,21 @@ jobs:
           New-Item -ItemType Directory -Force -Path $env:VIDEOGRABBER_EVIDENCE | Out-Null
           dotnet test .\tests\VideoGrabber.Core.Tests\VideoGrabber.Core.Tests.csproj -c Release --no-build
           dotnet test .\tests\VideoGrabber.Infrastructure.Tests\VideoGrabber.Infrastructure.Tests.csproj -c Release --no-build
-      - name: Publish portable EXE
+      - name: Publish CI smoke EXE
         run: dotnet publish .\src\VideoGrabber.App\VideoGrabber.App.csproj -c Release -r win-x64 --self-contained true -o .\artifacts\VideoGrabber-win-x64 --no-restore
-      - name: Package
+      - name: Package CI smoke build
         shell: pwsh
         run: |
           Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md -Destination .\artifacts\VideoGrabber-win-x64
-          Compress-Archive -Path .\artifacts\VideoGrabber-win-x64\* -DestinationPath .\artifacts\VideoGrabber-win-x64.zip
-          Get-FileHash .\artifacts\VideoGrabber-win-x64.zip -Algorithm SHA256 | Format-List
+          @'
+          CI smoke build only. This archive intentionally does not contain the bundled media runtime.
+          Official Local/Managed releases MUST be produced through scripts/Build-Release.ps1 with -BundledRuntimeRoot (or VIDEOGRABBER_BUNDLED_RUNTIME) and must contain tools\yt-dlp.exe, FFmpeg/FFprobe, Deno, Whisper and ggml-base.bin.
+          '@ | Set-Content .\artifacts\VideoGrabber-win-x64\CI_ONLY.txt -Encoding utf8
+          Compress-Archive -Path .\artifacts\VideoGrabber-win-x64\* -DestinationPath .\artifacts\VideoGrabber-win-x64-ci-smoke.zip
+          Get-FileHash .\artifacts\VideoGrabber-win-x64-ci-smoke.zip -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: VideoGrabber-win-x64
-          path: .\artifacts\VideoGrabber-win-x64.zip
+          name: VideoGrabber-win-x64-ci-smoke
+          path: .\artifacts\VideoGrabber-win-x64-ci-smoke.zip
           if-no-files-found: error
           retention-days: 7

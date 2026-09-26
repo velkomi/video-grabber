@@ -47,5 +47,18 @@ public sealed class ReleaseConfigurationTests
         Assert.Contains("VideoGrabber.Platform.Worker-$Runtime", script);
         Assert.Contains("-p:VideoGrabberEdition=Local", script);
         Assert.Contains("-p:VideoGrabberEdition=Managed", script);
+        Assert.Contains("BundledRuntimeRoot is required for Local/Managed release packages.", script);
+        Assert.Contains("-p:VideoGrabberBundledRuntimeRoot=$BundledRuntimeRoot", script);
+        Assert.Contains("Published desktop release is missing bundled runtime file", script);
+    }
+
+    [Fact]
+    public void Ci_desktop_artifact_is_explicitly_smoke_only()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(Root(), ".github", "workflows", "build.yml"));
+        Assert.Contains("VideoGrabber-win-x64-ci-smoke", workflow);
+        Assert.Contains("CI smoke build only", workflow);
+        Assert.DoesNotContain("name: VideoGrabber-win-x64\n", workflow);
     }
 }

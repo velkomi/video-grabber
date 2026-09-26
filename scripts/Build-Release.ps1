@@ -10,6 +10,7 @@ param(
     [string]$Version,
     [string]$SourceCommit,
     [string]$ReleaseRoot,
+    [string]$BundledRuntimeRoot,
     [switch]$SkipTests
 )
 
@@ -55,6 +56,34 @@ switch ($Target) {
     }
 }
 
+$requiredBundledRuntime = @()
+if ($Target -in @('Local', 'Managed')) {
+    if ([string]::IsNullOrWhiteSpace($BundledRuntimeRoot)) {
+        $BundledRuntimeRoot = $env:VIDEOGRABBER_BUNDLED_RUNTIME
+    }
+    if ([string]::IsNullOrWhiteSpace($BundledRuntimeRoot)) {
+        throw 'BundledRuntimeRoot is required for Local/Managed release packages.'
+    }
+    $BundledRuntimeRoot = [System.IO.Path]::GetFullPath($BundledRuntimeRoot)
+    $requiredBundledRuntime = @(
+        'yt-dlp.exe',
+        'ffmpeg.exe',
+        'ffprobe.exe',
+        'deno.exe',
+        'whisper\whisper-cli.exe',
+        'whisper\whisper.dll',
+        'whisper\ggml.dll',
+        'whisper\ggml-base.dll',
+        'whisper\ggml-base.bin'
+    )
+    foreach ($relative in $requiredBundledRuntime) {
+        if (-not (Test-Path -LiteralPath (Join-Path $BundledRuntimeRoot $relative) -PathType Leaf)) {
+            throw "Bundled runtime is incomplete: $relative"
+        }
+    }
+    $extra += "-p:VideoGrabberBundledRuntimeRoot=$BundledRuntimeRoot"
+}
+
 if ([string]::IsNullOrWhiteSpace($ReleaseRoot)) {
     $ReleaseRoot = Join-Path $repositoryRoot "artifacts\release-$Version"
 } else {
@@ -96,6 +125,12 @@ foreach ($file in @('README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md')) {
 }
 if ($Target -in @('Local', 'Managed')) {
     Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs\MEDIA_WORKFLOWS.md') -Destination $output
+    foreach ($relative in $requiredBundledRuntime) {
+        $published = Join-Path $output (Join-Path 'tools' $relative)
+        if (-not (Test-Path -LiteralPath $published -PathType Leaf)) {
+            throw "Published desktop release is missing bundled runtime file: tools\$relative"
+        }
+    }
 }
 $entries = @()
 foreach ($file in Get-ChildItem -LiteralPath $output -File -Recurse | Sort-Object FullName) {

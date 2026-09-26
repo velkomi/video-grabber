@@ -6,6 +6,7 @@
 
 ### Исправлено
 
+- официальный Local/Managed release теперь fail-closed требует полный bundled runtime (yt-dlp, FFmpeg/FFprobe, Deno, Whisper и ggml-base); обычный GitHub Actions self-contained ZIP явно помечен как CI smoke и больше не может быть принят за официальный дистрибутив;
 - публичный reverse proxy передаёт Windows ZIP и защищённые browser-download артефакты потоково без proxy buffering/temp-file spill, поэтому большие файлы больше не обрываются при скачивании через HTTPS-домен VideoGrabber.
 
 ## [0.1.10-preview.40-rc.1] - 2026-09-26
