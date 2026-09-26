@@ -233,8 +233,10 @@ public sealed class DeploymentAssetTests
             "docker network connect \"$BACKEND_NETWORK\" \"$NAME\"",
             publisher,
             StringComparison.Ordinal);
+        Assert.Contains("resolver 127.0.0.11", nginx, StringComparison.Ordinal);
+        Assert.Contains("set $api_host api;", nginx, StringComparison.Ordinal);
         Assert.Contains(
-            "proxy_pass http://api:8080;",
+            "proxy_pass http://$api_host:8080;",
             nginx,
             StringComparison.Ordinal);
         Assert.Contains(
