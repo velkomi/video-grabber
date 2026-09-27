@@ -1042,7 +1042,7 @@ public sealed partial class MainWindow : Window
 
     private void TogglePause()
     {
-        if (!_operations.IsBusy && !_courseDownloadActive)
+        if (!_operations.IsBusy && !_courseDownloadActive && !IsCourseTranscriptionBusy)
             return;
         _operationPaused = !_operationPaused;
         if (_operationPaused)

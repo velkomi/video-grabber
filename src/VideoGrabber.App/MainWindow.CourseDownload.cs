@@ -50,6 +50,8 @@ public sealed partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
         _lastDownloadedMediaPath = path;
+        if (_courseDownloadActive)
+            EnqueueCourseTranscription(path);
         if (_transcribeDownloadedButton is not null)
         {
             _transcribeDownloadedButton.IsEnabled =
@@ -861,7 +863,7 @@ public sealed partial class MainWindow
     private async Task RunWholeGetCourseAsync(bool resume)
     {
         if (_courseDownloadActive) return;
-        if (_mediaBrowser?.CoreWebView2 is null)
+        if (_mediaBrowser?.CoreWebView2 is null && !resume)
         {
             _browserHint.Text =
                 "Сначала откройте курс во встроенном браузере и войдите на GetCourse.";
@@ -951,6 +953,7 @@ public sealed partial class MainWindow
             }
 
             _courseTotalLessons = plan.Lessons.Length;
+            InitializeCourseTranscriptionPipeline(rootFolder, token);
             ClearCourseNetworkWarning();
             _courseCurrentLessonIndex = Math.Clamp(
                 _courseResumeLessonIndex,
@@ -971,18 +974,43 @@ public sealed partial class MainWindow
 
             BeginCourseDownloadProgress(plan, resume);
 
-            await DownloadCoursePlanWithAutomaticRecoveryAsync(
-                plan,
-                rootFolder,
-                token);
+            if (_courseCompletedLessons.Count < plan.Lessons.Length)
+            {
+                if (_mediaBrowser?.CoreWebView2 is null)
+                {
+                    _courseResumeAvailable = true;
+                    SetCourseProgressError(
+                        "Часть видео курса ещё не скачана. Для их докачки откройте GetCourse во встроенном браузере и войдите на сайт. Уже имеющиеся видео продолжают транскрибироваться локально.");
+                    await WaitForCourseTranscriptionAsync(token);
+                    return;
+                }
+
+                await DownloadCoursePlanWithAutomaticRecoveryAsync(
+                    plan,
+                    rootFolder,
+                    token);
+            }
 
             if (_courseCompletedLessons.Count >= plan.Lessons.Length)
             {
-                _courseResumeAvailable = false;
+                _courseStageText.Text =
+                    $"Видео курса готовы: {plan.Lessons.Length}/{plan.Lessons.Length}. Завершаю фоновую транскрибацию…";
+                await WaitForCourseTranscriptionAsync(token);
+
                 _courseResumeLessonIndex = plan.Lessons.Length;
-                SetCourseProgressFinished(
-                    $"Готово: полностью сохранено {plan.Lessons.Length} из {plan.Lessons.Length} уроков.");
-                ScheduleCompletionActionAfterDownloads("course");
+                if (CourseTranscriptionFailureCount == 0)
+                {
+                    _courseResumeAvailable = false;
+                    SetCourseProgressFinished(
+                        $"Готово: сохранено {plan.Lessons.Length}/{plan.Lessons.Length} уроков и все видео транскрибированы.");
+                    ScheduleCompletionActionAfterDownloads("course");
+                }
+                else
+                {
+                    _courseResumeAvailable = true;
+                    SetCourseProgressFinished(
+                        $"Видео курса сохранены полностью. Транскрибация завершилась с ошибками: {CourseTranscriptionFailureCount}. Нажмите «Продолжить», чтобы повторить только отсутствующие TXT.");
+                }
             }
             else
             {
@@ -2766,7 +2794,7 @@ public sealed partial class MainWindow
     }
     private void UpdateCourseControls()
     {
-        var busy = _courseDownloadActive || _operations.IsBusy;
+        var busy = _courseDownloadActive || _operations.IsBusy || IsCourseTranscriptionBusy;
 
         if (_mp3Button is not null)
             _mp3Button.IsEnabled = !busy;

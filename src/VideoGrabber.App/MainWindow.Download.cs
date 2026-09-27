@@ -170,6 +170,7 @@ public sealed partial class MainWindow
         ResetPauseState();
         _progressOwner = null;
         _courseCancellation?.Cancel();
+        CancelCourseTranscription();
         _operations.Cancel();
         _browserOperation?.Cancel();
         _operation?.Cancel();
@@ -177,10 +178,11 @@ public sealed partial class MainWindow
 
     private void SetOperationControls(bool busy)
     {
-        _downloadButton.IsEnabled = !busy && !_courseDownloadActive;
-        _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive;
+        var courseBackgroundBusy = IsCourseTranscriptionBusy;
+        _downloadButton.IsEnabled = !busy && !_courseDownloadActive && !courseBackgroundBusy;
+        _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive && !courseBackgroundBusy;
         _cancelButton.IsEnabled = true;
-        UpdatePauseButtonsAvailability(busy || _courseDownloadActive);
+        UpdatePauseButtonsAvailability(busy || _courseDownloadActive || courseBackgroundBusy);
         UpdateCourseControls();
     }
 

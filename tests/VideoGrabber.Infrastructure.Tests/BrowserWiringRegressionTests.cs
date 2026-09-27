@@ -444,6 +444,11 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("CourseVideoBlockEvidence.CountDeclaredVideoBlocks", course);
         Assert.Contains("CountReadyCourseMediaFiles", course);
         Assert.Contains("media-count-mismatch", course);
+        Assert.Contains("InitializeCourseTranscriptionPipeline", course);
+        Assert.Contains("WaitForCourseTranscriptionAsync", course);
+        Assert.Contains("EnqueueCourseTranscription", course);
+        Assert.Contains("_mediaBrowser?.CoreWebView2 is null && !resume", course);
+        Assert.Contains("Уже имеющиеся видео продолжают транскрибироваться локально", course);
         Assert.Contains("declared=", course);
         Assert.Contains("lesson remains incomplete", course);
         Assert.Contains("CourseLessonArchive.WriteDocx", archive);

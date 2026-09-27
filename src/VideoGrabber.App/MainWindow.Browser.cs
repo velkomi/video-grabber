@@ -188,9 +188,45 @@ public sealed partial class MainWindow
         content.Children.Add(_courseCurrentText);
         content.Children.Add(_courseEtaText);
         content.Children.Add(_courseElapsedText);
+
+        content.Children.Add(SectionHeading("Фоновая транскрибация курса"));
+        content.Children.Add(MutedText(
+            "Каждое видео после скачивания автоматически ставится в последовательную очередь Whisper. " +
+            "Пока распознаётся один ролик, следующий уже может скачиваться. Готовый TXT получает то же имя и лежит рядом с видео."));
+        _courseTranscriptionStageText = new TextBlock
+        {
+            Text = "Фоновая транскрибация — ожидаю первое видео",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+        _courseTranscriptionCurrentText = MutedText(
+            "После загрузки ролика Whisper автоматически создаст рядом TXT с таким же именем.");
+        _courseTranscriptionProgressTrack = new Grid
+        {
+            Height = 8,
+            Background = ProgressTrackBrush,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        _courseTranscriptionProgressFill = new Border
+        {
+            Background = AccentBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(4),
+            Width = 0
+        };
+        _courseTranscriptionProgressTrack.Children.Add(
+            _courseTranscriptionProgressFill);
+        _courseTranscriptionProgressTrack.SizeChanged += (_, _) =>
+            UpdateCourseTranscriptionUi();
+        _courseTranscriptionProgressPercent = MutedText("0%");
+        content.Children.Add(_courseTranscriptionStageText);
+        content.Children.Add(_courseTranscriptionProgressTrack);
+        content.Children.Add(_courseTranscriptionProgressPercent);
+        content.Children.Add(_courseTranscriptionCurrentText);
+
         content.Children.Add(MutedText(
             "VideoGrabber проходит доступные модули и уроки текущего GetCourse-тренинга. " +
-            "Для каждого урока создаётся отдельная папка: Word + HTML страницы, изображения, вложения и найденные видео."));
+            "Для каждого урока создаётся отдельная папка: Word + HTML страницы, изображения, вложения, найденные видео и TXT-транскрипты."));
 
         return Card(content);
     }

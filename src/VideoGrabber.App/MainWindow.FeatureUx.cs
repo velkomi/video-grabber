@@ -192,7 +192,7 @@ public sealed partial class MainWindow
 
     private async Task TogglePauseOrExplainAsync()
     {
-        if (!_operations.IsBusy && !_courseDownloadActive && !_isInstallingComponents)
+        if (!_operations.IsBusy && !_courseDownloadActive && !IsCourseTranscriptionBusy && !_isInstallingComponents)
         {
             await ShowOperationalHelpAsync(
                 "Когда нужна «Пауза»",
@@ -207,7 +207,7 @@ public sealed partial class MainWindow
 
     private async Task CancelOrExplainAsync()
     {
-        if (!_operations.IsBusy && !_courseDownloadActive && !_isInstallingComponents)
+        if (!_operations.IsBusy && !_courseDownloadActive && !IsCourseTranscriptionBusy && !_isInstallingComponents)
         {
             await ShowOperationalHelpAsync(
                 "Сейчас нечего отменять",

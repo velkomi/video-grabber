@@ -1,4 +1,15 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.43-rc.1] - 2026-09-27
+
+- Status: automatic whole-course transcription pipeline.
+- Every successfully downloaded course video is enqueued into one ordered background Whisper worker while the next video continues downloading.
+- Successful course transcription leaves only `<video-basename>.txt` beside the media file. Whisper SRT is generated only for internal validation and removed after promotion of the validated text.
+- The course UI has a second independent progress lane showing transcription progress, current media, queued count, completed texts and failures.
+- Resume/backfill scans already downloaded course media and skips videos with an existing non-empty same-name TXT. A fully downloaded course can therefore complete local transcription without reopening an authenticated GetCourse session.
+- Global pause affects both download and transcription child processes; global cancel cancels both. Completion actions wait for transcription drain and are suppressed when transcript failures remain.
+- Local and Managed desktop editions share the same collapsible advanced-tools layout and course-transcription behavior.
+- Qualification: Local/Managed Release builds 0 warnings/errors; Infrastructure 686 passed / 14 expected environment skips / 0 failed.
+
 ## [0.1.10-preview.42-rc.1] - 2026-09-27
 
 - Status: final whole-course integrity follow-up.

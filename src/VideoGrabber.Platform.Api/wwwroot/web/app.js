@@ -376,7 +376,7 @@ const planCatalog = {
     features: [
       "Отдельные видео без лимита",
       "MP3, редактор и локальная транскрибация",
-      "Скачивание полного курса и локальное сохранение структуры"
+      "Полный курс: структура + автоматический TXT рядом с каждым видео"
     ]
   }
 };
@@ -526,7 +526,7 @@ function renderCourseHint() {
     browserOption.disabled = true;
     target.value = "desktop";
     $("#course-hint").textContent = state.access.canDownloadCourse
-      ? "Полный курс скачивается через Windows VideoGrabber: приложению нужна ваша авторизованная сессия курса."
+      ? "Полный курс скачивается через Windows VideoGrabber: приложению нужна ваша авторизованная сессия курса. Каждое видео параллельно ставится в локальную очередь Whisper, а TXT сохраняется рядом с ним."
       : "Полный курс доступен на Full Course. После выбора тарифа скачивание выполняется в Windows-приложении.";
   } else {
     browserOption.disabled = false;
