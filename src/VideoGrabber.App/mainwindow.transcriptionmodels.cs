@@ -391,13 +391,18 @@ public sealed partial class MainWindow
                     var location = profile.Bundled
                         ? "уже входит в VideoGrabber"
                         : ready
-                            ? "уже скачана на этот компьютер"
-                            : "будет скачана автоматически при выборе";
+                            ? "уже скачана на этот компьютер и используется из локального кэша"
+                            : "будет скачана автоматически из открытого источника при выборе";
+                    var cacheNote = profile.Bundled
+                        ? string.Empty
+                        : ready
+                            ? " Повторно скачивать её не нужно."
+                            : " Модель скачивается один раз и сохраняется между обновлениями приложения.";
                     status =
                         $"Качество: {profile.QualityLabel} · "
                         + $"Скорость: {profile.SpeedLabel} · "
                         + $"Место: {WhisperModelCatalog.FormatSize(profile.ExpectedBytes)} · "
-                        + $"{location}.{Environment.NewLine}"
+                        + $"{location}.{cacheNote}{Environment.NewLine}"
                         + profile.Recommendation
                         + " Скорость зависит от процессора и длительности записи.";
                 }

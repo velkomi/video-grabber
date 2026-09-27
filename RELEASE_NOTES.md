@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.51-rc.1] - 2026-09-27
+
+- Status: Whisper model cache/dedup UX finalization.
+- Additional models use one canonical cache file per profile and are reused across selections and application updates. A normal re-selection of an already verified model performs no network transfer and creates no duplicate file.
+- The UI explicitly states that optional models download once from a public source, remain cached locally, and exposes a live `Model source` link for users who want to inspect provenance.
+- Live re-selection of verified Small produced no `.download`, no timestamp change and no additional `transcription.model` log entry.
+
 ## [0.1.10-preview.50-rc.1] - 2026-09-27
 
 - Status: verified Whisper model downloader Windows promotion fix.
