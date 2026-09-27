@@ -1,4 +1,12 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.49-rc.1] - 2026-09-27
+
+- Status: selectable Whisper model profiles with verified on-demand download.
+- The whisper.cpp engine remains unchanged. Users choose a friendly profile: bundled Base, balanced Small Q5, or quality-oriented Medium Q5.
+- Non-bundled models download automatically from the pinned public model source only when selected, are cached under LocalAppData across application updates, and are promoted atomically only after exact byte-size and SHA-256 verification.
+- UI explains relative quality, speed and disk usage and exposes an optional live `Model source` link without showing raw infrastructure URLs in the normal workflow.
+- Model selection is shared by local/manual transcription and full-course background transcription and is locked while an operation is active.
+
 ## [0.1.10-preview.48-rc.1] - 2026-09-27
 
 - Status: transcription pause observability / active-time hotfix.

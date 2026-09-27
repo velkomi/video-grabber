@@ -658,7 +658,8 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.DoesNotContain("var install = PrimaryButton(\"Установить или обновить\")", main);
         Assert.DoesNotContain("InstallComponentsAsync(forceUpdate: false", download);
         Assert.Contains("components.Tools.WhisperCli", media);
-        Assert.Contains("components.Tools.WhisperModel", media);
+        Assert.Contains("EnsureWhisperModelAvailableAsync", media);
+        Assert.Contains("CreateWhisperModelSelector", media);
         Assert.Contains("Horizontal(_mp3Button, _textButton, mediaPauseButton, cancel)", media);
     }
 }public sealed partial class BrowserWiringRegressionTests

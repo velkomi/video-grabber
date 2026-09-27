@@ -152,6 +152,9 @@ public sealed partial class MainWindow
         RefreshCourseTranscriptionOptionHint();
         content.Children.Add(_courseTranscriptionCheckBox);
         content.Children.Add(_courseTranscriptionOptionHint);
+        content.Children.Add(CreateWhisperModelSelector("Модель транскрибации курса"));
+        content.Children.Add(CreateWhisperModelStatusText());
+        content.Children.Add(CreateWhisperModelSourceLink());
 
         _courseDownloadButton = PrimaryButton("Скачать весь курс");
         _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();

@@ -2858,5 +2858,6 @@ public sealed partial class MainWindow
             _cancelButton.IsEnabled = true;
 
         UpdatePauseButtonsAvailability(busy || _isInstallingComponents);
+        UpdateWhisperModelUi();
     }
 }

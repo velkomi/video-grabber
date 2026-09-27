@@ -360,11 +360,12 @@ public sealed partial class MainWindow
         string? generatedSrt = null;
         try
         {
+            var model = await EnsureWhisperModelAvailableAsync(token);
             var result = await components.Transcriber.TranscribeAsync(
                 mediaPath,
                 temporaryBase,
                 components.Tools.WhisperCli,
-                components.Tools.WhisperModel,
+                model,
                 language,
                 token);
 

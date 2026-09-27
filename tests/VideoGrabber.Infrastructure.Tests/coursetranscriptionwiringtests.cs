@@ -36,6 +36,9 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("WaitForCourseTranscriptionAsync", course);
         Assert.Contains("ScheduleCompletionActionAfterDownloads", course);
         Assert.Contains("Транскрибировать видео курса в TXT", browser);
+        Assert.Contains("CreateWhisperModelSelector", browser);
+        Assert.Contains("Источник модели", File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.TranscriptionModels.cs")));
+        Assert.Contains("EnsureWhisperModelAvailableAsync", transcription);
         Assert.Contains("IsChecked = _preferences.CourseAutoTranscription", browser);
         Assert.Contains("может увеличить общее время на несколько часов", browser);
         Assert.Contains("_courseTranscriptionEnabledForRun", course);

@@ -17,7 +17,6 @@ public sealed partial class MainWindow
     private TextBox _localOutputBaseBox = null!;
     private TextBlock _localMediaStatus = null!;
     private TextBox _whisperExeBox = null!;
-    private TextBox _whisperModelBox = null!;
     private ComboBox _languageBox = null!;
     private Button _mp3Button = null!;
     private Button _textButton = null!;
@@ -28,6 +27,7 @@ public sealed partial class MainWindow
     {
         public string WhisperExecutable { get; set; } = "";
         public string WhisperModel { get; set; } = "";
+        public string WhisperModelProfile { get; set; } = WhisperModelCatalog.DefaultProfileId;
         public string Language { get; set; } = "auto";
         public LogMode LogMode { get; set; } = LogMode.Full;
         public string DownloadFolder { get; set; } = "";
@@ -153,8 +153,9 @@ public sealed partial class MainWindow
                     _localMediaStatus.Text = "Встроенный Whisper отсутствует или повреждён. Переустановите полную версию VideoGrabber.";
                     return OperationOutcome.Failed;
                 }
+                var model = await EnsureWhisperModelAvailableAsync(operation.Token);
                 var result = await components.Transcriber.TranscribeAsync(input, output,
-                    components.Tools.WhisperCli, components.Tools.WhisperModel, language, operation.Token);                _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.TextPath + "\n" + result.SubtitlesPath : "");
+                    components.Tools.WhisperCli, model, language, operation.Token);                _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.TextPath + "\n" + result.SubtitlesPath : "");
                 operation.Token.ThrowIfCancellationRequested();
                 outcome = result.Success ? OperationOutcome.Succeeded : OperationOutcome.Failed;
                 job.Complete(result.Success);
@@ -191,12 +192,9 @@ public sealed partial class MainWindow
             Text = _tools.WhisperCli,
             IsReadOnly = true
         };
-        _whisperModelBox = new TextBox
-        {
-            Header = "Модель распознавания — входит в VideoGrabber",
-            Text = _tools.WhisperModel,
-            IsReadOnly = true
-        };
+        var modelSelector = CreateWhisperModelSelector();
+        var modelStatus = CreateWhisperModelStatusText();
+        var modelSource = CreateWhisperModelSourceLink();
         _languageBox = new ComboBox { Header = "Язык речи", HorizontalAlignment = HorizontalAlignment.Stretch };
         _languageBox.Items.Add(ComboItem("Определять автоматически", "auto"));
         _languageBox.Items.Add(ComboItem("Русский", "ru"));
@@ -205,11 +203,13 @@ public sealed partial class MainWindow
         var save = PrimaryButton("Сохранить язык");
         save.Click += (_, _) => SavePreferences();
         panel.Children.Add(_whisperExeBox);
-        panel.Children.Add(_whisperModelBox);
+        panel.Children.Add(modelSelector);
+        panel.Children.Add(modelStatus);
+        panel.Children.Add(modelSource);
         panel.Children.Add(_languageBox);
         panel.Children.Add(MutedText(
             _tools.WhisperAvailable
-                ? "Whisper и модель уже встроены. Ничего отдельно скачивать, устанавливать или выбирать не нужно."
+                ? "Движок Whisper уже встроен. Дополнительные модели при необходимости VideoGrabber скачает сам и сохранит на этом компьютере."
                 : "В этой сборке не найден встроенный Whisper. Нужен полный дистрибутив VideoGrabber."));
         panel.Children.Add(save);
         return Card(panel);
@@ -244,7 +244,6 @@ public sealed partial class MainWindow
         try
         {
             _preferences.WhisperExecutable = _whisperExeBox.Text.Trim().Trim('"');
-            _preferences.WhisperModel = _whisperModelBox.Text.Trim().Trim('"');
             _preferences.Language = (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "auto";
             _preferences.LogMode = DiagnosticHub.Log.Mode;
             PersistUiPreferences();
