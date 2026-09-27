@@ -19,7 +19,9 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("Task.Run(", transcription);
         Assert.Contains("RunCourseTranscriptionWorkerAsync", transcription);
         Assert.Contains("_courseTranscriptionCurrentMedia", transcription);
-        Assert.Contains("_courseTranscriptionCurrentStartedUtc", transcription);
+        Assert.Contains("_courseTranscriptionActiveStopwatch", transcription);
+        Assert.Contains("SetCourseTranscriptionPauseState", transcription);
+        Assert.Contains("operation.pause", shell);
         Assert.Contains("Видео {Math.Max(1, activeOrdinal)} из {total}", transcription);
         Assert.Contains("Прошло: ", transcription);
         Assert.Contains("startWorker: false", transcription);

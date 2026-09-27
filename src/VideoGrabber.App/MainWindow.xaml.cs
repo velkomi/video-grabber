@@ -1049,6 +1049,14 @@ public sealed partial class MainWindow : Window
             ProcessPauseRegistry.PauseAll();
         else
             ProcessPauseRegistry.ResumeAll();
+
+        var transcriptionState =
+            SetCourseTranscriptionPauseState(_operationPaused);
+        VideoGrabber.Infrastructure.Diagnostics.DiagnosticHub.Log.Write(
+            "operation.pause",
+            _operationPaused ? "paused" : "resumed",
+            transcriptionState);
+
         foreach (var button in _pauseButtons)
             UpdatePauseButtonVisual(button);
     }

@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.48-rc.1] - 2026-09-27
+
+- Status: transcription pause observability / active-time hotfix.
+- Course transcription elapsed time is now backed by a pause-aware Stopwatch instead of wall-clock `UtcNow - started`, so suspended hours are excluded from the visible elapsed value.
+- Global pause/resume stops/starts the active transcription stopwatch and writes `operation.pause` diagnostics with ordinal/total/queue state only.
+- Live incident diagnosis confirmed the 4th course video was paused, not hung: all Whisper threads were suspended, CPU was flat, and the UI button read `Continue`; resuming restored full CPU activity immediately.
+
 ## [0.1.10-preview.47-rc.1] - 2026-09-27
 
 - Status: Russian-course language guard + public download-surface cleanup.

@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using VideoGrabber.Infrastructure.Diagnostics;
+using VideoGrabber.Infrastructure.Processes;
 using VideoGrabber.Infrastructure.Transcription;
 
 namespace VideoGrabber.App;
@@ -20,7 +21,7 @@ public sealed partial class MainWindow
     private int _courseTranscriptionFailed;
     private double _courseTranscriptionPercent;
     private string? _courseTranscriptionCurrentMedia;
-    private DateTimeOffset _courseTranscriptionCurrentStartedUtc;
+    private System.Diagnostics.Stopwatch? _courseTranscriptionActiveStopwatch;
     private int _courseTranscriptionCurrentOrdinal;
     private int _courseTranscriptionCurrentAttempt;
 
@@ -71,7 +72,7 @@ public sealed partial class MainWindow
             _courseTranscriptionActive = false;
             _courseTranscriptionWorkerTask = null;
             _courseTranscriptionCurrentMedia = null;
-            _courseTranscriptionCurrentStartedUtc = default;
+            _courseTranscriptionActiveStopwatch = null;
             _courseTranscriptionCurrentOrdinal = 0;
             _courseTranscriptionCurrentAttempt = 0;
             _courseTranscriptionCancellation =
@@ -228,7 +229,10 @@ public sealed partial class MainWindow
                     mediaPath = _courseTranscriptionQueue.Dequeue();
                     _courseTranscriptionActive = true;
                     _courseTranscriptionCurrentMedia = mediaPath;
-                    _courseTranscriptionCurrentStartedUtc = DateTimeOffset.UtcNow;
+                    _courseTranscriptionActiveStopwatch =
+                        System.Diagnostics.Stopwatch.StartNew();
+                    if (ProcessPauseRegistry.IsPaused)
+                        _courseTranscriptionActiveStopwatch.Stop();
                     _courseTranscriptionCurrentOrdinal =
                         _courseTranscriptionCompleted
                         + _courseTranscriptionFailed
@@ -293,7 +297,8 @@ public sealed partial class MainWindow
                 else
                     _courseTranscriptionFailed++;
                 _courseTranscriptionCurrentMedia = null;
-                _courseTranscriptionCurrentStartedUtc = default;
+                _courseTranscriptionActiveStopwatch?.Stop();
+                _courseTranscriptionActiveStopwatch = null;
                 _courseTranscriptionCurrentOrdinal = 0;
                 _courseTranscriptionCurrentAttempt = 0;
             }
@@ -489,6 +494,26 @@ public sealed partial class MainWindow
         }
     }
 
+
+    private string SetCourseTranscriptionPauseState(bool paused)
+    {
+        lock (_courseTranscriptionGate)
+        {
+            if (_courseTranscriptionActiveStopwatch is not null)
+            {
+                if (paused)
+                    _courseTranscriptionActiveStopwatch.Stop();
+                else if (_courseTranscriptionActive)
+                    _courseTranscriptionActiveStopwatch.Start();
+            }
+
+            return
+                $"active={_courseTranscriptionActive} "
+                + $"ordinal={_courseTranscriptionCurrentOrdinal}/{_courseTranscriptionTotal} "
+                + $"queued={_courseTranscriptionQueue.Count}";
+        }
+    }
+
     private void UpdateCourseTranscriptionSelectionUi()
     {
         if (_courseTranscriptionStageText is null
@@ -539,7 +564,7 @@ public sealed partial class MainWindow
             int queued;
             bool active;
             string? activeMedia;
-            DateTimeOffset activeStartedUtc;
+            TimeSpan activeElapsed;
             int activeOrdinal;
             int activeAttempt;
             lock (_courseTranscriptionGate)
@@ -550,7 +575,8 @@ public sealed partial class MainWindow
                 queued = _courseTranscriptionQueue.Count;
                 active = _courseTranscriptionActive;
                 activeMedia = _courseTranscriptionCurrentMedia;
-                activeStartedUtc = _courseTranscriptionCurrentStartedUtc;
+                activeElapsed = _courseTranscriptionActiveStopwatch?.Elapsed
+                    ?? TimeSpan.Zero;
                 activeOrdinal = _courseTranscriptionCurrentOrdinal;
                 activeAttempt = _courseTranscriptionCurrentAttempt;
             }
@@ -584,13 +610,8 @@ public sealed partial class MainWindow
             {
                 _courseTranscriptionStageText.Text =
                     "Фоновая транскрибация курса";
-                var elapsed = activeStartedUtc == default
-                    ? TimeSpan.Zero
-                    : DateTimeOffset.UtcNow - activeStartedUtc;
-                if (elapsed < TimeSpan.Zero)
-                    elapsed = TimeSpan.Zero;
                 var elapsedText =
-                    $"{(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}";
+                    $"{(int)activeElapsed.TotalHours:00}:{activeElapsed.Minutes:00}:{activeElapsed.Seconds:00}";
                 _courseTranscriptionCurrentText.Text =
                     (!string.IsNullOrWhiteSpace(activeMedia)
                         ? $"Видео {Math.Max(1, activeOrdinal)} из {total} · попытка {Math.Max(1, activeAttempt)}/2"
