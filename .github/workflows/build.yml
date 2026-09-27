@@ -85,7 +85,7 @@ jobs:
           Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md -Destination .\artifacts\VideoGrabber-win-x64
           @'
           CI smoke build only. This archive intentionally does not contain the bundled media runtime.
-          Official Local/Managed releases MUST be produced through scripts/Build-Release.ps1 with -BundledRuntimeRoot (or VIDEOGRABBER_BUNDLED_RUNTIME) and must contain tools\yt-dlp.exe, FFmpeg/FFprobe, Deno, Whisper and ggml-base.bin.
+          Official Local/Managed releases MUST be produced through scripts/Build-Release.ps1 with -BundledRuntimeRoot (or VIDEOGRABBER_BUNDLED_RUNTIME) and must contain tools\yt-dlp.exe, FFmpeg/FFprobe, Deno, Whisper, ggml-base.bin and ggml-silero-v6.2.0.bin.
           '@ | Set-Content .\artifacts\VideoGrabber-win-x64\CI_ONLY.txt -Encoding utf8
           Compress-Archive -Path .\artifacts\VideoGrabber-win-x64\* -DestinationPath .\artifacts\VideoGrabber-win-x64-ci-smoke.zip
           Get-FileHash .\artifacts\VideoGrabber-win-x64-ci-smoke.zip -Algorithm SHA256 | Format-List

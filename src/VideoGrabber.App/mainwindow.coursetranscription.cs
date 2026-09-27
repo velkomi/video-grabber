@@ -1,6 +1,8 @@
+using System.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using VideoGrabber.Infrastructure.Diagnostics;
+using VideoGrabber.Infrastructure.Transcription;
 
 namespace VideoGrabber.App;
 
@@ -137,13 +139,19 @@ public sealed partial class MainWindow
         try
         {
             var path = CourseTranscriptPath(mediaPath);
-            return File.Exists(path)
-                && new FileInfo(path).Length > 0;
+            if (!File.Exists(path))
+                return false;
+            var info = new FileInfo(path);
+            if (info.Length is <= 0 or > TranscriptTextValidator.MaxUtf8Bytes)
+                return false;
+            var text = File.ReadAllText(path, Encoding.UTF8);
+            return TranscriptTextValidator.TryValidate(text, out _);
         }
         catch (Exception ex) when (
             ex is IOException
                 or UnauthorizedAccessException
-                or ArgumentException)
+                or ArgumentException
+                or DecoderFallbackException)
         {
             return false;
         }
@@ -353,17 +361,13 @@ public sealed partial class MainWindow
             generatedSrt = result.SubtitlesPath;
 
             token.ThrowIfCancellationRequested();
-            if (File.Exists(desiredText))
-            {
-                if (new FileInfo(desiredText).Length > 0)
-                    return true;
-                File.Delete(desiredText);
-            }
+            if (CourseTranscriptLooksReady(mediaPath))
+                return true;
 
             File.Move(
                 generatedText,
                 desiredText,
-                overwrite: false);
+                overwrite: true);
             generatedText = null;
 
             return File.Exists(desiredText)

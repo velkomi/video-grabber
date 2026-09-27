@@ -1,4 +1,15 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.46-rc.1] - 2026-09-27
+
+- Status: transcription quality / VAD / application-icon hotfix.
+- Rebuilt `VideoGrabber.ico` from the canonical blue VideoGrabber PNG and embedded it through the existing ApplicationIcon/AppWindow paths.
+- Bundled `ggml-silero-v6.2.0.bin` and enabled whisper.cpp VAD plus non-speech token suppression for local transcription.
+- Added transcript text-quality validation: `[BLANK_AUDIO]`-dominated output and long duplicate-line loops are rejected instead of promoted beside course media.
+- Existing same-name TXT files are revalidated on resume; invalid historical transcripts are queued again and overwritten only after a validated replacement succeeds.
+- Real first-video sample: old auto mode produced mostly blank-audio markers; base+VAD auto produced normal Russian text with zero blank markers.
+- Real second-video diagnosis: old SRT repeated one phrase ~300 times over ~6.5 minutes, while PCM analysis found zero duplicate one-second source-audio blocks. Base+VAD eliminated the loop completely on the same tail segment.
+- Tested small-q5_1+VAD as well; quality was strong but ~2.6x slower on the real tail, so base+VAD was selected for the production course pipeline.
+
 ## [0.1.10-preview.45-rc.1] - 2026-09-27
 
 - Status: Whisper SRT tail-validation hotfix.

@@ -49,6 +49,7 @@ public sealed class ReleaseConfigurationTests
         Assert.Contains("-p:VideoGrabberEdition=Managed", script);
         Assert.Contains("BundledRuntimeRoot is required for Local/Managed release packages.", script);
         Assert.Contains("-p:VideoGrabberBundledRuntimeRoot=$BundledRuntimeRoot", script);
+        Assert.Contains("whisper\\ggml-silero-v6.2.0.bin", script);
         Assert.Contains("Published desktop release is missing bundled runtime file", script);
     }
 

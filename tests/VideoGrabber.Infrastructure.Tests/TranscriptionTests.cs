@@ -93,6 +93,35 @@ public sealed class SrtValidatorTests
     }
 }
 
+public sealed class TranscriptTextValidatorTests
+{
+    [Fact]
+    public void Rejects_blank_audio_dominant_output()
+    {
+        var text = string.Join('\n', Enumerable.Repeat("[BLANK_AUDIO]", 40))
+            + "\nДобрый вечер.\nСпасибо.";
+        Assert.False(TranscriptTextValidator.TryValidate(text, out var error));
+        Assert.Equal("blank-audio-dominant", error);
+    }
+
+    [Fact]
+    public void Rejects_long_repetition_loop()
+    {
+        var text = "Нормальное начало.\n"
+            + string.Join('\n', Enumerable.Repeat("Да, в королеве.", 20))
+            + "\nНормальный конец.";
+        Assert.False(TranscriptTextValidator.TryValidate(text, out var error));
+        Assert.Equal("repetition-loop", error);
+    }
+
+    [Fact]
+    public void Accepts_normal_russian_transcript_with_short_interjections()
+    {
+        var text = "Добрый вечер.\nДа.\nДа.\nДа.\nСегодня разбираем вопросы обучения.\nСпасибо всем участникам.";
+        Assert.True(TranscriptTextValidator.TryValidate(text, out var error), error);
+    }
+}
+
 public sealed class WhisperPromotionTests
 {
     [Fact]

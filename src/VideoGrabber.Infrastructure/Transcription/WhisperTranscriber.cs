@@ -47,9 +47,31 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
                 null, cancellationToken).ConfigureAwait(false);
             if (!audio.IsSuccess)
                 return new(false, "Не удалось подготовить аудиодорожку для распознавания.");
+            var whisperArgs = new List<string>
+            {
+                "-m", model,
+                "-f", wav,
+                "-l", language,
+                "-otxt",
+                "-osrt",
+                "-of", temporaryBase,
+                "-t", Math.Min(6, Environment.ProcessorCount).ToString(),
+                "-ng",
+                "-np",
+                "-sns"
+            };
+            if (tools.WhisperVadAvailable)
+            {
+                whisperArgs.AddRange([
+                    "--vad",
+                    "--vad-model", tools.WhisperVadModel,
+                    "--vad-min-silence-duration-ms", "300",
+                    "--vad-max-speech-duration-s", "30"
+                ]);
+            }
+
             var result = await runner.RunAsync(new ProcessSpec(executable,
-                ["-m", model, "-f", wav, "-l", language, "-otxt", "-osrt", "-of", temporaryBase,
-                    "-t", Math.Min(6, Environment.ProcessorCount).ToString(), "-ng", "-np"],
+                whisperArgs,
                 Path.GetDirectoryName(executable), SuppressOutputLogging: true), null, cancellationToken).ConfigureAwait(false);
             if (!result.IsSuccess || !File.Exists(textPath) || !File.Exists(srtPath))
                 return new(false, "Whisper не создал оба результата. Проверьте совместимость EXE и модели.");
@@ -77,6 +99,20 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
                 retainArtifacts = true;
                 DiagnosticHub.Log.Write("transcription.validate", "failed", "kind=empty-text");
                 return PreservedFailure("Речь не распознана; пустой текст не считается успешным результатом.", directory);
+            }
+            if (!TranscriptTextValidator.TryValidate(transcript, out var textValidationError))
+            {
+                retainArtifacts = true;
+                DiagnosticHub.Log.Write("transcription.validate", "failed",
+                    "kind=" + (textValidationError ?? "text-quality"));
+                return PreservedFailure(
+                    textValidationError switch
+                    {
+                        "blank-audio-dominant" => "Whisper почти не распознал речь: результат состоит преимущественно из [BLANK_AUDIO].",
+                        "repetition-loop" or "repetition-dominant" => "Whisper попал в повторяющуюся текстовую петлю; такой результат не считается готовой транскрибацией.",
+                        _ => "Текст Whisper не прошёл проверку качества."
+                    },
+                    directory);
             }
             if (!SrtValidator.TryValidate(subtitles, mediaDuration, out var validationError))
             {
