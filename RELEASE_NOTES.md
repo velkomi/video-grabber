@@ -1,4 +1,15 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.44-rc.1] - 2026-09-27
+
+- Status: course-transcription opt-in / live-progress / throughput follow-up.
+- Whole-course transcription is now an explicit pre-run checkbox. New installs default to off; the selection is remembered, locked while the course is active, and actually gates whether Whisper is started/waited at completion.
+- The UI explains that download and transcription overlap, but CPU load rises and the final completion moment can be delayed by hours on large courses.
+- The active transcription item is now persisted independently of queue-enqueue UI updates, fixing the misleading 0/576 «stuck» appearance while Whisper is actually processing a long first video.
+- Course transcription UI shows current ordinal, filename, retry attempt, live elapsed time and queue size, refreshed every second.
+- Initial backfill scans the full course first and starts exactly one ordered Whisper worker afterwards, so queue construction cannot overwrite the active-item display.
+- Whisper uses up to 6 CPU threads. On the target i5-12400F the real 30-second benchmark improved from 4.36s at 4 threads to 3.36s at 6 threads (~23% faster).
+- Live diagnosis: the first queued video is 03h10m14s / 1.64 GB; whisper-cli remained CPU-active and had prepared a 365 MB WAV, so the prior UI symptom was presentation rather than a stalled process.
+
 ## [0.1.10-preview.43-rc.1] - 2026-09-27
 
 - Status: automatic whole-course transcription pipeline.

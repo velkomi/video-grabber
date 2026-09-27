@@ -49,7 +49,7 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
                 return new(false, "Не удалось подготовить аудиодорожку для распознавания.");
             var result = await runner.RunAsync(new ProcessSpec(executable,
                 ["-m", model, "-f", wav, "-l", language, "-otxt", "-osrt", "-of", temporaryBase,
-                    "-t", Math.Min(4, Environment.ProcessorCount).ToString(), "-ng", "-np"],
+                    "-t", Math.Min(6, Environment.ProcessorCount).ToString(), "-ng", "-np"],
                 Path.GetDirectoryName(executable), SuppressOutputLogging: true), null, cancellationToken).ConfigureAwait(false);
             if (!result.IsSuccess || !File.Exists(textPath) || !File.Exists(srtPath))
                 return new(false, "Whisper не создал оба результата. Проверьте совместимость EXE и модели.");

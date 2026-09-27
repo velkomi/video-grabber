@@ -120,6 +120,39 @@ public sealed partial class MainWindow
         _courseQualityBox.Items.Add(ComboItem("Лучшее доступное", "best"));
         content.Children.Add(_courseQualityBox);
 
+        _courseTranscriptionCheckBox = new CheckBox
+        {
+            Content = "Транскрибировать видео курса в TXT",
+            IsChecked = _preferences.CourseAutoTranscription,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        _courseTranscriptionOptionHint = MutedText("");
+        void RefreshCourseTranscriptionOptionHint()
+        {
+            var enabled = _courseTranscriptionCheckBox.IsChecked == true;
+            _courseTranscriptionOptionHint.Text = enabled
+                ? "Включено: каждое скачанное видео попадёт в фоновую очередь Whisper. Следующее видео продолжит скачиваться параллельно, но полное завершение курса будет ждать готовности TXT. Процесс заметно нагружает CPU и для больших курсов может увеличить общее время на несколько часов."
+                : "Выключено: VideoGrabber скачает и проверит курс без фоновой транскрибации. TXT автоматически создаваться не будут.";
+        }
+        _courseTranscriptionCheckBox.Checked += (_, _) =>
+        {
+            _preferences.CourseAutoTranscription = true;
+            PersistUiPreferences();
+            RefreshCourseTranscriptionOptionHint();
+            UpdateCourseTranscriptionSelectionUi();
+        };
+        _courseTranscriptionCheckBox.Unchecked += (_, _) =>
+        {
+            _preferences.CourseAutoTranscription = false;
+            PersistUiPreferences();
+            RefreshCourseTranscriptionOptionHint();
+            UpdateCourseTranscriptionSelectionUi();
+        };
+        RefreshCourseTranscriptionOptionHint();
+        content.Children.Add(_courseTranscriptionCheckBox);
+        content.Children.Add(_courseTranscriptionOptionHint);
+
         _courseDownloadButton = PrimaryButton("Скачать весь курс");
         _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
 
@@ -223,6 +256,7 @@ public sealed partial class MainWindow
         content.Children.Add(_courseTranscriptionProgressTrack);
         content.Children.Add(_courseTranscriptionProgressPercent);
         content.Children.Add(_courseTranscriptionCurrentText);
+        UpdateCourseTranscriptionSelectionUi();
 
         content.Children.Add(MutedText(
             "VideoGrabber проходит доступные модули и уроки текущего GetCourse-тренинга. " +

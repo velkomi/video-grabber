@@ -16,6 +16,9 @@ public sealed partial class MainWindow
     private Button _courseResumeButton = null!;
     private Button _courseClearCacheButton = null!;
     private ComboBox _courseQualityBox = null!;
+    private CheckBox _courseTranscriptionCheckBox = null!;
+    private TextBlock _courseTranscriptionOptionHint = null!;
+    private bool _courseTranscriptionEnabledForRun;
     private Grid _courseProgressTrack = null!;
     private Border _courseProgressFill = null!;
     private TextBlock _courseProgressPercent = null!;
@@ -50,7 +53,7 @@ public sealed partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
         _lastDownloadedMediaPath = path;
-        if (_courseDownloadActive)
+        if (_courseDownloadActive && _courseTranscriptionEnabledForRun)
             EnqueueCourseTranscription(path);
         if (_transcribeDownloadedButton is not null)
         {
@@ -898,6 +901,13 @@ public sealed partial class MainWindow
         if (!resume)
             _courseActiveQuality = SelectedCourseQuality();
         SetCourseQualitySelection(_courseActiveQuality);
+        _courseTranscriptionEnabledForRun =
+            _courseTranscriptionCheckBox?.IsChecked == true;
+        if (!_courseTranscriptionEnabledForRun)
+        {
+            CancelCourseTranscription();
+            UpdateCourseTranscriptionSelectionUi();
+        }
 
         var originalCookieIndex = _cookiesBox.SelectedIndex;
         SelectEmbeddedBrowserSession();
@@ -953,7 +963,13 @@ public sealed partial class MainWindow
             }
 
             _courseTotalLessons = plan.Lessons.Length;
-            InitializeCourseTranscriptionPipeline(rootFolder, token);
+            if (_courseTranscriptionEnabledForRun)
+                InitializeCourseTranscriptionPipeline(rootFolder, token);
+            else
+            {
+                CancelCourseTranscription();
+                UpdateCourseTranscriptionSelectionUi();
+            }
             ClearCourseNetworkWarning();
             _courseCurrentLessonIndex = Math.Clamp(
                 _courseResumeLessonIndex,
@@ -980,8 +996,11 @@ public sealed partial class MainWindow
                 {
                     _courseResumeAvailable = true;
                     SetCourseProgressError(
-                        "Часть видео курса ещё не скачана. Для их докачки откройте GetCourse во встроенном браузере и войдите на сайт. Уже имеющиеся видео продолжают транскрибироваться локально.");
-                    await WaitForCourseTranscriptionAsync(token);
+                        _courseTranscriptionEnabledForRun
+                            ? "Часть видео курса ещё не скачана. Для их докачки откройте GetCourse во встроенном браузере и войдите на сайт. Уже имеющиеся видео продолжают транскрибироваться локально."
+                            : "Часть видео курса ещё не скачана. Для их докачки откройте GetCourse во встроенном браузере и войдите на сайт. Транскрибация для этого запуска выключена.");
+                    if (_courseTranscriptionEnabledForRun)
+                        await WaitForCourseTranscriptionAsync(token);
                     return;
                 }
 
@@ -993,23 +1012,34 @@ public sealed partial class MainWindow
 
             if (_courseCompletedLessons.Count >= plan.Lessons.Length)
             {
-                _courseStageText.Text =
-                    $"Видео курса готовы: {plan.Lessons.Length}/{plan.Lessons.Length}. Завершаю фоновую транскрибацию…";
-                await WaitForCourseTranscriptionAsync(token);
-
                 _courseResumeLessonIndex = plan.Lessons.Length;
-                if (CourseTranscriptionFailureCount == 0)
+                if (_courseTranscriptionEnabledForRun)
                 {
-                    _courseResumeAvailable = false;
-                    SetCourseProgressFinished(
-                        $"Готово: сохранено {plan.Lessons.Length}/{plan.Lessons.Length} уроков и все видео транскрибированы.");
-                    ScheduleCompletionActionAfterDownloads("course");
+                    _courseStageText.Text =
+                        $"Видео курса готовы: {plan.Lessons.Length}/{plan.Lessons.Length}. Завершаю фоновую транскрибацию…";
+                    await WaitForCourseTranscriptionAsync(token);
+
+                    if (CourseTranscriptionFailureCount == 0)
+                    {
+                        _courseResumeAvailable = false;
+                        SetCourseProgressFinished(
+                            $"Готово: сохранено {plan.Lessons.Length}/{plan.Lessons.Length} уроков и все видео транскрибированы.");
+                        ScheduleCompletionActionAfterDownloads("course");
+                    }
+                    else
+                    {
+                        _courseResumeAvailable = true;
+                        SetCourseProgressFinished(
+                            $"Видео курса сохранены полностью. Транскрибация завершилась с ошибками: {CourseTranscriptionFailureCount}. Нажмите «Продолжить», чтобы повторить только отсутствующие TXT.");
+                    }
                 }
                 else
                 {
-                    _courseResumeAvailable = true;
+                    _courseResumeAvailable = false;
                     SetCourseProgressFinished(
-                        $"Видео курса сохранены полностью. Транскрибация завершилась с ошибками: {CourseTranscriptionFailureCount}. Нажмите «Продолжить», чтобы повторить только отсутствующие TXT.");
+                        $"Готово: сохранено {plan.Lessons.Length}/{plan.Lessons.Length} уроков. Транскрибация была выключена.");
+                    UpdateCourseTranscriptionSelectionUi();
+                    ScheduleCompletionActionAfterDownloads("course");
                 }
             }
             else
@@ -2088,7 +2118,11 @@ public sealed partial class MainWindow
     private void CourseElapsedTimer_Tick(
         Microsoft.UI.Dispatching.DispatcherQueueTimer sender,
         object args)
-        => UpdateCourseElapsed();
+    {
+        UpdateCourseElapsed();
+        if (IsCourseTranscriptionBusy)
+            UpdateCourseTranscriptionUi();
+    }
 
     private void UpdateCourseElapsed()
     {
@@ -2807,6 +2841,9 @@ public sealed partial class MainWindow
 
         if (_courseQualityBox is not null)
             _courseQualityBox.IsEnabled = !busy;
+
+        if (_courseTranscriptionCheckBox is not null)
+            _courseTranscriptionCheckBox.IsEnabled = !busy;
 
         if (_courseResumeButton is not null)
             _courseResumeButton.IsEnabled = !busy;

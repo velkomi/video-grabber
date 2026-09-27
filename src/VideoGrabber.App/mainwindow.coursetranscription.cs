@@ -17,6 +17,10 @@ public sealed partial class MainWindow
     private int _courseTranscriptionCompleted;
     private int _courseTranscriptionFailed;
     private double _courseTranscriptionPercent;
+    private string? _courseTranscriptionCurrentMedia;
+    private DateTimeOffset _courseTranscriptionCurrentStartedUtc;
+    private int _courseTranscriptionCurrentOrdinal;
+    private int _courseTranscriptionCurrentAttempt;
 
     private Grid _courseTranscriptionProgressTrack = null!;
     private Border _courseTranscriptionProgressFill = null!;
@@ -64,6 +68,10 @@ public sealed partial class MainWindow
             _courseTranscriptionFailed = 0;
             _courseTranscriptionActive = false;
             _courseTranscriptionWorkerTask = null;
+            _courseTranscriptionCurrentMedia = null;
+            _courseTranscriptionCurrentStartedUtc = default;
+            _courseTranscriptionCurrentOrdinal = 0;
+            _courseTranscriptionCurrentAttempt = 0;
             _courseTranscriptionCancellation =
                 CancellationTokenSource.CreateLinkedTokenSource(
                     _windowLifetime.Token,
@@ -81,10 +89,11 @@ public sealed partial class MainWindow
                          .OrderBy(
                              path => path,
                              StringComparer.OrdinalIgnoreCase))
-                EnqueueCourseTranscription(path);
+                EnqueueCourseTranscription(path, startWorker: false);
         }
 
         UpdateCourseTranscriptionUi();
+        EnsureCourseTranscriptionWorker();
     }
 
     private static bool IsCourseTranscribableVideo(string path)
@@ -140,7 +149,9 @@ public sealed partial class MainWindow
         }
     }
 
-    private void EnqueueCourseTranscription(string mediaPath)
+    private void EnqueueCourseTranscription(
+        string mediaPath,
+        bool startWorker = true)
     {
         if (!IsCourseTranscribableVideo(mediaPath))
             return;
@@ -166,7 +177,7 @@ public sealed partial class MainWindow
         }
 
         UpdateCourseTranscriptionUi();
-        if (shouldStart)
+        if (shouldStart && startWorker)
             EnsureCourseTranscriptionWorker();
     }
 
@@ -208,6 +219,13 @@ public sealed partial class MainWindow
                 {
                     mediaPath = _courseTranscriptionQueue.Dequeue();
                     _courseTranscriptionActive = true;
+                    _courseTranscriptionCurrentMedia = mediaPath;
+                    _courseTranscriptionCurrentStartedUtc = DateTimeOffset.UtcNow;
+                    _courseTranscriptionCurrentOrdinal =
+                        _courseTranscriptionCompleted
+                        + _courseTranscriptionFailed
+                        + 1;
+                    _courseTranscriptionCurrentAttempt = 1;
                 }
             }
 
@@ -217,12 +235,15 @@ public sealed partial class MainWindow
                 return;
             }
 
-            UpdateCourseTranscriptionUi(mediaPath);
+            UpdateCourseTranscriptionUi();
 
             var success = false;
             for (var attempt = 1; attempt <= 2; attempt++)
             {
                 token.ThrowIfCancellationRequested();
+                lock (_courseTranscriptionGate)
+                    _courseTranscriptionCurrentAttempt = attempt;
+                UpdateCourseTranscriptionUi();
                 if (CourseTranscriptLooksReady(mediaPath))
                 {
                     success = true;
@@ -263,13 +284,17 @@ public sealed partial class MainWindow
                     _courseTranscriptionCompleted++;
                 else
                     _courseTranscriptionFailed++;
+                _courseTranscriptionCurrentMedia = null;
+                _courseTranscriptionCurrentStartedUtc = default;
+                _courseTranscriptionCurrentOrdinal = 0;
+                _courseTranscriptionCurrentAttempt = 0;
             }
 
             DiagnosticHub.Log.Write(
                 "course.transcription",
                 success ? "succeeded" : "failed",
                 "file=" + Path.GetFileName(mediaPath));
-            UpdateCourseTranscriptionUi(mediaPath);
+            UpdateCourseTranscriptionUi();
         }
     }
 
@@ -442,8 +467,37 @@ public sealed partial class MainWindow
         }
     }
 
-    private void UpdateCourseTranscriptionUi(
-        string? currentMedia = null)
+    private void UpdateCourseTranscriptionSelectionUi()
+    {
+        if (_courseTranscriptionStageText is null
+            || _courseTranscriptionCurrentText is null
+            || _courseTranscriptionProgressPercent is null
+            || _courseTranscriptionProgressTrack is null
+            || _courseTranscriptionProgressFill is null
+            || IsCourseTranscriptionBusy)
+            return;
+
+        if (_courseTranscriptionCheckBox?.IsChecked == true)
+        {
+            _courseTranscriptionStageText.Text =
+                "Фоновая транскрибация включена для следующего запуска";
+            _courseTranscriptionCurrentText.Text =
+                "После загрузки ролика Whisper создаст рядом TXT с таким же именем. Скачивание продолжится параллельно.";
+        }
+        else
+        {
+            _courseTranscriptionStageText.Text =
+                "Фоновая транскрибация курса выключена";
+            _courseTranscriptionCurrentText.Text =
+                "Поставьте галочку «Транскрибировать видео курса в TXT», если нужны текстовые файлы рядом с видео.";
+        }
+
+        _courseTranscriptionPercent = 0;
+        _courseTranscriptionProgressPercent.Text = "0%";
+        _courseTranscriptionProgressFill.Width = 0;
+    }
+
+    private void UpdateCourseTranscriptionUi()
     {
         if (DispatcherQueue is null)
             return;
@@ -462,6 +516,10 @@ public sealed partial class MainWindow
             int failed;
             int queued;
             bool active;
+            string? activeMedia;
+            DateTimeOffset activeStartedUtc;
+            int activeOrdinal;
+            int activeAttempt;
             lock (_courseTranscriptionGate)
             {
                 total = _courseTranscriptionTotal;
@@ -469,6 +527,10 @@ public sealed partial class MainWindow
                 failed = _courseTranscriptionFailed;
                 queued = _courseTranscriptionQueue.Count;
                 active = _courseTranscriptionActive;
+                activeMedia = _courseTranscriptionCurrentMedia;
+                activeStartedUtc = _courseTranscriptionCurrentStartedUtc;
+                activeOrdinal = _courseTranscriptionCurrentOrdinal;
+                activeAttempt = _courseTranscriptionCurrentAttempt;
             }
 
             var finished = completed + failed;
@@ -486,6 +548,7 @@ public sealed partial class MainWindow
                 total == 0
                     ? "0%"
                     : $"{_courseTranscriptionPercent:0.0}% · текстов {completed}/{total}"
+                      + (active && activeOrdinal > 0 ? $" · сейчас {activeOrdinal}/{total}" : string.Empty)
                       + (failed > 0 ? $" · ошибок {failed}" : string.Empty);
 
             if (total == 0)
@@ -499,11 +562,21 @@ public sealed partial class MainWindow
             {
                 _courseTranscriptionStageText.Text =
                     "Фоновая транскрибация курса";
+                var elapsed = activeStartedUtc == default
+                    ? TimeSpan.Zero
+                    : DateTimeOffset.UtcNow - activeStartedUtc;
+                if (elapsed < TimeSpan.Zero)
+                    elapsed = TimeSpan.Zero;
+                var elapsedText =
+                    $"{(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}";
                 _courseTranscriptionCurrentText.Text =
-                    (string.IsNullOrWhiteSpace(currentMedia)
-                        ? "Обрабатываю очередь по порядку."
-                        : "Сейчас: "
-                          + Path.GetFileName(currentMedia))
+                    (!string.IsNullOrWhiteSpace(activeMedia)
+                        ? $"Видео {Math.Max(1, activeOrdinal)} из {total} · попытка {Math.Max(1, activeAttempt)}/2"
+                          + Environment.NewLine
+                          + "Сейчас: " + Path.GetFileName(activeMedia)
+                          + Environment.NewLine
+                          + "Прошло: " + elapsedText
+                        : "Формирую и запускаю очередь по порядку.")
                     + Environment.NewLine
                     + $"В очереди: {queued}. Скачивание курса продолжается параллельно.";
             }

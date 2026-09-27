@@ -32,6 +32,7 @@ public sealed partial class MainWindow
         public LogMode LogMode { get; set; } = LogMode.Full;
         public string DownloadFolder { get; set; } = "";
         public string CompletionAction { get; set; } = "none";
+        public bool CourseAutoTranscription { get; set; }
     }
 
     private Border BuildMediaActionsCard()
