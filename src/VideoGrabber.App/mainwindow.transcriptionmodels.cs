@@ -243,59 +243,63 @@ public sealed partial class MainWindow
                 _whisperModelDownloadPercent = 0;
                 UpdateWhisperModelUi();
 
-                using var http = new HttpClient
+                long total;
+                string actualSha;
+                using (var http = new HttpClient
+                       {
+                           Timeout = Timeout.InfiniteTimeSpan
+                       })
+                using (var response = await http.GetAsync(
+                           profile.DownloadUrl,
+                           HttpCompletionOption.ResponseHeadersRead,
+                           token))
                 {
-                    Timeout = Timeout.InfiniteTimeSpan
-                };
-                using var response = await http.GetAsync(
-                    profile.DownloadUrl,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    token);
-                response.EnsureSuccessStatusCode();
+                    response.EnsureSuccessStatusCode();
 
-                await using var input =
-                    await response.Content.ReadAsStreamAsync(token);
-                await using var output = new FileStream(
-                    temporary,
-                    FileMode.CreateNew,
-                    FileAccess.Write,
-                    FileShare.None,
-                    1024 * 1024,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan);
-                using var hash =
-                    IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                    await using var input =
+                        await response.Content.ReadAsStreamAsync(token);
+                    await using var output = new FileStream(
+                        temporary,
+                        FileMode.CreateNew,
+                        FileAccess.Write,
+                        FileShare.None,
+                        1024 * 1024,
+                        FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    using var hash =
+                        IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
-                var buffer = new byte[1024 * 1024];
-                long total = 0;
-                var lastPercent = -1;
-                while (true)
-                {
-                    var read = await input.ReadAsync(buffer, token);
-                    if (read <= 0)
-                        break;
-
-                    await output.WriteAsync(
-                        buffer.AsMemory(0, read),
-                        token);
-                    hash.AppendData(buffer, 0, read);
-                    total += read;
-
-                    var percent = (int)Math.Clamp(
-                        total * 100L / profile.ExpectedBytes,
-                        0,
-                        100);
-                    if (percent != lastPercent)
+                    var buffer = new byte[1024 * 1024];
+                    total = 0;
+                    var lastPercent = -1;
+                    while (true)
                     {
-                        lastPercent = percent;
-                        _whisperModelDownloadPercent = percent;
-                        UpdateWhisperModelUi();
-                    }
-                }
+                        var read = await input.ReadAsync(buffer, token);
+                        if (read <= 0)
+                            break;
 
-                await output.FlushAsync(token);
-                var actualSha = Convert.ToHexString(
-                        hash.GetHashAndReset())
-                    .ToLowerInvariant();
+                        await output.WriteAsync(
+                            buffer.AsMemory(0, read),
+                            token);
+                        hash.AppendData(buffer, 0, read);
+                        total += read;
+
+                        var percent = (int)Math.Clamp(
+                            total * 100L / profile.ExpectedBytes,
+                            0,
+                            100);
+                        if (percent != lastPercent)
+                        {
+                            lastPercent = percent;
+                            _whisperModelDownloadPercent = percent;
+                            UpdateWhisperModelUi();
+                        }
+                    }
+
+                    await output.FlushAsync(token);
+                    actualSha = Convert.ToHexString(
+                            hash.GetHashAndReset())
+                        .ToLowerInvariant();
+                }
 
                 if (total != profile.ExpectedBytes)
                     throw new IOException(

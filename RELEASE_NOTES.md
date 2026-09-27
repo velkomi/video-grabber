@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.50-rc.1] - 2026-09-27
+
+- Status: verified Whisper model downloader Windows promotion fix.
+- The first real Small-model selection reached the end of network transfer but Windows rejected atomic promotion because the `.download` FileStream was still open with `FileShare.None`.
+- The download/read/hash streams are now disposed before size/SHA verification and `File.Move`; failed/cancelled partials are still cleaned and never replace a valid model.
+- Targeted model-catalog/course-wiring tests: 6/6 PASS; Local build 0 warnings/errors.
+
 ## [0.1.10-preview.49-rc.1] - 2026-09-27
 
 - Status: selectable Whisper model profiles with verified on-demand download.
