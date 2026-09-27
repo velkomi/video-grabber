@@ -694,6 +694,26 @@ public sealed partial class MainWindow
         }
         return removed;
     }
+    private static int CountReadyCourseMediaFiles(string folder)
+    {
+        if (!Directory.Exists(folder)) return 0;
+        var mediaExtensions = new HashSet<string>(
+            [".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3", ".aac", ".opus", ".ts"],
+            StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            return Directory.EnumerateFiles(folder, "*", SearchOption.TopDirectoryOnly)
+                .Count(path =>
+                    mediaExtensions.Contains(Path.GetExtension(path))
+                    && !IsCourseTemporaryFile(path)
+                    && new FileInfo(path).Length > 0);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
     private static bool CourseLessonLooksCompleteOnDisk(
         string courseRoot,
         GetCourseLessonPlan lesson)
@@ -791,9 +811,9 @@ public sealed partial class MainWindow
                 .Where(path => mediaExtensions.Contains(Path.GetExtension(path))
                     && new FileInfo(path).Length > 0)
                 .ToArray();
-            if (readyMedia.Length < manifest.ExpectedVideoCount)
+            if (readyMedia.Length != manifest.ExpectedVideoCount)
             {
-                reason = $"media-missing:{readyMedia.Length}/{manifest.ExpectedVideoCount}";
+                reason = $"media-count-mismatch:{readyMedia.Length}/{manifest.ExpectedVideoCount}";
                 return false;
             }
 
@@ -1428,9 +1448,10 @@ public sealed partial class MainWindow
                     ex.GetType().Name);
             }
 
+            var existingMediaCount = CountReadyCourseMediaFiles(lessonFolder);
             var expectedVideoCount = Math.Max(
-                candidates.Count,
-                declaredVideoCount);
+                Math.Max(candidates.Count, declaredVideoCount),
+                existingMediaCount);
             var quality = CourseQuality();
             await CourseLessonVerificationManifestStore.SaveAtomicAsync(
                 lessonFolder,

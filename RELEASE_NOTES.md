@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.42-rc.1] - 2026-09-27
+
+- Status: final whole-course integrity follow-up.
+- Course verification now treats any manifest/media count mismatch as incomplete, including the previously unprotected case where a valid downloaded video exists but an old manifest expected zero.
+- Revisited lessons preserve existing valid media in the new expected-video count: `max(current candidates, saved HTML video evidence, ready media files)`.
+- Live archive audit: 161/161 lessons present, zero lessons below expected media/assets; 576/576 media files passed ffprobe with zero invalid containers. One 30-second historical video was the only file present beyond the old 575-video manifest total and is now covered by the new rule.
+
 ## [0.1.10-preview.41-rc.1] - 2026-09-27
 
 - Status: GetCourse/Kinescope course-integrity hotfix.

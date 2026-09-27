@@ -442,6 +442,8 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.True(save >= 0 && media > save);
         Assert.Contains("Lesson archived without declared video blocks", course);
         Assert.Contains("CourseVideoBlockEvidence.CountDeclaredVideoBlocks", course);
+        Assert.Contains("CountReadyCourseMediaFiles", course);
+        Assert.Contains("media-count-mismatch", course);
         Assert.Contains("declared=", course);
         Assert.Contains("lesson remains incomplete", course);
         Assert.Contains("CourseLessonArchive.WriteDocx", archive);
