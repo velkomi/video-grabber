@@ -4,10 +4,21 @@
 
 ## [Unreleased]
 
+## [0.1.10-preview.41-rc.1] - 2026-09-27
+
 ### Исправлено
 
+- GetCourse whole-course больше не считает урок завершённым только потому, что динамический плеер не успел отдать media candidate: сохранённая страница дополнительно проверяется по реальным блокам `o-lt-lesson-video`, а старый manifest с `expectedVideoCount=0` автоматически признаётся устаревшим, если видеоблоки на странице есть;
+- Kinescope `kinescope.io/embed/...` распознаётся напрямую из DOM и передаётся встроенному yt-dlp даже когда сам iframe WebView показывает «Подключение было сброшено»; это убирает зависимость скачивания от успешной отрисовки Kinescope-плеера;
+- если часть заявленных на странице видео не удалось обнаружить, урок остаётся незавершённым и попадает в автоматический повтор вместо ложного финального PASS;
 - официальный Local/Managed release теперь fail-closed требует полный bundled runtime (yt-dlp, FFmpeg/FFprobe, Deno, Whisper и ggml-base); обычный GitHub Actions self-contained ZIP явно помечен как CI smoke и больше не может быть принят за официальный дистрибутив;
 - публичный reverse proxy передаёт Windows ZIP и защищённые browser-download артефакты потоково без proxy buffering/temp-file spill, поэтому большие файлы больше не обрываются при скачивании через HTTPS-домен VideoGrabber.
+
+### Проверено
+
+- аудит существующего полного архива выявил восемь уроков в модулях 7–8, где сохранённая HTML-страница содержит суммарно 149 GetCourse-видеоблоков, а старый `VG.verify.json` ошибочно содержал нулевой expected video count; новый integrity gate больше не принимает такое состояние;
+- Kinescope embed из проблемного урока успешно определяется текущим bundled yt-dlp напрямую, без необходимости успешно отрисовать iframe;
+- Infrastructure regression: 686 passed, 14 предусмотренных live-tool skips, 0 failed; Local и Managed Release build: 0 warnings / 0 errors.
 
 ## [0.1.10-preview.40-rc.1] - 2026-09-26
 

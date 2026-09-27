@@ -440,7 +440,10 @@ public sealed partial class BrowserWiringRegressionTests
         var save = course.IndexOf("SaveCourseLessonArchiveAsync", StringComparison.Ordinal);
         var media = course.IndexOf("WaitForCourseMediaAsync", save, StringComparison.Ordinal);
         Assert.True(save >= 0 && media > save);
-        Assert.Contains("Lesson archived without downloadable video", course);
+        Assert.Contains("Lesson archived without declared video blocks", course);
+        Assert.Contains("CourseVideoBlockEvidence.CountDeclaredVideoBlocks", course);
+        Assert.Contains("declared=", course);
+        Assert.Contains("lesson remains incomplete", course);
         Assert.Contains("CourseLessonArchive.WriteDocx", archive);
         Assert.Contains("CookieManager", archive);
         Assert.Contains("Страница.html", archive);
@@ -469,6 +472,8 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.True(domResolve >= 0 && fallback > domResolve);
 
         Assert.Contains("data-iframe-src", media);
+        Assert.Contains("kinescope.io/embed/", media);
+        Assert.Contains("Kinescope embed resolved directly from course DOM", media);
         Assert.Contains("GetCoursePlayerConfigParser.TryExtractMasterPlaylist", media);
         Assert.Contains("HlsManifestParser.TryParse", media);
         Assert.Contains("new RouteConnector(_routePolicy)", media);

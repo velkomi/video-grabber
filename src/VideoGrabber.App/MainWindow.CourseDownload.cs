@@ -775,6 +775,15 @@ public sealed partial class MainWindow
                 return false;
             }
 
+            var archivedHtml = Path.Combine(folder, "Страница.html");
+            var declaredVideoCount = CourseVideoBlockEvidence.CountDeclaredVideoBlocks(
+                File.ReadAllText(archivedHtml));
+            if (declaredVideoCount > manifest.ExpectedVideoCount)
+            {
+                reason = $"video-evidence-mismatch:{manifest.ExpectedVideoCount}/{declaredVideoCount}";
+                return false;
+            }
+
             var mediaExtensions = new HashSet<string>(
                 [".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3", ".aac", ".opus", ".ts"],
                 StringComparer.OrdinalIgnoreCase);
@@ -1403,13 +1412,32 @@ public sealed partial class MainWindow
             if (candidates.Count == 0)
                 candidates = await WaitForCourseMediaAsync(token);
 
+            var archivedHtml = Path.Combine(lessonFolder, "Страница.html");
+            var declaredVideoCount = 0;
+            try
+            {
+                if (File.Exists(archivedHtml))
+                    declaredVideoCount = CourseVideoBlockEvidence.CountDeclaredVideoBlocks(
+                        await File.ReadAllTextAsync(archivedHtml, token));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DiagnosticHub.Log.Write(
+                    "course.media.evidence",
+                    "failed",
+                    ex.GetType().Name);
+            }
+
+            var expectedVideoCount = Math.Max(
+                candidates.Count,
+                declaredVideoCount);
             var quality = CourseQuality();
             await CourseLessonVerificationManifestStore.SaveAtomicAsync(
                 lessonFolder,
                 new CourseLessonVerificationManifest(
                     CourseLessonVerificationManifestStore.CurrentSchemaVersion,
                     lesson.Uri.AbsoluteUri,
-                    candidates.Count,
+                    expectedVideoCount,
                     archive.ExpectedAssets,
                     quality,
                     DateTimeOffset.UtcNow),
@@ -1417,23 +1445,43 @@ public sealed partial class MainWindow
 
             if (candidates.Count == 0)
             {
+                if (expectedVideoCount == 0)
+                {
+                    if (archive.PageSaved && archive.AssetErrors == 0)
+                        await MarkCourseLessonCompletedAsync(
+                            lessonKey,
+                            lessonIndex,
+                            plan.Lessons.Length,
+                            rootFolder,
+                            lesson);
 
-                if (archive.PageSaved && archive.AssetErrors == 0)
-                    await MarkCourseLessonCompletedAsync(
-                        lessonKey,
-                        lessonIndex,
-                        plan.Lessons.Length,
-                        rootFolder,
-                        lesson);
-
-                DiagnosticHub.Log.Write(
-                    "course.lesson",
-                    archive.PageSaved ? "succeeded" : "observed",
-                    "Lesson archived without downloadable video");
+                    DiagnosticHub.Log.Write(
+                        "course.lesson",
+                        archive.PageSaved ? "succeeded" : "observed",
+                        "Lesson archived without declared video blocks");
+                }
+                else
+                {
+                    videoErrors += expectedVideoCount;
+                    DiagnosticHub.Log.Write(
+                        "course.media.missing",
+                        "observed",
+                        $"declared={expectedVideoCount} discovered=0; lesson remains incomplete");
+                }
                 continue;
             }
 
-            var lessonVideoErrors = 0;
+            var lessonVideoErrors = Math.Max(
+                0,
+                expectedVideoCount - candidates.Count);
+            if (lessonVideoErrors > 0)
+            {
+                videoErrors += lessonVideoErrors;
+                DiagnosticHub.Log.Write(
+                    "course.media.missing",
+                    "observed",
+                    $"declared={expectedVideoCount} discovered={candidates.Count}; lesson remains incomplete");
+            }
             for (var videoIndex = 0;
                  videoIndex < candidates.Count;
                  videoIndex++)

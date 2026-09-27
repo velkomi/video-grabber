@@ -1,4 +1,13 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.41-rc.1] - 2026-09-27
+
+- Status: GetCourse/Kinescope course-integrity hotfix.
+- Whole-course integrity now cross-checks saved GetCourse HTML for declared `o-lt-lesson-video` blocks. A stale lesson manifest with zero expected videos can no longer make a video lesson appear complete.
+- Kinescope embed URLs are discovered directly from lesson DOM and handed to the normal yt-dlp browser-download pipeline, so a WebView iframe reset no longer prevents extraction when Kinescope itself remains downloadable.
+- Partial discovery is fail-closed: when the page declares more video blocks than VideoGrabber resolved, the lesson stays incomplete and automatic course recovery revisits it.
+- Live archive audit found eight affected lessons across modules 7–8 with 149 declared video blocks and no downloaded media; this exact false-completion pattern is now detected.
+- Qualification: direct Kinescope embed probe PASS; targeted regression 13/13; full Infrastructure 686 passed / 14 expected environment skips / 0 failed; Local and Managed Release builds 0 warnings/errors.
+
 ## [0.1.10-preview.40-rc.1] - 2026-09-26
 
 - Status: YouTube SABR fallback follow-up.

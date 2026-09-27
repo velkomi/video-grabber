@@ -24,6 +24,7 @@ public sealed record MediaCandidate(
             : path.EndsWith(".mp4") || type == "video/mp4" ? "MP4"
             : path.EndsWith(".webm") || type == "video/webm" ? "WebM"
             : IsGetCoursePlayerHost(uri.IdnHost) && path.Contains("/sign-player/", StringComparison.Ordinal) ? "GetCourse"
+            : IsKinescopeEmbed(uri) ? "Kinescope"
             : null;
         if (kind is null) return false;
         candidate = new(uri, referer, kind);
@@ -37,6 +38,11 @@ public sealed record MediaCandidate(
             || HasNumberedPrefix(host, "player", ".getcourse.ru")
             || HasNumberedPrefix(host, "cf-api-", ".vhcdn.com");
     }
+    private static bool IsKinescopeEmbed(Uri uri)
+        => string.Equals(uri.IdnHost, "kinescope.io", StringComparison.OrdinalIgnoreCase)
+           && uri.AbsolutePath.StartsWith("/embed/", StringComparison.OrdinalIgnoreCase)
+           && uri.AbsolutePath.Length > "/embed/".Length;
+
     private static bool HasNumberedPrefix(string host, string prefix, string suffix)
     {
         if (!host.StartsWith(prefix, StringComparison.Ordinal) || !host.EndsWith(suffix, StringComparison.Ordinal)) return false;

@@ -31,6 +31,7 @@ public sealed partial class MainWindow
             token.ThrowIfCancellationRequested();
             Uri? playerUri = null;
             Uri? masterUri = null;
+            MediaCandidate? directCandidate = null;
 
             if (!string.IsNullOrWhiteSpace(player.url)
                 && MediaCandidate.TryCreate(
@@ -38,8 +39,34 @@ public sealed partial class MainWindow
                     "text/html",
                     lessonUri,
                     out var playerCandidate)
-                && playerCandidate?.Kind == "GetCourse")
-                playerUri = playerCandidate.Source;
+                && playerCandidate is not null)
+            {
+                if (playerCandidate.Kind == "GetCourse")
+                    playerUri = playerCandidate.Source;
+                else if (playerCandidate.Kind == "Kinescope")
+                    directCandidate = playerCandidate;
+            }
+
+            var ordinal = Math.Max(1, player.order + 1);
+            if (directCandidate is not null)
+            {
+                if (!seen.Add(directCandidate.Source.AbsoluteUri))
+                    continue;
+
+                result.Add(directCandidate with
+                {
+                    Details = "embed [course DOM]",
+                    PageOrdinal = ordinal,
+                    PageSectionTitle = string.IsNullOrWhiteSpace(player.title)
+                        ? null
+                        : player.title
+                });
+                DiagnosticHub.Log.Write(
+                    "course.media.resolve",
+                    "succeeded",
+                    "Kinescope embed resolved directly from course DOM");
+                continue;
+            }
 
             if (!string.IsNullOrWhiteSpace(player.masterUrl)
                 && UrlPolicy.TryValidate(
@@ -109,7 +136,6 @@ public sealed partial class MainWindow
                 continue;
             }
 
-            var ordinal = Math.Max(1, player.order + 1);
             result.Add(new MediaCandidate(
                 masterUri,
                 lessonUri,
@@ -149,13 +175,17 @@ public sealed partial class MainWindow
                 ...document.querySelectorAll(
                   '[data-iframe-src*="/sign-player/"],' +
                   'iframe[src*="/sign-player/"],' +
-                  '[data-master-play-list-url]')
+                  '[data-master-play-list-url],' +
+                  '[data-iframe-src*="kinescope.io/embed/"],' +
+                  '[data-src*="kinescope.io/embed/"],' +
+                  'iframe[src*="kinescope.io/embed/"]')
               ];
               const seen = new Set();
               const result = [];
               nodes.forEach((node, index) => {
                 const url =
                   node.getAttribute('data-iframe-src') ||
+                  node.getAttribute('data-src') ||
                   node.getAttribute('src') ||
                   '';
                 const masterUrl =
