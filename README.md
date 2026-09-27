@@ -39,15 +39,6 @@ VideoGrabber не обходит DRM, платный доступ или шиф�
 4. Запустите `VideoGrabber.Managed.exe`.
 5. Вставьте ссылку, выберите папку и нажмите **«Скачать»**.
 
-Контрольная сумма текущего официального архива доступна по адресу:
-
-https://videograbber.srv1902378.hstgr.cloud/download/windows/checksum
-
-Проверить локальный ZIP можно командой:
-
-~~~powershell
-Get-FileHash .\VideoGrabber-Windows.zip -Algorithm SHA256
-~~~
 
 ## Как пользоваться
 

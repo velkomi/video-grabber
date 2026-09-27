@@ -306,6 +306,26 @@ public sealed partial class MainWindow
         }
     }
 
+    private string ResolveCourseTranscriptionLanguage(string mediaPath)
+    {
+        var configured = string.IsNullOrWhiteSpace(_preferences.Language)
+            ? "auto"
+            : _preferences.Language.Trim();
+
+        if (!configured.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            return configured;
+
+        var evidence = string.Join(
+            " ",
+            _cachedCoursePlan?.CourseTitle ?? string.Empty,
+            _cachedCourseRootFolder ?? string.Empty,
+            Path.GetFileName(mediaPath));
+
+        return evidence.Any(ch => ch is >= '\u0400' and <= '\u04FF')
+            ? "ru"
+            : "auto";
+    }
+
     private async Task<bool> TranscribeCourseVideoToTextAsync(
         string mediaPath,
         CancellationToken token)
@@ -329,9 +349,7 @@ public sealed partial class MainWindow
             directory,
             ".vg-course-transcript-"
             + Guid.NewGuid().ToString("N"));
-        var language = string.IsNullOrWhiteSpace(_preferences.Language)
-            ? "auto"
-            : _preferences.Language;
+        var language = ResolveCourseTranscriptionLanguage(mediaPath);
 
         string? generatedText = null;
         string? generatedSrt = null;

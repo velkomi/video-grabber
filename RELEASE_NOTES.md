@@ -1,4 +1,12 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.47-rc.1] - 2026-09-27
+
+- Status: Russian-course language guard + public download-surface cleanup.
+- When course transcription language is configured as `auto`, Cyrillic course/path evidence selects `ru` explicitly; non-Cyrillic courses keep normal auto detection.
+- Removed the public Windows checksum/SHA button and related user-facing checksum instructions. The checksum endpoint may remain operational internally, but it is no longer linked or mentioned in the public site.
+- Removed GitHub/repository wording and raw links from packaged user-facing README/third-party notices while retaining component names and license information.
+- Regression protects public Web from checksum-link/GitHub leakage and protects course transcription from losing the Russian-language heuristic.
+
 ## [0.1.10-preview.46-rc.1] - 2026-09-27
 
 - Status: transcription quality / VAD / application-icon hotfix.

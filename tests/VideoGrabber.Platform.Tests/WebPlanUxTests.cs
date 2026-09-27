@@ -21,8 +21,10 @@ public sealed class WebPlanUxTests
         Assert.Contains("data-plan=\"full_course\"", html);
         Assert.Contains("id=\"plan-dialog\"", html);
         Assert.Contains("href=\"/download/windows\"", html);
-        Assert.Contains("href=\"/download/windows/checksum\"", html);
+        Assert.DoesNotContain("/download/windows/checksum", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SHA-256 текущей версии", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("github.com", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("github.com", js, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("github.com", program, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("VG_WINDOWS_DOWNLOAD_PATH", program);
         Assert.Contains("VideoGrabber-Windows.zip", program);

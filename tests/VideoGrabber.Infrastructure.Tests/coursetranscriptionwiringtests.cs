@@ -23,6 +23,8 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("Видео {Math.Max(1, activeOrdinal)} из {total}", transcription);
         Assert.Contains("Прошло: ", transcription);
         Assert.Contains("startWorker: false", transcription);
+        Assert.Contains("ResolveCourseTranscriptionLanguage", transcription);
+        Assert.Contains("? \"ru\"", transcription);
         Assert.Contains("Path.GetFileNameWithoutExtension(mediaPath) + \".txt\"", transcription);
         Assert.Contains("generatedSrt", transcription);
         Assert.Contains("File.Delete(path)", transcription);
