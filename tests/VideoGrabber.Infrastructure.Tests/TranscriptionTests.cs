@@ -52,6 +52,16 @@ public sealed class SrtValidatorTests
         Assert.False(SrtValidator.TryValidate(cue, 5, out _));
     }
 
+    [Fact]
+    public void Small_whisper_tail_rounding_is_tolerated_but_large_overrun_is_rejected()
+    {
+        Assert.True(SrtValidator.TryValidate(
+            "1\n00:00:09,000 --> 00:00:12,500\nTail speech\n", 10, out var toleratedError), toleratedError);
+        Assert.False(SrtValidator.TryValidate(
+            "1\n00:00:09,000 --> 00:00:13,100\nToo long\n", 10, out var rejectedError));
+        Assert.Equal("duration-bound", rejectedError);
+    }
+
     [Theory]
     [InlineData(0d)]
     [InlineData(-1d)]

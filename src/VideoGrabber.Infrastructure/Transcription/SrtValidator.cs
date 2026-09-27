@@ -5,6 +5,7 @@ namespace VideoGrabber.Infrastructure.Transcription;
 public static class SrtValidator
 {
     public const int MaxUtf8Bytes = 16 * 1024 * 1024;
+    public const double DurationTailToleranceSeconds = 3d;
     public const int MaxCues = 100_000;
     public const int MaxCueCharacters = 65_536;
 
@@ -65,7 +66,7 @@ public static class SrtValidator
         if (previousEnd >= 0 && start < previousEnd)
             return Fail("cue-overlap", out error);
         if (mediaDurationSeconds is double duration
-            && end > (duration + 1d) * 1000d)
+            && end > (duration + DurationTailToleranceSeconds) * 1000d)
             return Fail("duration-bound", out error);
 
         var textLength = 0;

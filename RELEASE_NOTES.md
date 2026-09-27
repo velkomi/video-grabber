@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.45-rc.1] - 2026-09-27
+
+- Status: Whisper SRT tail-validation hotfix.
+- A real 02h01m52s course video produced a final Whisper cue ending only 1.655 seconds beyond FFprobe duration. The old +1s bound rejected an otherwise valid transcript and needlessly started attempt 2/2.
+- SRT end-time tolerance is now 3 seconds. Larger overruns are still rejected as `duration-bound`.
+- Added regression coverage for tolerated 2.5s tail and rejected 3.1s tail.
+
 ## [0.1.10-preview.44-rc.1] - 2026-09-27
 
 - Status: course-transcription opt-in / live-progress / throughput follow-up.
