@@ -2491,10 +2491,10 @@ public sealed partial class MainWindow
 
     private void ClearCourseTemporaryFiles()
     {
-        if (_courseDownloadActive || _operations.IsBusy)
+        if (_courseDownloadActive || _operations.IsBusy || IsCourseTranscriptionBusy)
         {
             _browserHint.Text =
-                "Сначала остановите текущую загрузку кнопкой «Отменить всё», затем очищайте временные файлы.";
+                "Сначала остановите текущую загрузку или фоновую транскрибацию кнопкой «Отменить всё», затем очищайте временные файлы.";
             return;
         }
 
