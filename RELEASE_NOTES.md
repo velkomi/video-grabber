@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.53-rc.1] - 2026-09-28
+
+- Status: course background transcription is now TXT-only by design.
+- The course worker no longer requests or validates SRT, so a valid transcript is not discarded because whisper.cpp emitted out-of-order subtitle timestamps (`cue-order`).
+- Manual/local `text + SRT` remains unchanged and still requires a valid SRT.
+- Text-quality validation and the hardened retry from preview.52 remain active.
+
 ## [0.1.10-preview.52-rc.1] - 2026-09-28
 
 - Status: hardened second-pass recovery for background course transcription.

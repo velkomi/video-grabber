@@ -251,6 +251,44 @@ public sealed class WhisperPromotionTests
     }
 
     [Fact]
+    public async Task Text_only_mode_succeeds_without_srt_and_omits_subtitle_output()
+    {
+        var root = CreateRoot();
+        try
+        {
+            IReadOnlyList<string>? captured = null;
+            var runner = new ScriptedRunner((spec, token) =>
+            {
+                var args = spec.Arguments.ToList();
+                var outputIndex = args.IndexOf("-of");
+                if (outputIndex < 0)
+                    return Task.FromResult(new ProcessResult(0, "", ""));
+
+                captured = args;
+                var outputBase = args[outputIndex + 1];
+                File.WriteAllText(outputBase + ".txt",
+                    "This is a normal transcription result with meaningful speech.");
+                return Task.FromResult(new ProcessResult(0, "", ""));
+            });
+
+            var output = Path.Combine(root, "text-only");
+            var result = await Service(root, runner, 10).TranscribeAsync(
+                Path.Combine(root, "input.wav"), output,
+                Path.Combine(root, "whisper.exe"), Path.Combine(root, "model.bin"),
+                "en", CancellationToken.None, requireSubtitles: false);
+
+            Assert.True(result.Success, result.Message);
+            Assert.NotNull(result.TextPath);
+            Assert.Null(result.SubtitlesPath);
+            Assert.True(File.Exists(output + ".txt"));
+            Assert.False(File.Exists(output + ".srt"));
+            Assert.NotNull(captured);
+            Assert.DoesNotContain("-osrt", captured!);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task Held_foreign_output_is_never_overwritten_or_deleted()
     {
         var root = CreateRoot();

@@ -370,7 +370,8 @@ public sealed partial class MainWindow
                 model,
                 language,
                 token,
-                hardenedRetry);
+                hardenedRetry,
+                requireSubtitles: false);
 
             if (!result.Success
                 || string.IsNullOrWhiteSpace(result.TextPath)
