@@ -2515,6 +2515,47 @@ public sealed partial class MainWindow
 
         try
         {
+            // Whisper course transcription creates owned .vg-asr-* working
+            // directories. They contain only temporary audio/transcript evidence
+            // and must never survive an explicit cache cleanup.
+            var asrDirectories = Directory.EnumerateDirectories(
+                    root,
+                    ".vg-asr-*",
+                    SearchOption.AllDirectories)
+                .OrderByDescending(path => path.Length)
+                .ToArray();
+
+            foreach (var directory in asrDirectories)
+            {
+                try
+                {
+                    if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+                        continue;
+                    deletedFiles += Directory.EnumerateFiles(
+                        directory,
+                        "*",
+                        SearchOption.AllDirectories).Count();
+                    Directory.Delete(directory, recursive: true);
+                    deletedDirectories++;
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+
+            foreach (var file in Directory.EnumerateFiles(
+                         root,
+                         ".vg-course-transcript-*",
+                         SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.Delete(file);
+                    deletedFiles++;
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+
             var jobs = Directory.EnumerateDirectories(
                     root,
                     ".vg-job-*",
@@ -2588,7 +2629,7 @@ public sealed partial class MainWindow
             _courseStageText.Text =
                 "Временные файлы очищены.";
             _courseCurrentText.Text =
-                $"Удалено временных файлов: {deletedFiles}; пустых рабочих папок: {deletedDirectories}.";
+                $"Удалено временных файлов: {deletedFiles}; временных/пустых рабочих папок: {deletedDirectories}.";
             _courseEtaText.Text =
                 preservedReadyMedia > 0
                     ? $"Сохранено {preservedReadyMedia} готовых медиафайлов из старых рабочих папок — они не удалены."
