@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using VideoGrabber.Platform.Contracts;
 
@@ -41,7 +41,10 @@ public sealed class MediaJobExecutor(
     IWorkerArtifactResolver artifacts,
     string jobRoot,
     Uri proxyUri,
-    string? whisperModel = null) : IMediaJobExecutor
+    Uri? socialProxyUri = null,
+    string? whisperModel = null,
+    Uri? youtubePotProviderUri = null,
+    string denoPath = "/usr/local/bin/deno") : IMediaJobExecutor
 {
     public async Task<ArtifactReceipt> ExecuteAsync(
         AttemptLease lease,
@@ -87,12 +90,30 @@ public sealed class MediaJobExecutor(
 
         var outputTemplate = Path.Combine(
             attemptRoot, audioOnly ? "result.%(ext)s" : "result.%(ext)s");
+        var selectedProxy = IsSocialVideoHost(source.Source) && socialProxyUri is not null
+            ? socialProxyUri
+            : proxyUri;
         var arguments = new List<string>
         {
             "--no-playlist", "--no-progress", "--no-overwrites",
-            "--proxy", proxyUri.AbsoluteUri,
+            "--js-runtimes", "deno:" + denoPath,
+            "--proxy", selectedProxy.AbsoluteUri,
             "--ffmpeg-location", Path.GetDirectoryName(tools.Ffmpeg) ?? tools.Ffmpeg
         };
+
+        if (NeedsBrowserImpersonation(source.Source))
+            arguments.AddRange(["--impersonate", "chrome"]);
+
+        if (IsYouTube(source.Source) && youtubePotProviderUri is not null)
+        {
+            arguments.AddRange([
+                "--extractor-args",
+                "youtube:player_client=mweb,default",
+                "--extractor-args",
+                "youtubepot-bgutilhttp:base_url="
+                    + youtubePotProviderUri.AbsoluteUri.TrimEnd('/')
+            ]);
+        }
         if (audioOnly)
         {
             arguments.AddRange(["-x", "--audio-format", "mp3", "--audio-quality", "0"]);
@@ -100,6 +121,8 @@ public sealed class MediaJobExecutor(
         else
         {
             arguments.AddRange(["-f", source.FormatSelector]);
+            if (TryParseQualityResolution(lease.Work.Quality, out var resolution))
+                arguments.AddRange(["-S", "res:" + resolution]);
         }
         arguments.AddRange(["-o", outputTemplate, "--", source.Source.AbsoluteUri]);
 
@@ -119,6 +142,41 @@ public sealed class MediaJobExecutor(
             audioOnly ? null : source.Height,
             audioOnly ? "audio/mpeg" : source.MediaType,
             Evidence(lease), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsYouTube(Uri source)
+    {
+        var host = source.Host.TrimEnd('.').ToLowerInvariant();
+        return host is "youtu.be" or "youtube.com" or "www.youtube.com"
+            or "m.youtube.com" or "music.youtube.com"
+            || host.EndsWith(".youtube.com", StringComparison.Ordinal);
+    }
+
+    private static bool IsSocialVideoHost(Uri source)
+        => IsYouTube(source) || NeedsBrowserImpersonation(source);
+
+    private static bool NeedsBrowserImpersonation(Uri source)
+    {
+        var host = source.Host.TrimEnd('.').ToLowerInvariant();
+        return host == "tiktok.com"
+            || host.EndsWith(".tiktok.com", StringComparison.Ordinal)
+            || host == "instagram.com"
+            || host.EndsWith(".instagram.com", StringComparison.Ordinal)
+            || host == "pinterest.com"
+            || host.EndsWith(".pinterest.com", StringComparison.Ordinal)
+            || host == "pin.it";
+    }
+
+    private static bool TryParseQualityResolution(string quality, out int resolution)
+    {
+        resolution = 0;
+        if (string.IsNullOrWhiteSpace(quality)
+            || !quality.EndsWith('p')
+            || !int.TryParse(quality.AsSpan(0, quality.Length - 1), out var value)
+            || value is < 144 or > 4320)
+            return false;
+        resolution = value;
+        return true;
     }
 
     private async Task<ArtifactReceipt> ExtractMp3Async(

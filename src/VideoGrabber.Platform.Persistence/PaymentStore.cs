@@ -461,10 +461,10 @@ public sealed class PaymentStore
             : (DateTimeOffset?)null;
         await using (var insert = new NpgsqlCommand("""
             insert into licensing.entitlement_grants(
-              grant_id,account_id,kind,source,source_reference,
+              grant_id,account_id,kind,source,source_reference,plan_id,
               valid_from,valid_until,available,reserved,original_amount,
               reason,created_at)
-            values(@grant,@account,@kind,'purchase',@source_reference,
+            values(@grant,@account,@kind,'purchase',@source_reference,@plan_id,
               @valid_from,@valid_until,@available,0,@original,@reason,@now)
             on conflict(source_reference)
               where source='purchase' and source_reference is not null
@@ -477,6 +477,7 @@ public sealed class PaymentStore
             insert.Parameters.AddWithValue("account", row.AccountId);
             insert.Parameters.AddWithValue("kind", product.Kind);
             insert.Parameters.AddWithValue("source_reference", sourceReference);
+            insert.Parameters.AddWithValue("plan_id", (object?)product.PlanId ?? DBNull.Value);
             insert.Parameters.AddWithValue("valid_from", payment.OccurredAt);
             insert.Parameters.AddWithValue(
                 "valid_until", (object?)validUntil ?? DBNull.Value);

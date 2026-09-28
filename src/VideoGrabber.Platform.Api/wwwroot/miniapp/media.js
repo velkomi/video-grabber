@@ -69,11 +69,32 @@ function fillSelect(select, values) {
   }
 }
 
+function accessFeature(access, feature, fallback) {
+  const overrides = access?.featureOverrides || {};
+  if (Object.prototype.hasOwnProperty.call(overrides, feature))
+    return overrides[feature] === true;
+  return Boolean(fallback);
+}
+
 async function loadCapabilities() {
   capabilities = await api("/v1/capabilities");
-  fillSelect(
-    $("#media-operation"),
-    capabilities.operations.filter((x) => x.available).map((x) => x.operation));
+  const access = window.VideoGrabberApi.currentAccess();
+  const permitted = capabilities.operations
+    .filter((x) => x.available)
+    .filter((x) => {
+      if (x.operation === "course_download")
+        return accessFeature(access, "course_download", access?.canDownloadCourse);
+      if (x.operation === "mp3") return accessFeature(access, "mp3", access?.canEdit);
+      if (x.operation === "trim") return accessFeature(access, "trim", access?.canEdit);
+      if (x.operation === "join") return accessFeature(access, "join", access?.canEdit);
+      if (["transcribe", "transcription"].includes(x.operation))
+        return accessFeature(access, "transcribe", access?.canEdit);
+      return accessFeature(access, "download", access?.canDownload);
+    })
+    .map((x) => x.operation);
+  fillSelect($("#media-operation"), permitted);
+  $("#media-analyze").disabled =
+    !window.VideoGrabberApi.isPrimaryAccount() || permitted.length === 0;
   updateExecutors();
 }
 
@@ -83,23 +104,61 @@ function updateExecutors() {
   fillSelect($("#media-executor"), operation?.executors || []);
 }
 
-$("#media-operation").addEventListener("change", updateExecutors);
+$("#media-operation").addEventListener("change", () => {
+  updateExecutors();
+  analyzed = null;
+  $("#media-options").hidden = true;
+});
 
 $("#media-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const raw = $("#media-url").value.trim();
   try {
-    status("Анализирую источник…");
-    const rows = await api("/v1/sources/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: raw })
-    });
-    if (!rows.length) throw new Error("Media не найдено");
-    analyzed = rows[0];
+    if (!window.VideoGrabberApi.isPrimaryAccount())
+      throw new Error("Сначала свяжите Telegram с основным аккаунтом через /link");
+    const access = window.VideoGrabberApi.currentAccess();
+    const kind = $("#media-operation").value;
+    const effective = kind === "course_download"
+      ? accessFeature(access, "course_download", access?.canDownloadCourse)
+      : kind === "mp3"
+        ? accessFeature(access, "mp3", access?.canEdit)
+        : kind === "trim"
+          ? accessFeature(access, "trim", access?.canEdit)
+          : kind === "join"
+            ? accessFeature(access, "join", access?.canEdit)
+            : ["transcribe", "transcription"].includes(kind)
+              ? accessFeature(access, "transcribe", access?.canEdit)
+              : accessFeature(access, "download", access?.canDownload);
+    if (!effective)
+      throw new Error("Эта функция недоступна для текущих условий аккаунта.");
+    status(kind === "course_download"
+      ? "Проверяю ссылку курса для Windows…"
+      : "Анализирую источник…");
+
+    if (kind === "course_download") {
+      analyzed = await api("/v1/sources/register-desktop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: raw, quality: "best" })
+      });
+    } else {
+      const rows = await api("/v1/sources/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: raw })
+      });
+      if (!rows.length) throw new Error("Media не найдено");
+      analyzed = rows[0];
+    }
+
     fillSelect($("#media-quality"), analyzed.qualities);
+    updateExecutors();
     $("#media-options").hidden = false;
-    status("Источник проверен. Выберите операцию и качество.", "success");
+    status(
+      kind === "course_download"
+        ? "Курс будет скачан зарегистрированным Windows VideoGrabber. Выберите качество."
+        : "Источник проверен. Выберите качество и исполнителя.",
+      "success");
   } catch (error) {
     status("Анализ не выполнен: " + error.message, "error");
   }
@@ -108,6 +167,11 @@ $("#media-form").addEventListener("submit", async (event) => {
 $("#media-create").addEventListener("click", async () => {
   if (!analyzed) return;
   try {
+    if (!window.VideoGrabberApi.isPrimaryAccount())
+      throw new Error("Сначала свяжите Telegram с основным аккаунтом через /link");
+    const access = window.VideoGrabberApi.currentAccess();
+    if (!access?.canDownload)
+      throw new Error("Лимит загрузок исчерпан. Выберите подписку.");
     const kind = $("#media-operation").value;
     const executor = $("#media-executor").value;
     const inputs = parseInputs();
@@ -322,6 +386,7 @@ async function boot() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   if (!window.VideoGrabberApi) return;
   try {
+    await window.VideoGrabberApi.ready;
     await loadCapabilities();
     await refreshDestinations();
     await refreshJobs();

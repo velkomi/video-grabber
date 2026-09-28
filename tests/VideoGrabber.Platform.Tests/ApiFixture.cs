@@ -85,7 +85,15 @@ public sealed class ApiFixture : IAsyncDisposable
         var dsn = Environment.GetEnvironmentVariable("VG_TEST_POSTGRES_DSN");
         if (string.IsNullOrWhiteSpace(dsn))
             throw new InvalidOperationException("VG_TEST_POSTGRES_DSN is required for Platform tests.");
-        var baseBuilder = new NpgsqlConnectionStringBuilder(dsn);
+        var baseBuilder = new NpgsqlConnectionStringBuilder(dsn)
+        {
+            // The CI PostgreSQL service uses the default server connection cap.
+            // Each fixture owns several role-specific pools, so keep every test
+            // pool deliberately small instead of allowing Npgsql's per-pool
+            // default to exhaust the shared service.
+            MaxPoolSize = 8,
+            MinPoolSize = 0
+        };
         ValidateTestTarget(baseBuilder);
 
         var clusterConnectionString = baseBuilder.ConnectionString;
@@ -117,7 +125,9 @@ public sealed class ApiFixture : IAsyncDisposable
     public async Task<TestAccount> AccountAsync(
         string provider,
         string subject,
-        string? verifiedEmail = null)
+        string? verifiedEmail = null,
+        bool includeStarter = false,
+        bool telegramOnly = false)
     {
         const string verifier = "fixture-account-verifier-0123456789";
         var begin = await Anonymous.PostAsJsonAsync("/v1/auth/start",
@@ -137,7 +147,61 @@ public sealed class ApiFixture : IAsyncDisposable
         var client = SessionClient(session);
         var profile = await client.GetFromJsonAsync<AccountProfile>("/v1/me")
             ?? throw new InvalidDataException("Profile response was empty.");
+        if (provider == "telegram" && !telegramOnly)
+            await SetPrimaryAuthProviderForLegacyTestAsync(profile.AccountId, "email");
+        if (!includeStarter)
+            await RemoveStarterForLegacyTestAsync(profile.AccountId);
         return new TestAccount(profile.AccountId, client);
+    }
+
+    private async Task SetPrimaryAuthProviderForLegacyTestAsync(
+        Guid accountId,
+        string provider)
+    {
+        await using var connection = await Database.OpenConnectionAsync();
+        await using var command = new NpgsqlCommand(
+            "update licensing.accounts set primary_auth_provider=@provider where account_id=@account",
+            connection);
+        command.Parameters.AddWithValue("provider", provider);
+        command.Parameters.AddWithValue("account", accountId);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task RemoveStarterForLegacyTestAsync(Guid accountId)
+    {
+        await using var connection = await Database.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        Guid? grantId = null;
+        await using (var find = new NpgsqlCommand("""
+            select grant_id
+            from licensing.entitlement_grants
+            where account_id=@account
+              and source='system_starter'
+              and plan_id='free'
+            """, connection, transaction))
+        {
+            find.Parameters.AddWithValue("account", accountId);
+            var value = await find.ExecuteScalarAsync();
+            if (value is Guid id) grantId = id;
+        }
+        if (grantId is Guid starter)
+        {
+            await using (var ledger = new NpgsqlCommand(
+                "delete from licensing.credit_ledger where grant_id=@grant",
+                connection, transaction))
+            {
+                ledger.Parameters.AddWithValue("grant", starter);
+                await ledger.ExecuteNonQueryAsync();
+            }
+            await using (var grant = new NpgsqlCommand(
+                "delete from licensing.entitlement_grants where grant_id=@grant",
+                connection, transaction))
+            {
+                grant.Parameters.AddWithValue("grant", starter);
+                await grant.ExecuteNonQueryAsync();
+            }
+        }
+        await transaction.CommitAsync();
     }
 
     public async Task PromoteAdminAsync(Guid accountId)
@@ -206,22 +270,24 @@ public sealed class ApiFixture : IAsyncDisposable
             "Bearer", new JwtSecurityTokenHandler().WriteToken(token));
     }
 
-    public Task RestartAsync()
+    public async Task RestartAsync()
     {
         Anonymous.Dispose();
-        _factory.Dispose();
+        await _factory.DisposeAsync();
         _factory = CreateFactory();
         Anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });
-        return Task.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()
     {
         Anonymous.Dispose();
-        _factory.Dispose();
+        // WebApplicationFactory owns async-disposable singleton services
+        // (including DB-backed admin/MFA services). Await their disposal so
+        // server-side PostgreSQL sessions do not accumulate across fixtures.
+        await _factory.DisposeAsync();
         Broker.Dispose();
         await _operationsDataSource.DisposeAsync();
         await _deviceDataSource.DisposeAsync();
@@ -230,6 +296,10 @@ public sealed class ApiFixture : IAsyncDisposable
         await _identityDataSource.DisposeAsync();
         await _apiDataSource.DisposeAsync();
         await Database.DisposeAsync();
+        // Tests are serialized at assembly level. Clearing all remaining Npgsql
+        // pools here is safe and closes any pool created by an application
+        // singleton that is not part of the fixture's explicit role sources.
+        NpgsqlConnection.ClearAllPools();
         await DropDatabaseAsync(_clusterConnectionString, _databaseName);
     }
 
@@ -318,9 +388,11 @@ public sealed class ApiFixture : IAsyncDisposable
     {
         var builder = new NpgsqlConnectionStringBuilder(source.ConnectionString)
         {
-            Options = "-c role=" + role
+            Options = "-c role=" + role,
+            PersistSecurityInfo = true
         };
-        if (role == "vg_ledger") builder.MaxPoolSize = 32;
+        builder.MinPoolSize = 0;
+        builder.MaxPoolSize = role == "vg_ledger" ? 24 : 8;
         return builder.ConnectionString;
     }
 }
@@ -374,16 +446,25 @@ internal sealed class PlatformApiFactory(
         builder.UseEnvironment("Development");
         builder.UseSetting("Security:AllowedOrigins:0", "https://miniapp.example.test");
         builder.UseSetting("ConnectionStrings:PlatformLedger", ledgerDataSource.ConnectionString);
+        builder.UseSetting("ConnectionStrings:PlatformIdentity", identityDataSource.ConnectionString);
+        builder.UseSetting("ConnectionStrings:PlatformAdmin", adminDataSource.ConnectionString);
+        builder.UseSetting("ConnectionStrings:PlatformDevice", deviceDataSource.ConnectionString);
         builder.UseSetting("ConnectionStrings:PlatformOperations", operationsDataSource.ConnectionString);
         builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(new CapturingLoggerProvider(logs)); });
         builder.UseSetting("VG_PLATFORM_SESSION_SIGNING_KEY", TestSessionKey);
         builder.UseSetting("VG_PLATFORM_LEASE_KEY_ID", "test-lease-key-1");
         builder.UseSetting("VG_PLATFORM_LEASE_SIGNING_KEY_PKCS8", TestLeasePrivateKey);
-        builder.UseSetting("VG_TELEGRAM_BOT_TOKEN", "123456789:test-telegram-bot-token-for-local-tests");
+        builder.UseSetting("VG_TELEGRAM_BOT_TOKEN", TelegramAuthTests.BotToken);
         builder.UseSetting("VG_TELEGRAM_WEBHOOK_SECRET", "test-webhook-secret-2026");
         builder.UseSetting("VG_TELEGRAM_INBOX_KEY", Convert.ToBase64String(Enumerable.Range(1, 32).Select(x => (byte)x).ToArray()));
         builder.UseSetting("VG_TELEGRAM_MINIAPP_URL", "https://miniapp.example.test/");
         builder.UseSetting("VG_PLATFORM_PUBLIC_URL", "https://platform.example.test/");
+        builder.UseSetting("VG_WEB_AUTH_RETURN_URI", "https://client.example.test/auth/complete");
+        builder.UseSetting(
+            "VG_WEB_AUTH_RETURN_URIS",
+            "https://client.example.test/link/complete");
+        builder.UseSetting("VG_SUPABASE_URL", "https://project.supabase.co");
+        builder.UseSetting("VG_SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test_key");
         builder.UseSetting("VG_TELEGRAM_BOT_USERNAME", "VideoGrabberTestBot");
         builder.UseSetting("VG_TELEGRAM_BOT_USER_ID", TelegramApiEmulator.BotUserId.ToString());
         builder.UseSetting("VG_TELEGRAM_WORKER_ENABLED", "false");
@@ -399,11 +480,14 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_TELEGRAM_DOCUMENT_MAX_BYTES", (10L * 1024 * 1024).ToString());
         builder.UseSetting("VG_SERVER_WORKER_TOKEN", "test-server-worker-token");
         builder.UseSetting("VG_SOURCE_ENCRYPTION_KEY", "KSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0g=");
+        builder.UseSetting("VG_ADMIN_MFA_ENCRYPTION_KEY", "R0hJRktMTU5PUFFSU1RVVldYWVo0NTY3ODkwMTIzNDU=");
         builder.UseSetting("VG_EGRESS_PROXY_URI", "http://127.0.0.1:3128");
         builder.UseSetting("VG_YTDLP_PATH", "yt-dlp");
         builder.UseSetting("VG_FFMPEG_PATH", Environment.GetEnvironmentVariable("VG_WORKER_FFMPEG") ?? "ffmpeg");
         builder.UseSetting("VG_FFPROBE_PATH", Environment.GetEnvironmentVariable("VG_WORKER_FFPROBE") ?? "ffprobe");
-        builder.UseSetting("VG_ARTIFACT_UPLOAD_ROOT", @"C:\Users\Oleg\AppData\Local\Temp\vg-platform-artifact-uploads");
+        builder.UseSetting(
+            "VG_ARTIFACT_UPLOAD_ROOT",
+            Path.Combine(FindRepoRoot(), ".test-artifacts", "uploads"));
         builder.UseSetting("VG_ARTIFACT_UPLOAD_MAX_BYTES", (64L * 1024 * 1024).ToString());
         builder.UseSetting("VG_PAYMENT_CATALOG_PATH", Path.Combine(FindRepoRoot(), "tests", "VideoGrabber.Platform.Tests", "Fixtures", "payment-catalog.test.json"));
         builder.ConfigureServices(services =>
@@ -422,9 +506,9 @@ internal sealed class PlatformApiFactory(
             services.AddSingleton(apiDataSource);
             services.RemoveAll<VideoGrabber.Platform.Api.Operations.OperationsDataSource>();
             services.AddSingleton(VideoGrabber.Platform.Api.Operations.OperationsDataSource.CreateOwned(operationsDataSource.ConnectionString));
-            services.AddSingleton<IAccountStore>(_ => new AccountStore(apiDataSource));
+            services.AddSingleton<IAccountStore>(_ => new AccountStore(apiDataSource, clock));
             services.AddSingleton<IIdentityAccountResolver>(
-                _ => new TestIdentityResolver(new AccountStore(identityDataSource)));
+                _ => new TestIdentityResolver(new AccountStore(identityDataSource, clock)));
             services.AddSingleton<IBrokerCodeExchange>(broker);
             services.AddSingleton<IBrokerSigningKeySource>(broker);
             services.AddSingleton<IBrokerUserInfoSource>(broker);
@@ -442,7 +526,8 @@ internal sealed class PlatformApiFactory(
             services.RemoveAll<AdminService>();
             services.AddSingleton(AdminService.CreateForTesting(adminDataSource, clock));
             services.RemoveAll<ITelegramAccountResolver>();
-            services.AddSingleton<ITelegramAccountResolver>(_ => TelegramAccountResolver.CreateForTesting(identityDataSource));
+            services.AddSingleton<ITelegramAccountResolver>(
+                _ => TelegramAccountResolver.CreateForTesting(identityDataSource, clock));
             services.AddHttpClient("TelegramBotApi")
                 .ConfigurePrimaryHttpMessageHandler(_ => telegramApi);
             services.AddHttpClient("YooKassa")

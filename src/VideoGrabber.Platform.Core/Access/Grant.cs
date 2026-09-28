@@ -9,4 +9,7 @@ public sealed record Grant(
     long Available,
     long Reserved,
     bool Revoked,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt)
+{
+    public string? PlanId { get; init; }
+}

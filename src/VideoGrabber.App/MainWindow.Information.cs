@@ -40,6 +40,72 @@ public sealed partial class MainWindow
         capabilities.Children.Add(MutedText("• MP3, быстрая обрезка/склейка, локальная расшифровка встроенным Whisper и точечная маршрутизация сайтов."));
         capabilities.Children.Add(MutedText("• Полный комплект уже содержит yt-dlp, FFmpeg, FFprobe, Deno, Whisper и модель распознавания — отдельная установка для обычной работы не требуется."));
         body.Children.Add(Card(capabilities));
+
+        var surfaces = Vertical(8);
+        surfaces.Children.Add(SectionHeading("Сайт, Windows и дополнительные возможности"));
+        surfaces.Children.Add(MutedText("• Обычное публичное видео можно скачать прямо на сайте VideoGrabber: Windows-приложение открывать не нужно."));
+        surfaces.Children.Add(MutedText("• Windows VideoGrabber нужен для полного курса GetCourse, закрытых страниц с входом, локального редактора и случаев, когда вы хотите сохранять результат сразу в выбранную папку компьютера."));
+        surfaces.Children.Add(MutedText("• В основном окне сначала показан простой загрузчик. MP3, курсы, отдельные видео со страниц и транскрибация находятся ниже в блоке «Дополнительные возможности» — его можно развернуть и снова свернуть."));
+        surfaces.Children.Add(MutedText("• После входа приложение по умолчанию принимает задания, которые вы явно отправили именно на этот компьютер. Это можно отключить в разделе «Аккаунт». Обычное скачивание через сайт от этого не зависит."));
+        body.Children.Add(Card(surfaces));
+
+#if VIDEOGRABBER_MANAGED
+        var plans = Vertical(10);
+        plans.Children.Add(SectionHeading("Тарифы и доступ"));
+        plans.Children.Add(MutedText(
+            "Один аккаунт и один тариф действуют одновременно на сайте, в Windows VideoGrabber и в Telegram."));
+        plans.Children.Add(new TextBlock
+        {
+            Text = "Free — 0 ₽",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
+        plans.Children.Add(MutedText(
+            "10 обычных загрузок видео за всё время аккаунта. Полный курс, MP3, редактор и транскрибация не входят."));
+        plans.Children.Add(new TextBlock
+        {
+            Text = "Start — 1 500 ₽ / 30 дней",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
+        plans.Children.Add(MutedText(
+            "До 10 загрузок в сутки. Включены MP3, редактор и локальная транскрибация. Полный курс не входит."));
+        plans.Children.Add(new TextBlock
+        {
+            Text = "Unlimited Video — 2 500 ₽ / 30 дней",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
+        plans.Children.Add(MutedText(
+            "Отдельные видео без лимита + MP3, редактор и локальная транскрибация. Полный курс не входит."));
+        plans.Children.Add(new TextBlock
+        {
+            Text = "Full Course — 5 000 ₽ / 30 дней",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = TextBrush
+        });
+        plans.Children.Add(MutedText(
+            "Максимальный тариф: отдельные видео без лимита, MP3, редактор, транскрибация и скачивание полного курса GetCourse с локальной структурой и автоматическим TXT-транскриптом рядом с каждым видео."));
+        plans.Children.Add(MutedText(
+            "Если функция не входит в текущий тариф, кнопка остаётся нажимаемой: VideoGrabber покажет объяснение и предложит подходящий тариф. Никакое списание не происходит без перехода на сайт и подтверждения оплаты."));
+        var plansButton = PrimaryButton("Тарифы и оплата на сайте");
+        plansButton.Click += (_, _) => OpenPricingPage();
+        plans.Children.Add(plansButton);
+        body.Children.Add(Card(plans));
+#endif
+
+        var controlsHelp = Vertical(8);
+        controlsHelp.Children.Add(SectionHeading("Почему кнопка нажимается, но действие не начинается"));
+        controlsHelp.Children.Add(MutedText(
+            "• «Пауза» нажимается всегда. Если операции ещё нет, появится подсказка, когда её использовать. Во время работы она временно приостанавливает процесс и превращается в «Продолжить»."));
+        controlsHelp.Children.Add(MutedText(
+            "• «Отменить всё» при отсутствии активной работы показывает пояснение. Во время операции она останавливает текущую работу, не удаляя уже готовые локальные файлы."));
+        controlsHelp.Children.Add(MutedText(
+            "• Тарифные функции не выглядят сломанными или навсегда выключенными: при нехватке доступа открывается окно с причиной, возможностями тарифов и переходом к выбору тарифа."));
+        controlsHelp.Children.Add(MutedText(
+            "• Если для действия сначала нужен файл, найденное видео, активная очередь или открытый курс, VideoGrabber объясняет этот шаг вместо молчаливого отказа."));
+        body.Children.Add(Card(controlsHelp));
+
         var getCourse = Vertical(8);
         getCourse.Children.Add(SectionHeading("Как скачать с GetCourse"));
         getCourse.Children.Add(MutedText("1. Вставьте ссылку на урок и нажмите «Открыть во встроенном браузере»."));

@@ -11,7 +11,7 @@ namespace VideoGrabber.Platform.Tests;
 
 public sealed class TelegramAuthTests
 {
-    internal const string BotToken = "123456789:test-telegram-bot-token-for-local-tests";
+    internal const string BotToken = "test-telegram-bot-token-local-only";
     private static readonly DateTimeOffset Now = new(2026, 9, 18, 4, 0, 0, TimeSpan.Zero);
 
     [Fact]

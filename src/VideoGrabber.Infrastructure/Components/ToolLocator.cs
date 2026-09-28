@@ -52,6 +52,8 @@ public sealed class ToolLocator
 
     public string WhisperCli => FindBundledWhisper("whisper-cli.exe");
     public string WhisperModel => FindBundledWhisper("ggml-base.bin");
+    public string WhisperVadModel => FindBundledWhisper("ggml-silero-v6.2.0.bin");
+    public bool WhisperVadAvailable => File.Exists(WhisperVadModel);
     public bool WhisperAvailable => File.Exists(WhisperCli) && File.Exists(WhisperModel);
 
     private bool BundledCoreToolsAvailable()

@@ -353,7 +353,8 @@ public sealed partial class BrowserWiringRegressionTests
         var course = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.App", "MainWindow.CourseDownload.cs"));
 
-        Assert.Contains("SectionHeading(\"Весь курс GetCourse\")", browser);
+        Assert.Contains("BuildCourseToolsCard()", browser);
+        Assert.Contains("SectionHeading(\"Курсы GetCourse\")", browser);
         Assert.Contains("PrimaryButton(\"Скачать весь курс\")", browser);
         Assert.Contains("DownloadWholeGetCourseAsync()", browser);
         Assert.DoesNotContain("DownloadAllVisibleCandidatesAsync()", course);
@@ -384,7 +385,7 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("SelectedBrowserQuality(candidate)", browser);
         Assert.Contains("QueueAllVisibleCandidates()", batch);
         Assert.Contains("RunDownloadOperationAsync", batch);
-        Assert.Contains("Весь курс GetCourse", browser);
+        Assert.Contains("Курсы GetCourse", browser);
         Assert.Contains("Скачать весь курс", browser);
     }
 }
@@ -439,7 +440,17 @@ public sealed partial class BrowserWiringRegressionTests
         var save = course.IndexOf("SaveCourseLessonArchiveAsync", StringComparison.Ordinal);
         var media = course.IndexOf("WaitForCourseMediaAsync", save, StringComparison.Ordinal);
         Assert.True(save >= 0 && media > save);
-        Assert.Contains("Lesson archived without downloadable video", course);
+        Assert.Contains("Lesson archived without declared video blocks", course);
+        Assert.Contains("CourseVideoBlockEvidence.CountDeclaredVideoBlocks", course);
+        Assert.Contains("CountReadyCourseMediaFiles", course);
+        Assert.Contains("media-count-mismatch", course);
+        Assert.Contains("InitializeCourseTranscriptionPipeline", course);
+        Assert.Contains("WaitForCourseTranscriptionAsync", course);
+        Assert.Contains("EnqueueCourseTranscription", course);
+        Assert.Contains("_mediaBrowser?.CoreWebView2 is null && !resume", course);
+        Assert.Contains("Уже имеющиеся видео продолжают транскрибироваться локально", course);
+        Assert.Contains("declared=", course);
+        Assert.Contains("lesson remains incomplete", course);
         Assert.Contains("CourseLessonArchive.WriteDocx", archive);
         Assert.Contains("CookieManager", archive);
         Assert.Contains("Страница.html", archive);
@@ -468,6 +479,8 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.True(domResolve >= 0 && fallback > domResolve);
 
         Assert.Contains("data-iframe-src", media);
+        Assert.Contains("kinescope.io/embed/", media);
+        Assert.Contains("Kinescope embed resolved directly from course DOM", media);
         Assert.Contains("GetCoursePlayerConfigParser.TryExtractMasterPlaylist", media);
         Assert.Contains("HlsManifestParser.TryParse", media);
         Assert.Contains("new RouteConnector(_routePolicy)", media);
@@ -565,11 +578,11 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("Выбрана папка другого курса", course);
         Assert.Contains("Directory.EnumerateDirectories", course);
 
-        Assert.Contains("сначала войдите в свой аккаунт", browser);
-        Assert.Contains("Прокрутите страницу вниз", browser);
+        Assert.Contains("войдите в свой аккаунт GetCourse", browser);
+        Assert.Contains("Открыть курс во встроенном браузере", browser);
         Assert.Contains("BrowserActionButton", shell);
         Assert.Contains("24, 94, 61", shell);
-        Assert.Contains("прокрутите эту страницу ниже", shell);
+        Assert.Contains("Развернуть дополнительные возможности", shell);
     }
 }
 
@@ -645,7 +658,8 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.DoesNotContain("var install = PrimaryButton(\"Установить или обновить\")", main);
         Assert.DoesNotContain("InstallComponentsAsync(forceUpdate: false", download);
         Assert.Contains("components.Tools.WhisperCli", media);
-        Assert.Contains("components.Tools.WhisperModel", media);
+        Assert.Contains("EnsureWhisperModelAvailableAsync", media);
+        Assert.Contains("CreateWhisperModelSelector", media);
         Assert.Contains("Horizontal(_mp3Button, _textButton, mediaPauseButton, cancel)", media);
     }
 }public sealed partial class BrowserWiringRegressionTests
@@ -705,7 +719,8 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("Child = new Image", shell);
         Assert.Contains("BrandLogoAssetPath", shell);
         Assert.Contains("После завершения всех загрузок", shell);
-        Assert.Contains("button.IsHitTestVisible = busy", shell);
+        Assert.Contains("button.IsHitTestVisible = true", shell);
+        Assert.Contains("TogglePauseOrExplainAsync", shell);
         Assert.Contains("⏸  Пауза", shell);
 
         Assert.Contains(@"D:\VideoGrabber", preferences);
@@ -716,6 +731,7 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("DownloadFolder", media);
 
         Assert.Contains("ScheduleCompletionActionAfterDownloads(\"direct\")", download);
+        Assert.Contains("RunOnUiThreadAsync", download);
         Assert.Contains("ScheduleCompletionActionAfterDownloads(\"queue\")", queue);
         Assert.Contains("ScheduleCompletionActionAfterDownloads(\"course\")", course);
 

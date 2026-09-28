@@ -79,6 +79,9 @@ if (args.Length > 0 && string.Equals(args[0], "--consistency-report", StringComp
     return;
 }
 var builder = WebApplication.CreateBuilder(args);
+// ASP.NET Hosting.Diagnostics logs the raw request target, including query strings.
+// Signed URLs/OAuth-like query values must never be copied into ordinary request logs.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
 var sessionJwt = SessionJwtOptions.FromConfiguration(builder.Configuration);
 var telegramSecurity = TelegramSecurityOptions.FromConfiguration(builder.Configuration);
 
@@ -127,6 +130,7 @@ builder.Services.AddRateLimiter(options =>
 });
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("TelegramBotApi").RemoveAllLoggers();
+builder.Services.AddHttpClient("SupabaseAuth").RemoveAllLoggers();
 builder.Services.AddHttpClient("YooKassa").RemoveAllLoggers();
 builder.Services.AddHttpClient("OperationsAlerts").RemoveAllLoggers();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -139,6 +143,8 @@ builder.Services.AddSingleton<IBrokerUserInfoSource, HttpBrokerUserInfoSource>()
 builder.Services.AddSingleton<IBrokerBindingStore>(sp => sp.GetRequiredService<SessionStore>());
 builder.Services.AddSingleton<IBrokerTokenValidator, BrokerTokenValidator>();
 builder.Services.AddSingleton<ProviderFlow>();
+builder.Services.AddSingleton<SupabaseAuthService>();
+builder.Services.AddSingleton<DesktopAuthHandoffStore>();
 builder.Services.AddSingleton(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -166,6 +172,7 @@ builder.Services.AddSingleton(sp =>
     return CreditLedger.CreateOwned(ledgerDsn, sp.GetRequiredService<TimeProvider>());
 });
 builder.Services.AddSingleton<JobStore>();
+builder.Services.AddSingleton<BrowserDownloadTicketService>();
 builder.Services.AddSingleton<PaymentStore>(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -206,6 +213,31 @@ builder.Services.AddSingleton(sp =>
         ?? throw new InvalidOperationException("Platform admin database DSN is not configured.");
     return AdminService.CreateOwned(adminDsn, sp.GetRequiredService<TimeProvider>());
 });
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var adminDsn = configuration.GetConnectionString("PlatformAdmin")
+        ?? configuration["VG_PLATFORM_ADMIN_DSN"]
+        ?? throw new InvalidOperationException("Platform admin database DSN is not configured.");
+    return AdminFeatureOverrideService.CreateOwned(
+        sp.GetRequiredService<NpgsqlDataSource>(),
+        adminDsn,
+        sp.GetRequiredService<TimeProvider>());
+});
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var adminDsn = configuration.GetConnectionString("PlatformAdmin")
+        ?? configuration["VG_PLATFORM_ADMIN_DSN"]
+        ?? throw new InvalidOperationException("Platform admin database DSN is not configured.");
+    var encryptionKey = configuration["VG_ADMIN_MFA_ENCRYPTION_KEY"]
+        ?? throw new InvalidOperationException("Admin MFA encryption key is not configured.");
+    return new AdminMfaService(
+        adminDsn,
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<SessionJwtOptions>(),
+        encryptionKey);
+});
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 builder.Services.AddSingleton(sp => new TelegramUpdateInbox(
@@ -215,6 +247,7 @@ builder.Services.AddSingleton<ITelegramUpdateInbox>(sp => sp.GetRequiredService<
 builder.Services.AddSingleton<TelegramAssertionStore>();
 builder.Services.AddSingleton<ITelegramAccountResolver, TelegramAccountResolver>();
 builder.Services.AddSingleton<BotCallbackStore>();
+builder.Services.AddSingleton<TelegramAccountLinkService>();
 builder.Services.AddSingleton<IBotApiClient, BotApiClient>();
 builder.Services.AddSingleton<BotMediaHandler>();
 builder.Services.AddSingleton<BotCommandHandler>();
@@ -250,6 +283,7 @@ var app = builder.Build();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.MapGet("/", () => Results.Redirect("/web/", permanent: false));
 app.UseCookiePolicy(new CookiePolicyOptions
 {
     HttpOnly = HttpOnlyPolicy.Always,
@@ -351,6 +385,7 @@ app.MapDeviceEndpoints();
 app.MapIdentityEndpoints();
 app.MapSessionEndpoints();
 app.MapTelegramSessionEndpoints();
+app.MapTelegramAccountLinkEndpoints();
 app.MapTelegramWebhookEndpoints();
 app.MapCapabilityEndpoints();
 app.MapTelegramAdminLinkEndpoints();
@@ -367,6 +402,43 @@ app.MapSourceEndpoints();
 app.MapArtifactUploadEndpoints();
 app.MapPlatformHealthEndpoints();
 app.MapOperationsEndpoints();
+app.MapGet("/download/windows", (IConfiguration configuration) =>
+    {
+        var path = configuration["VG_WINDOWS_SETUP_PATH"]
+            ?? "/var/lib/videograbber/downloads/VideoGrabber-Setup.exe";
+        if (!File.Exists(path))
+            return Results.NotFound(new { code = "windows_setup_unavailable" });
+        return Results.File(
+            path,
+            "application/vnd.microsoft.portable-executable",
+            "VideoGrabber-Setup.exe",
+            enableRangeProcessing: true);
+    })
+    .AllowAnonymous();
+app.MapGet("/download/windows/portable", (IConfiguration configuration) =>
+    {
+        var path = configuration["VG_WINDOWS_DOWNLOAD_PATH"]
+            ?? "/var/lib/videograbber/downloads/VideoGrabber-Windows.zip";
+        if (!File.Exists(path))
+            return Results.NotFound(new { code = "windows_download_unavailable" });
+        return Results.File(
+            path,
+            "application/zip",
+            "VideoGrabber-Windows.zip",
+            enableRangeProcessing: true);
+    })
+    .AllowAnonymous();
+app.MapGet("/download/windows/checksum", (IConfiguration configuration) =>
+    {
+        var path = configuration["VG_WINDOWS_CHECKSUM_PATH"]
+            ?? "/var/lib/videograbber/downloads/VideoGrabber-Windows.sha256.txt";
+        if (!File.Exists(path))
+            return Results.NotFound(new { code = "windows_checksum_unavailable" });
+        return Results.Text(
+            File.ReadAllText(path),
+            "text/plain; charset=utf-8");
+    })
+    .AllowAnonymous();
 app.Run();
 
 static bool FixedTextEquals(string? left, string? right)

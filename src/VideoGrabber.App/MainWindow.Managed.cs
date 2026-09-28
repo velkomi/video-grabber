@@ -32,6 +32,7 @@ public sealed partial class MainWindow
     private string? _managedAccessToken;
     private Guid? _managedAccountId;
     private Guid? _managedDeviceId;
+    private VideoGrabber.Platform.Contracts.AccessSnapshot? _managedAccessSnapshot;
     private SavedQueue _managedRestoredQueue = new(1, Guid.Empty, []);
     private readonly SemaphoreSlim _managedQueueWriteLock = new(1, 1);
 #endif
@@ -60,14 +61,19 @@ public sealed partial class MainWindow
             _managedHttp,
             () => _managedAccessToken,
             () => _managedDeviceId,
-            _managedOfflineCache));
+            _managedOfflineCache,
+            refreshAccessToken: async cancellationToken =>
+            {
+                await RefreshManagedSensitiveSessionAsync(cancellationToken);
+                return _managedAccessToken;
+            }));
 
     private static Uri ResolveManagedApiBaseUri()
     {
         var configured = Environment.GetEnvironmentVariable("VIDEOGRABBER_PLATFORM_URL");
         if (Uri.TryCreate(configured, UriKind.Absolute, out var uri) && IsAllowedManagedApiBase(uri))
             return EnsureTrailingSlash(uri);
-        return new Uri("https://licensing.invalid/");
+        return new Uri("https://videograbber.srv1902378.hstgr.cloud/");
     }
 
     private static bool IsAllowedManagedApiBase(Uri uri)

@@ -1,5 +1,6 @@
 using VideoGrabber.Platform.Api.Jobs;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Core.Access;
 using VideoGrabber.Platform.Core.Jobs;
 using VideoGrabber.Platform.Persistence;
 
@@ -8,6 +9,10 @@ namespace VideoGrabber.Platform.Api.Telegram;
 public sealed class BotMediaHandler(
     SourceAnalysisService sources,
     JobStore jobs,
+    DeviceStore devices,
+    GrantStore grants,
+    IAccountStore accounts,
+    TimeProvider clock,
     IBotApiClient bot)
 {
     public async Task<bool> HandleAsync(
@@ -17,12 +22,28 @@ public sealed class BotMediaHandler(
         string args,
         CancellationToken cancellationToken)
     {
+        if (command is "/download" or "/course" or "/mp3"
+            or "/trim" or "/join" or "/transcribe")
+        {
+            var profile = await accounts.ReadAsync(accountId, cancellationToken);
+            if (profile is null || !AccountEligibility.CanUseProtectedDownloads(profile))
+            {
+                await bot.SendMessageAsync(new BotMessage(
+                    chatId,
+                    "Скачивание доступно после входа в основной VideoGrabber-аккаунт, " +
+                    "изначально зарегистрированный через Google или e-mail. " +
+                    "Войдите на сайте/в Windows VideoGrabber и привяжите Telegram к этому аккаунту."),
+                    cancellationToken);
+                return true;
+            }
+        }
+
         switch (command)
         {
             case "/media":
                 await bot.SendMessageAsync(new BotMessage(
                     chatId,
-                    "Media: /download <URL> [quality], /mp3 <URL> [quality], " +
+                    "Media: /download <URL> [quality], /course <URL> [quality], /mp3 <URL> [quality], " +
                     "/trim <artifactId> <URL> <startMs> <durationMs> [quality], " +
                     "/join <artifactId1,artifactId2,...> <URL> [quality], " +
                     "/transcribe <artifactId> <URL> [quality]. " +
@@ -33,6 +54,9 @@ public sealed class BotMediaHandler(
                 return true;
             case "/download":
                 await CreateFromUrlAsync(chatId, accountId, "download", args, [], null, null, cancellationToken);
+                return true;
+            case "/course":
+                await CreateCourseAsync(chatId, accountId, args, cancellationToken);
                 return true;
             case "/mp3":
                 await CreateFromUrlAsync(chatId, accountId, "mp3", args, [], null, null, cancellationToken);
@@ -48,6 +72,100 @@ public sealed class BotMediaHandler(
                 return true;
             default:
                 return false;
+        }
+    }
+
+    private async Task CreateCourseAsync(
+        long chatId,
+        Guid accountId,
+        string args,
+        CancellationToken cancellationToken)
+    {
+        var parts = args.Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 1
+            || !Uri.TryCreate(parts[0], UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https")
+            || !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId, "Формат: /course <HTTP(S)-URL> [quality]."),
+                cancellationToken);
+            return;
+        }
+
+        var access = await grants.EvaluateAsync(accountId, cancellationToken);
+        if (!access.CanDownloadCourse)
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Скачивание полного курса не входит в текущий тариф. " +
+                "Нужен Full Course; owner_admin имеет доступ постоянно."),
+                cancellationToken);
+            return;
+        }
+
+        var activeDevices = (await devices.ListAsync(accountId, cancellationToken))
+            .Where(device => !device.Revoked)
+            .OrderByDescending(device =>
+                device.LastSeenAt is DateTimeOffset seen
+                && clock.GetUtcNow() - seen < TimeSpan.FromSeconds(25))
+            .ThenByDescending(device => device.LastSeenAt)
+            .ToArray();
+        if (activeDevices.Length == 0)
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Нет зарегистрированного Windows VideoGrabber. " +
+                "Войдите в Managed-приложение и включите задания с сайта и Telegram."),
+                cancellationToken);
+            return;
+        }
+
+        var quality = parts.Length >= 2 ? parts[1] : "best";
+        try
+        {
+            var source = await sources.RegisterDesktopAsync(
+                accountId,
+                new RegisterDesktopSourceRequest(uri, quality),
+                cancellationToken);
+            var request = NewDesktopRequest(
+                "course_download",
+                activeDevices[0].DeviceId,
+                source.SourceId,
+                quality);
+            var job = await jobs.CreateAsync(
+                accountId, request, cancellationToken);
+            var online = activeDevices[0].LastSeenAt is DateTimeOffset lastSeen
+                && clock.GetUtcNow() - lastSeen < TimeSpan.FromSeconds(25);
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                $"Курс поставлен в очередь: {job.JobId:D}\n" +
+                $"Компьютер: {activeDevices[0].Name} ({(online ? "online" : "offline")})\n" +
+                $"Качество: {quality}\n" +
+                (online
+                    ? "VideoGrabber заберёт задание автоматически."
+                    : "Загрузка начнётся, когда Windows VideoGrabber станет online.")),
+                cancellationToken);
+        }
+        catch (ReservationUnavailableException)
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Сервер отклонил скачивание курса: доступ Full Course не активен."),
+                cancellationToken);
+        }
+        catch (Exception ex) when (
+            ex is UnauthorizedAccessException
+            or InvalidDataException
+            or JobUnavailableException
+            or ArgumentException)
+        {
+            await bot.SendMessageAsync(new BotMessage(
+                chatId,
+                "Не удалось создать задание курса: " + ex.Message),
+                cancellationToken);
         }
     }
 
@@ -196,6 +314,26 @@ public sealed class BotMediaHandler(
             : string.Join("\n", rows.TakeLast(15).Select(
                 x => $"{x.JobId:D} • {x.State} • {x.Reason}"));
         await bot.SendMessageAsync(new BotMessage(chatId, text), cancellationToken);
+    }
+
+    private static CreateJob NewDesktopRequest(
+        string kind,
+        Guid deviceId,
+        string sourceId,
+        string quality)
+    {
+        var request = new CreateJob(
+            Guid.NewGuid(),
+            string.Empty,
+            kind,
+            "desktop_worker",
+            deviceId,
+            sourceId,
+            quality,
+            [],
+            null,
+            null);
+        return request with { RequestHash = JobRequestHasher.Hash(request) };
     }
 
     private static CreateJob NewRequest(

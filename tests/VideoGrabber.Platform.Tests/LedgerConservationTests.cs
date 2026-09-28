@@ -85,6 +85,67 @@ public sealed class LedgerConservationTests
         Assert.Equal(0L, await EventCountAsync(f, receipt.ReservationId, "reserve"));
     }
 
+    [Fact]
+    public async Task Failed_local_client_operation_releases_reserved_free_credit()
+    {
+        await using var f = await ApiFixture.StartAsync();
+        var user = await f.AccountAsync("telegram", "local-release");
+        var admin = await f.AdminAsync();
+        (await admin.PostAsJsonAsync("/v1/admin/grants",
+            new GrantRequest(user.Id, "credits", 0, 1, null, "local-release", Guid.NewGuid())))
+            .EnsureSuccessStatusCode();
+
+        var deviceId = Guid.NewGuid();
+        var ledger = f.Service<CreditLedger>();
+        var reservation = await ledger.ReserveAsync(
+            user.Id,
+            new ReservationRequest(Guid.NewGuid(), new string('a', 64),
+                "download", "desktop_worker", deviceId),
+            default);
+
+        var afterReserve = await f.Service<GrantStore>().EvaluateAsync(user.Id, default);
+        Assert.Equal(0, afterReserve.RemainingDownloads);
+
+        var released = await ledger.FinalizeLocalClientAsync(
+            user.Id, deviceId, reservation.ReservationId,
+            "failed", "local-failed-test", default);
+
+        Assert.Equal("released", released.State);
+        var afterRelease = await f.Service<GrantStore>().EvaluateAsync(user.Id, default);
+        Assert.Equal(1, afterRelease.RemainingDownloads);
+        Assert.Equal(1L, await EventCountAsync(f, reservation.ReservationId, "release"));
+        Assert.Equal(0L, await EventCountAsync(f, reservation.ReservationId, "commit"));
+    }
+
+    [Fact]
+    public async Task Successful_local_client_operation_commits_exactly_one_free_credit()
+    {
+        await using var f = await ApiFixture.StartAsync();
+        var user = await f.AccountAsync("telegram", "local-commit");
+        var admin = await f.AdminAsync();
+        (await admin.PostAsJsonAsync("/v1/admin/grants",
+            new GrantRequest(user.Id, "credits", 0, 1, null, "local-commit", Guid.NewGuid())))
+            .EnsureSuccessStatusCode();
+
+        var deviceId = Guid.NewGuid();
+        var ledger = f.Service<CreditLedger>();
+        var reservation = await ledger.ReserveAsync(
+            user.Id,
+            new ReservationRequest(Guid.NewGuid(), new string('b', 64),
+                "download", "desktop_worker", deviceId),
+            default);
+
+        var completed = await ledger.FinalizeLocalClientAsync(
+            user.Id, deviceId, reservation.ReservationId,
+            "completed", "local-success-test", default);
+
+        Assert.Equal("completed", completed.State);
+        var access = await f.Service<GrantStore>().EvaluateAsync(user.Id, default);
+        Assert.Equal(0, access.RemainingDownloads);
+        Assert.Equal(1L, await EventCountAsync(f, reservation.ReservationId, "commit"));
+        Assert.Equal(0L, await EventCountAsync(f, reservation.ReservationId, "release"));
+    }
+
     private static async Task RevokeOnlyGrantAsync(ApiFixture f, Guid accountId)
     {
         await using var connection = await f.Database.OpenConnectionAsync();

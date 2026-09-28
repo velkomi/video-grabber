@@ -9,7 +9,10 @@ public sealed record DeviceRegistration(
 public sealed record DeviceReceipt(
     Guid DeviceId,
     string Name,
-    bool Revoked);
+    bool Revoked)
+{
+    public DateTimeOffset? LastSeenAt { get; init; }
+}
 
 public sealed record DeviceChallenge(
     Guid DeviceId,

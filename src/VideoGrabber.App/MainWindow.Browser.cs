@@ -67,14 +67,47 @@ public sealed partial class MainWindow
             addQueue,
             downloadAll,
             howTo));
-        panel.Children.Add(SectionHeading("Весь курс GetCourse"));
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Важно: для закрытого курса сначала войдите в свой аккаунт во встроенном браузере ниже (логин и пароль), дождитесь открытия страницы курса и только потом нажимайте «Скачать весь курс» или «Продолжить / открыть папку курса».",
-            TextWrapping = TextWrapping.Wrap,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = TextBrush
-        });
+        panel.Children.Add(SectionHeading("После скачивания"));
+        _transcribeDownloadedButton = SecondaryButton("Транскрибировать скачанное");
+        _transcribeDownloadedButton.IsEnabled = true;
+        ToolTipService.SetToolTip(
+            _transcribeDownloadedButton,
+            "Если видео ещё не скачано или тариф не подходит, VideoGrabber объяснит, что нужно сделать.");
+        _transcribeDownloadedButton.Click += async (_, _) => await TranscribeLastDownloadedAsync();
+        panel.Children.Add(_transcribeDownloadedButton);
+        panel.Children.Add(SectionHeading("Очередь загрузок"));
+        _downloadQueueList = new ListView { Height = 150, SelectionMode = ListViewSelectionMode.Single };
+        panel.Children.Add(_downloadQueueList);
+
+        var addAll = SecondaryButton("Добавить все");
+        addAll.Click += (_, _) => QueueAllVisibleCandidates();
+        var up = SecondaryButton("↑ Выше");
+        up.Click += (_, _) => MoveQueuedCandidate(-1);
+        var down = SecondaryButton("↓ Ниже");
+        down.Click += (_, _) => MoveQueuedCandidate(1);
+        var remove = SecondaryButton("Удалить");
+        remove.Click += (_, _) => RemoveQueuedCandidate();
+        var runQueue = PrimaryButton("Скачать очередь / продолжить");
+        runQueue.Click += async (_, _) => await DownloadQueuedCandidatesAsync();
+        panel.Children.Add(ResponsiveActions(addAll, up, down, remove));
+        panel.Children.Add(runQueue);
+        panel.Children.Add(MutedText("Для каждого найденного видео можно выбрать своё качество. Успешные пункты удаляются из очереди; оставшиеся можно продолжить позже. Отмена останавливает всю очередь."));
+        panel.Children.Add(MutedText("Для закрытого урока войдите на сайте и выберите выше «Встроенный браузер — только эта загрузка». Пароль приложение не читает. DRM не обходится."));
+    }
+
+    private Border BuildCourseToolsCard()
+    {
+        var content = Vertical(10);
+        content.Children.Add(SectionHeading("Курсы GetCourse"));
+        content.Children.Add(MutedText(
+            "Полный курс — отдельная расширенная функция. Для закрытого курса вставьте ссылку выше, " +
+            "откройте её во встроенном браузере, войдите в свой аккаунт GetCourse и дождитесь страницы курса. " +
+            "Кнопка скачивания остаётся видимой и объяснит, если требуется другой тариф или сначала нужен вход."));
+
+        var openCourse = BrowserActionButton("Открыть курс во встроенном браузере");
+        openCourse.Click += OpenBrowser_Click;
+        content.Children.Add(openCourse);
+
         _courseQualityBox = new ComboBox
         {
             Header = "Качество видео для всего курса",
@@ -85,7 +118,44 @@ public sealed partial class MainWindow
         _courseQualityBox.Items.Add(ComboItem("Среднее — до 480p", "480p"));
         _courseQualityBox.Items.Add(ComboItem("Высокое — до 720p", "720p"));
         _courseQualityBox.Items.Add(ComboItem("Лучшее доступное", "best"));
-        panel.Children.Add(_courseQualityBox);
+        content.Children.Add(_courseQualityBox);
+
+        _courseTranscriptionCheckBox = new CheckBox
+        {
+            Content = "Транскрибировать видео курса в TXT",
+            IsChecked = _preferences.CourseAutoTranscription,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        _courseTranscriptionOptionHint = MutedText("");
+        void RefreshCourseTranscriptionOptionHint()
+        {
+            var enabled = _courseTranscriptionCheckBox.IsChecked == true;
+            _courseTranscriptionOptionHint.Text = enabled
+                ? "Включено: каждое скачанное видео попадёт в фоновую очередь Whisper. Следующее видео продолжит скачиваться параллельно, но полное завершение курса будет ждать готовности TXT. Процесс заметно нагружает CPU и для больших курсов может увеличить общее время на несколько часов."
+                : "Выключено: VideoGrabber скачает и проверит курс без фоновой транскрибации. TXT автоматически создаваться не будут.";
+        }
+        _courseTranscriptionCheckBox.Checked += (_, _) =>
+        {
+            _preferences.CourseAutoTranscription = true;
+            PersistUiPreferences();
+            RefreshCourseTranscriptionOptionHint();
+            UpdateCourseTranscriptionSelectionUi();
+        };
+        _courseTranscriptionCheckBox.Unchecked += (_, _) =>
+        {
+            _preferences.CourseAutoTranscription = false;
+            PersistUiPreferences();
+            RefreshCourseTranscriptionOptionHint();
+            UpdateCourseTranscriptionSelectionUi();
+        };
+        RefreshCourseTranscriptionOptionHint();
+        content.Children.Add(_courseTranscriptionCheckBox);
+        content.Children.Add(_courseTranscriptionOptionHint);
+        content.Children.Add(CreateWhisperModelSelector("Модель транскрибации курса"));
+        content.Children.Add(CreateWhisperModelStatusText());
+        content.Children.Add(CreateWhisperModelSourceLink());
+
         _courseDownloadButton = PrimaryButton("Скачать весь курс");
         _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
 
@@ -98,9 +168,10 @@ public sealed partial class MainWindow
         _courseClearCacheButton = SecondaryButton("Очистить кэш / временные файлы");
         _courseClearCacheButton.Click += (_, _) => ClearCourseTemporaryFiles();
 
-        panel.Children.Add(ResponsiveActions(
+        content.Children.Add(ResponsiveActions(
             _courseDownloadButton,
             _courseResumeButton,
+            coursePauseButton,
             _courseClearCacheButton));
 
         _courseNetworkWarningText = new TextBlock
@@ -119,7 +190,7 @@ public sealed partial class MainWindow
             BorderThickness = new Thickness(1),
             Child = _courseNetworkWarningText
         };
-        panel.Children.Add(_courseNetworkWarning);
+        content.Children.Add(_courseNetworkWarning);
 
         _courseStageText = new TextBlock
         {
@@ -144,42 +215,57 @@ public sealed partial class MainWindow
             Width = 0
         };
         _courseProgressTrack.Children.Add(_courseProgressFill);
-        _courseProgressTrack.SizeChanged += (_, _) =>
-            UpdateCourseProgressWidth();
+        _courseProgressTrack.SizeChanged += (_, _) => UpdateCourseProgressWidth();
         _courseProgressPercent = MutedText("0%");
 
-        panel.Children.Add(_courseStageText);
-        panel.Children.Add(_courseProgressTrack);
-        panel.Children.Add(_courseProgressPercent);
-        panel.Children.Add(_courseCurrentText);
-        panel.Children.Add(_courseEtaText);
-        panel.Children.Add(_courseElapsedText);
+        content.Children.Add(_courseStageText);
+        content.Children.Add(_courseProgressTrack);
+        content.Children.Add(_courseProgressPercent);
+        content.Children.Add(_courseCurrentText);
+        content.Children.Add(_courseEtaText);
+        content.Children.Add(_courseElapsedText);
 
-        panel.Children.Add(MutedText("Проходит доступные модули и уроки текущего GetCourse-тренинга. Для каждого урока создаётся отдельная папка: Word + HTML страницы, доступные изображения и вложения (PDF/Office/архивы) и найденные видео. Урок без видео всё равно сохраняется. Используется только ваша текущая авторизованная сессия."));
+        content.Children.Add(SectionHeading("Фоновая транскрибация курса"));
+        content.Children.Add(MutedText(
+            "Каждое видео после скачивания автоматически ставится в последовательную очередь Whisper. " +
+            "Пока распознаётся один ролик, следующий уже может скачиваться. Готовый TXT получает то же имя и лежит рядом с видео."));
+        _courseTranscriptionStageText = new TextBlock
+        {
+            Text = "Фоновая транскрибация — ожидаю первое видео",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        };
+        _courseTranscriptionCurrentText = MutedText(
+            "После загрузки ролика Whisper автоматически создаст рядом TXT с таким же именем.");
+        _courseTranscriptionProgressTrack = new Grid
+        {
+            Height = 8,
+            Background = ProgressTrackBrush,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        _courseTranscriptionProgressFill = new Border
+        {
+            Background = AccentBrush,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            CornerRadius = new CornerRadius(4),
+            Width = 0
+        };
+        _courseTranscriptionProgressTrack.Children.Add(
+            _courseTranscriptionProgressFill);
+        _courseTranscriptionProgressTrack.SizeChanged += (_, _) =>
+            UpdateCourseTranscriptionUi();
+        _courseTranscriptionProgressPercent = MutedText("0%");
+        content.Children.Add(_courseTranscriptionStageText);
+        content.Children.Add(_courseTranscriptionProgressTrack);
+        content.Children.Add(_courseTranscriptionProgressPercent);
+        content.Children.Add(_courseTranscriptionCurrentText);
+        UpdateCourseTranscriptionSelectionUi();
 
-        panel.Children.Add(SectionHeading("После скачивания"));
-        _transcribeDownloadedButton = SecondaryButton("Транскрибировать скачанное");
-        _transcribeDownloadedButton.IsEnabled = false;
-        _transcribeDownloadedButton.Click += async (_, _) => await TranscribeLastDownloadedAsync();
-        panel.Children.Add(_transcribeDownloadedButton);
-        panel.Children.Add(SectionHeading("Очередь загрузок"));
-        _downloadQueueList = new ListView { Height = 150, SelectionMode = ListViewSelectionMode.Single };
-        panel.Children.Add(_downloadQueueList);
+        content.Children.Add(MutedText(
+            "VideoGrabber проходит доступные модули и уроки текущего GetCourse-тренинга. " +
+            "Для каждого урока создаётся отдельная папка: Word + HTML страницы, изображения, вложения, найденные видео и TXT-транскрипты."));
 
-        var addAll = SecondaryButton("Добавить все");
-        addAll.Click += (_, _) => QueueAllVisibleCandidates();
-        var up = SecondaryButton("↑ Выше");
-        up.Click += (_, _) => MoveQueuedCandidate(-1);
-        var down = SecondaryButton("↓ Ниже");
-        down.Click += (_, _) => MoveQueuedCandidate(1);
-        var remove = SecondaryButton("Удалить");
-        remove.Click += (_, _) => RemoveQueuedCandidate();
-        var runQueue = PrimaryButton("Скачать очередь / продолжить");
-        runQueue.Click += async (_, _) => await DownloadQueuedCandidatesAsync();
-        panel.Children.Add(ResponsiveActions(addAll, up, down, remove));
-        panel.Children.Add(runQueue);
-        panel.Children.Add(MutedText("Для каждого найденного видео можно выбрать своё качество. Успешные пункты удаляются из очереди; оставшиеся можно продолжить позже. Отмена останавливает всю очередь."));
-        panel.Children.Add(MutedText("Для закрытого урока войдите на сайте и выберите выше «Встроенный браузер — только эта загрузка». Пароль приложение не читает. DRM не обходится."));
+        return Card(content);
     }
 
     private async void OpenBrowser_Click(object sender, RoutedEventArgs e)

@@ -86,13 +86,19 @@ public sealed class DeviceStore : IAsyncDisposable
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetAccountAsync(connection, transaction, accountId, cancellationToken);
         await using var command = new NpgsqlCommand(
-            "select device_id,name,revoked_at is not null from licensing.devices where account_id=@account order by created_at,device_id",
+            "select device_id,name,revoked_at is not null,last_seen_at from licensing.devices where account_id=@account order by created_at,device_id",
             connection, transaction);
         command.Parameters.AddWithValue("account", accountId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var result = new List<DeviceReceipt>();
         while (await reader.ReadAsync(cancellationToken))
-            result.Add(new(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2)));
+            result.Add(new DeviceReceipt(
+                reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2))
+            {
+                LastSeenAt = reader.IsDBNull(3)
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(3)
+            });
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
         return result;
@@ -185,6 +191,20 @@ public sealed class DeviceStore : IAsyncDisposable
         consume.Parameters.AddWithValue("now", now);
         consume.Parameters.AddWithValue("hash", Hash(proof.Nonce));
         if (await consume.ExecuteNonQueryAsync(cancellationToken) != 1) throw new DeviceProofException();
+
+        await using (var seen = new NpgsqlCommand("""
+            update licensing.devices
+            set last_seen_at=@now
+            where account_id=@account and device_id=@device and revoked_at is null
+            """, connection, transaction))
+        {
+            seen.Parameters.AddWithValue("now", now);
+            seen.Parameters.AddWithValue("account", accountId);
+            seen.Parameters.AddWithValue("device", deviceId);
+            if (await seen.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new DeviceNotFoundException();
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return version;
     }

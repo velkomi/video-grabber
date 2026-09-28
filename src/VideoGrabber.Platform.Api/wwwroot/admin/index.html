@@ -3,25 +3,166 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>VideoGrabber — Admin</title>
+  <title>VideoGrabber — Админ-панель</title>
+  <link rel="icon" href="/assets/videograbber-icon.png">
   <link rel="stylesheet" href="/admin/admin.css">
 </head>
 <body>
+<header class="topbar">
+  <a class="brand" href="/web/#app">
+    <img src="/assets/videograbber-icon.png" alt="">
+    <span>VideoGrabber</span>
+  </a>
+  <a class="back" href="/web/#app">← В кабинет</a>
+</header>
+
 <main>
-  <h1>VideoGrabber Admin</h1>
-  <form id="lookup-form">
-    <label for="identity">Провайдер ID или подтверждённый email</label>
-    <div class="row"><input id="identity" required autocomplete="off"><button>Найти</button></div>
-  </form>
-  <p id="status" role="status">Введите идентификатор аккаунта.</p>
-  <section id="account" hidden>
-    <h2>Аккаунт</h2>
-    <dl><dt>ID</dt><dd id="account-id"></dd><dt>Роль</dt><dd id="account-role"></dd><dt>Блокировка</dt><dd id="account-blocked"></dd></dl>
-    <label for="reason">Причина изменения</label>
-    <textarea id="reason" rows="3" required></textarea>
-    <div class="actions"><button data-action="block">Блокировать</button><button data-action="unblock">Разблокировать</button><button data-action="reset">Сбросить устройства</button></div>
-    <h2>Аудит</h2><pre id="audit"></pre>
+  <section class="hero">
+    <p class="eyebrow">OWNER ADMIN</p>
+    <h1>Админ-панель</h1>
+    <p>Ручные тарифы, права, квоты и аудит клиентов. Опасные изменения защищены вторым фактором.</p>
   </section>
+
+  <section id="auth-error" class="card danger" hidden>
+    <h2>Нужен вход Owner</h2>
+    <p>Откройте админ-панель из авторизованного личного кабинета VideoGrabber.</p>
+    <a class="button" href="/web/#app">Вернуться в кабинет</a>
+  </section>
+
+  <section id="mfa-card" class="card" hidden>
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">ЗАЩИТА АДМИНКИ</p>
+        <h2>Двухфакторная аутентификация</h2>
+      </div>
+      <span id="mfa-state" class="pill">—</span>
+    </div>
+
+    <div id="mfa-enroll" hidden>
+      <p>Добавьте VideoGrabber в Google Authenticator, Microsoft Authenticator, 1Password или другое TOTP-приложение.</p>
+      <div class="secret-box">
+        <label>Секретный ключ
+          <input id="mfa-secret" readonly>
+        </label>
+        <div class="row compact">
+          <button id="copy-secret" class="button quiet" type="button">Копировать ключ</button>
+          <a id="mfa-uri" class="button quiet" href="#">Открыть в Authenticator</a>
+        </div>
+      </div>
+      <p class="note">Секрет показывается только во время привязки. Не передавайте его клиентам.</p>
+    </div>
+
+    <form id="mfa-form">
+      <label>6-значный код
+        <input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" required>
+      </label>
+      <button class="button primary" type="submit">Подтвердить 2FA</button>
+    </form>
+    <p id="mfa-status" class="status" role="status"></p>
+  </section>
+
+  <div id="admin-console" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div><p class="eyebrow">КЛИЕНТ</p><h2>Найти аккаунт</h2></div>
+        <span id="mfa-timer" class="pill success">2FA активна</span>
+      </div>
+      <form id="lookup-form">
+        <label>Подтверждённый e-mail или provider ID
+          <div class="row">
+            <input id="identity" required autocomplete="off" placeholder="client@example.com">
+            <button class="button primary" type="submit">Найти</button>
+          </div>
+        </label>
+      </form>
+      <p id="status" class="status" role="status">Введите e-mail клиента.</p>
+    </section>
+
+    <section id="account" hidden>
+      <div class="grid two">
+        <section class="card">
+          <p class="eyebrow">АККАУНТ</p>
+          <h2>Состояние</h2>
+          <dl class="facts">
+            <div><dt>ID</dt><dd id="account-id"></dd></div>
+            <div><dt>Роль</dt><dd id="account-role"></dd></div>
+            <div><dt>Блокировка</dt><dd id="account-blocked"></dd></div>
+            <div><dt>Первая покупка</dt><dd id="account-purchase"></dd></div>
+          </dl>
+
+          <label>Причина административного изменения
+            <textarea id="reason" rows="3" placeholder="Например: оплата наличными 28.09.2026" required></textarea>
+          </label>
+          <div class="actions">
+            <button class="button danger-button" data-action="block" type="button">Блокировать</button>
+            <button class="button quiet" data-action="unblock" type="button">Разблокировать</button>
+            <button class="button quiet" data-action="reset" type="button">Сбросить устройства</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <p class="eyebrow">РУЧНОЙ ДОСТУП</p>
+          <h2>Тариф / оплата наличными</h2>
+          <label>Тариф
+            <select id="grant-plan">
+              <option value="start">Start</option>
+              <option value="unlimited_video">Unlimited Video</option>
+              <option value="full_course">Full Course</option>
+            </select>
+          </label>
+          <label>Срок
+            <select id="grant-duration">
+              <option value="30">30 дней</option>
+              <option value="90">90 дней</option>
+              <option value="365">365 дней</option>
+              <option value="permanent">Навсегда</option>
+            </select>
+          </label>
+          <div class="actions vertical-mobile">
+            <button id="grant-plan-button" class="button primary" type="button">Выдать выбранный тариф</button>
+            <button id="grant-all-button" class="button success-button" type="button">Безлимит на всё — навсегда</button>
+          </div>
+
+          <hr>
+          <label>Добавить кредиты / загрузки
+            <input id="grant-credits" type="number" min="1" step="1" value="10">
+          </label>
+          <button id="grant-credits-button" class="button quiet" type="button">Добавить кредиты</button>
+          <p class="note">Ручная выдача не подделывает платёж. Она сохраняется как <code>admin_gift</code> и отдельно видна в аудите.</p>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <div><p class="eyebrow">ТОЧЕЧНЫЕ ПРАВА</p><h2>Функции клиента</h2></div>
+          <label class="inline">Действует до
+            <input id="feature-until" type="datetime-local">
+          </label>
+        </div>
+        <p class="note">«По тарифу» ничего не переопределяет. «Разрешить» включает только выбранную функцию вручную. «Запретить» отключает её даже при тарифе.</p>
+        <div id="feature-grid" class="feature-grid"></div>
+        <div class="actions">
+          <button id="save-features" class="button primary" type="button">Сохранить права</button>
+          <button id="inherit-features" class="button quiet" type="button">Все — по тарифу</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div><p class="eyebrow">ДОСТУП</p><h2>Действующие grants</h2></div>
+          <button id="refresh-account" class="button quiet small" type="button">Обновить</button>
+        </div>
+        <div id="grants" class="table-wrap"></div>
+      </section>
+
+      <section class="card">
+        <p class="eyebrow">АУДИТ</p>
+        <h2>История административных действий</h2>
+        <pre id="audit"></pre>
+      </section>
+    </section>
+  </div>
 </main>
 <script type="module" src="/admin/admin.js"></script>
-</body></html>
+</body>
+</html>

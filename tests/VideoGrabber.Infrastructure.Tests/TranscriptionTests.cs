@@ -52,6 +52,16 @@ public sealed class SrtValidatorTests
         Assert.False(SrtValidator.TryValidate(cue, 5, out _));
     }
 
+    [Fact]
+    public void Small_whisper_tail_rounding_is_tolerated_but_large_overrun_is_rejected()
+    {
+        Assert.True(SrtValidator.TryValidate(
+            "1\n00:00:09,000 --> 00:00:12,500\nTail speech\n", 10, out var toleratedError), toleratedError);
+        Assert.False(SrtValidator.TryValidate(
+            "1\n00:00:09,000 --> 00:00:13,100\nToo long\n", 10, out var rejectedError));
+        Assert.Equal("duration-bound", rejectedError);
+    }
+
     [Theory]
     [InlineData(0d)]
     [InlineData(-1d)]
@@ -80,6 +90,35 @@ public sealed class SrtValidatorTests
         var text = "\uFEFF1\r\n00:00:00,000 --> 00:00:01,000\r\nПервая строка\r\n第二行\r\n\r\n"
             + "2\r\n00:00:01,000 --> 00:00:02,000\r\nمرحبا\r\n";
         Assert.True(SrtValidator.TryValidate(text, 2, out var error), error);
+    }
+}
+
+public sealed class TranscriptTextValidatorTests
+{
+    [Fact]
+    public void Rejects_blank_audio_dominant_output()
+    {
+        var text = string.Join('\n', Enumerable.Repeat("[BLANK_AUDIO]", 40))
+            + "\nДобрый вечер.\nСпасибо.";
+        Assert.False(TranscriptTextValidator.TryValidate(text, out var error));
+        Assert.Equal("blank-audio-dominant", error);
+    }
+
+    [Fact]
+    public void Rejects_long_repetition_loop()
+    {
+        var text = "Нормальное начало.\n"
+            + string.Join('\n', Enumerable.Repeat("Да, в королеве.", 20))
+            + "\nНормальный конец.";
+        Assert.False(TranscriptTextValidator.TryValidate(text, out var error));
+        Assert.Equal("repetition-loop", error);
+    }
+
+    [Fact]
+    public void Accepts_normal_russian_transcript_with_short_interjections()
+    {
+        var text = "Добрый вечер.\nДа.\nДа.\nДа.\nСегодня разбираем вопросы обучения.\nСпасибо всем участникам.";
+        Assert.True(TranscriptTextValidator.TryValidate(text, out var error), error);
     }
 }
 
@@ -164,6 +203,91 @@ public sealed class WhisperPromotionTests
         }
         finally { Directory.Delete(root, true); }
     }
+    [Fact]
+    public async Task Hardened_retry_uses_independent_decoder_and_stricter_vad_profile()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var vadDirectory = Path.Combine(root, "tools", "whisper");
+            Directory.CreateDirectory(vadDirectory);
+            File.WriteAllBytes(Path.Combine(vadDirectory, "ggml-silero-v6.2.0.bin"), [1]);
+
+            IReadOnlyList<string>? captured = null;
+            var runner = new ScriptedRunner((spec, token) =>
+            {
+                var args = spec.Arguments.ToList();
+                var outputIndex = args.IndexOf("-of");
+                if (outputIndex < 0)
+                    return Task.FromResult(new ProcessResult(0, "", ""));
+
+                captured = args;
+                var outputBase = args[outputIndex + 1];
+                File.WriteAllText(outputBase + ".txt", "Speech");
+                File.WriteAllText(outputBase + ".srt",
+                    "1\n00:00:00,000 --> 00:00:01,000\nSpeech\n");
+                return Task.FromResult(new ProcessResult(0, "", ""));
+            });
+
+            var result = await Service(root, runner, 10).TranscribeAsync(
+                Path.Combine(root, "input.wav"), Path.Combine(root, "out"),
+                Path.Combine(root, "whisper.exe"), Path.Combine(root, "model.bin"),
+                "en", CancellationToken.None, hardenedRetry: true);
+
+            Assert.True(result.Success, result.Message);
+            Assert.NotNull(captured);
+            Assert.Contains("-mc", captured!);
+            Assert.Contains("-nf", captured!);
+            Assert.Contains("-tp", captured!);
+            Assert.Contains("-tpi", captured!);
+            Assert.Contains("--vad-threshold", captured!);
+            Assert.Contains("0.60", captured!);
+            Assert.Contains("--vad-max-speech-duration-s", captured!);
+            Assert.Contains("15", captured!);
+            Assert.Contains("--vad-speech-pad-ms", captured!);
+            Assert.Contains("100", captured!);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task Text_only_mode_succeeds_without_srt_and_omits_subtitle_output()
+    {
+        var root = CreateRoot();
+        try
+        {
+            IReadOnlyList<string>? captured = null;
+            var runner = new ScriptedRunner((spec, token) =>
+            {
+                var args = spec.Arguments.ToList();
+                var outputIndex = args.IndexOf("-of");
+                if (outputIndex < 0)
+                    return Task.FromResult(new ProcessResult(0, "", ""));
+
+                captured = args;
+                var outputBase = args[outputIndex + 1];
+                File.WriteAllText(outputBase + ".txt",
+                    "This is a normal transcription result with meaningful speech.");
+                return Task.FromResult(new ProcessResult(0, "", ""));
+            });
+
+            var output = Path.Combine(root, "text-only");
+            var result = await Service(root, runner, 10).TranscribeAsync(
+                Path.Combine(root, "input.wav"), output,
+                Path.Combine(root, "whisper.exe"), Path.Combine(root, "model.bin"),
+                "en", CancellationToken.None, requireSubtitles: false);
+
+            Assert.True(result.Success, result.Message);
+            Assert.NotNull(result.TextPath);
+            Assert.Null(result.SubtitlesPath);
+            Assert.True(File.Exists(output + ".txt"));
+            Assert.False(File.Exists(output + ".srt"));
+            Assert.NotNull(captured);
+            Assert.DoesNotContain("-osrt", captured!);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     [Fact]
     public async Task Held_foreign_output_is_never_overwritten_or_deleted()
     {

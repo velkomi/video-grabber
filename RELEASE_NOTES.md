@@ -1,4 +1,208 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.55-rc.1] - 2026-09-28
+
+- Status: Whisper workspace cleanup completion.
+- Explicit course cache cleanup now removes owned `.vg-asr-*` directories and `.vg-course-transcript-*` temporaries recursively.
+- Course background transcription also removes its owned ASR workspace after each file result so failed/cancelled attempts do not accumulate hidden folders.
+- Ready media/documents remain protected; legacy `.vg-job-*` containing possible completed media are preserved unless empty/temporary-only.
+
+## [0.1.10-preview.54-rc.1] - 2026-09-28
+
+- Status: public-site/installer/admin-MFA/course-settings completion release.
+- Public Web now presents product capabilities rather than three unexplained transcription-model cards, and `/download/windows` is wired to a real NSIS setup executable while portable ZIP remains separate.
+- Owner admin console is linked only for `owner_admin`, requires TOTP 2FA for privileged changes, and supports manual grants, account controls, audit and per-feature overrides.
+- Admin TOTP secrets use a dedicated 32-byte encryption key secret (`VG_ADMIN_MFA_ENCRYPTION_KEY`).
+- Paused course transcription unlocks model/language settings; a changed setting cancels and discards the unfinished ASR work and requeues that video for a clean restart. A stopped/cancelled project also unlocks settings immediately without closing VideoGrabber.
+- preview.53 TXT-only background course transcription and preview.52 hardened retry remain intact.
+- Targeted desktop/platform regression suites pass and Local/Managed/API builds complete with zero warnings/errors.
+
+## [0.1.10-preview.53-rc.1] - 2026-09-28
+
+- Status: course background transcription is now TXT-only by design.
+- The course worker no longer requests or validates SRT, so a valid transcript is not discarded because whisper.cpp emitted out-of-order subtitle timestamps (`cue-order`).
+- Manual/local `text + SRT` remains unchanged and still requires a valid SRT.
+- Text-quality validation and the hardened retry from preview.52 remain active.
+
+## [0.1.10-preview.52-rc.1] - 2026-09-28
+
+- Status: hardened second-pass recovery for background course transcription.
+- Retry 2/2 now changes decoder/VAD behavior instead of repeating the same deterministic Whisper invocation: decoder context is reset, temperature fallback is disabled, and Silero VAD uses tighter splitting/padding.
+- Transcript/SRT quality gates remain strict; repeated hallucination loops and invalid timestamp order are still rejected rather than promoted as finished TXT.
+- Live reproduction on two preserved failed course audios recovered both a repetition-loop case and a cue-order case. Local/Managed builds complete with 0 warnings/errors; targeted Whisper promotion tests pass 6/6.
+
+## [0.1.10-preview.51-rc.1] - 2026-09-27
+
+- Status: Whisper model cache/dedup UX finalization.
+- Additional models use one canonical cache file per profile and are reused across selections and application updates. A normal re-selection of an already verified model performs no network transfer and creates no duplicate file.
+- The UI explicitly states that optional models download once from a public source, remain cached locally, and exposes a live `Model source` link for users who want to inspect provenance.
+- Live re-selection of verified Small produced no `.download`, no timestamp change and no additional `transcription.model` log entry.
+
+## [0.1.10-preview.50-rc.1] - 2026-09-27
+
+- Status: verified Whisper model downloader Windows promotion fix.
+- The first real Small-model selection reached the end of network transfer but Windows rejected atomic promotion because the `.download` FileStream was still open with `FileShare.None`.
+- The download/read/hash streams are now disposed before size/SHA verification and `File.Move`; failed/cancelled partials are still cleaned and never replace a valid model.
+- Targeted model-catalog/course-wiring tests: 6/6 PASS; Local build 0 warnings/errors.
+
+## [0.1.10-preview.49-rc.1] - 2026-09-27
+
+- Status: selectable Whisper model profiles with verified on-demand download.
+- The whisper.cpp engine remains unchanged. Users choose a friendly profile: bundled Base, balanced Small Q5, or quality-oriented Medium Q5.
+- Non-bundled models download automatically from the pinned public model source only when selected, are cached under LocalAppData across application updates, and are promoted atomically only after exact byte-size and SHA-256 verification.
+- UI explains relative quality, speed and disk usage and exposes an optional live `Model source` link without showing raw infrastructure URLs in the normal workflow.
+- Model selection is shared by local/manual transcription and full-course background transcription and is locked while an operation is active.
+
+## [0.1.10-preview.48-rc.1] - 2026-09-27
+
+- Status: transcription pause observability / active-time hotfix.
+- Course transcription elapsed time is now backed by a pause-aware Stopwatch instead of wall-clock `UtcNow - started`, so suspended hours are excluded from the visible elapsed value.
+- Global pause/resume stops/starts the active transcription stopwatch and writes `operation.pause` diagnostics with ordinal/total/queue state only.
+- Live incident diagnosis confirmed the 4th course video was paused, not hung: all Whisper threads were suspended, CPU was flat, and the UI button read `Continue`; resuming restored full CPU activity immediately.
+
+## [0.1.10-preview.47-rc.1] - 2026-09-27
+
+- Status: Russian-course language guard + public download-surface cleanup.
+- When course transcription language is configured as `auto`, Cyrillic course/path evidence selects `ru` explicitly; non-Cyrillic courses keep normal auto detection.
+- Removed the public Windows checksum/SHA button and related user-facing checksum instructions. The checksum endpoint may remain operational internally, but it is no longer linked or mentioned in the public site.
+- Removed GitHub/repository wording and raw links from packaged user-facing README/third-party notices while retaining component names and license information.
+- Regression protects public Web from checksum-link/GitHub leakage and protects course transcription from losing the Russian-language heuristic.
+
+## [0.1.10-preview.46-rc.1] - 2026-09-27
+
+- Status: transcription quality / VAD / application-icon hotfix.
+- Rebuilt `VideoGrabber.ico` from the canonical blue VideoGrabber PNG and embedded it through the existing ApplicationIcon/AppWindow paths.
+- Bundled `ggml-silero-v6.2.0.bin` and enabled whisper.cpp VAD plus non-speech token suppression for local transcription.
+- Added transcript text-quality validation: `[BLANK_AUDIO]`-dominated output and long duplicate-line loops are rejected instead of promoted beside course media.
+- Existing same-name TXT files are revalidated on resume; invalid historical transcripts are queued again and overwritten only after a validated replacement succeeds.
+- Real first-video sample: old auto mode produced mostly blank-audio markers; base+VAD auto produced normal Russian text with zero blank markers.
+- Real second-video diagnosis: old SRT repeated one phrase ~300 times over ~6.5 minutes, while PCM analysis found zero duplicate one-second source-audio blocks. Base+VAD eliminated the loop completely on the same tail segment.
+- Tested small-q5_1+VAD as well; quality was strong but ~2.6x slower on the real tail, so base+VAD was selected for the production course pipeline.
+
+## [0.1.10-preview.45-rc.1] - 2026-09-27
+
+- Status: Whisper SRT tail-validation hotfix.
+- A real 02h01m52s course video produced a final Whisper cue ending only 1.655 seconds beyond FFprobe duration. The old +1s bound rejected an otherwise valid transcript and needlessly started attempt 2/2.
+- SRT end-time tolerance is now 3 seconds. Larger overruns are still rejected as `duration-bound`.
+- Added regression coverage for tolerated 2.5s tail and rejected 3.1s tail.
+
+## [0.1.10-preview.44-rc.1] - 2026-09-27
+
+- Status: course-transcription opt-in / live-progress / throughput follow-up.
+- Whole-course transcription is now an explicit pre-run checkbox. New installs default to off; the selection is remembered, locked while the course is active, and actually gates whether Whisper is started/waited at completion.
+- The UI explains that download and transcription overlap, but CPU load rises and the final completion moment can be delayed by hours on large courses.
+- The active transcription item is now persisted independently of queue-enqueue UI updates, fixing the misleading 0/576 «stuck» appearance while Whisper is actually processing a long first video.
+- Course transcription UI shows current ordinal, filename, retry attempt, live elapsed time and queue size, refreshed every second.
+- Initial backfill scans the full course first and starts exactly one ordered Whisper worker afterwards, so queue construction cannot overwrite the active-item display.
+- Whisper uses up to 6 CPU threads. On the target i5-12400F the real 30-second benchmark improved from 4.36s at 4 threads to 3.36s at 6 threads (~23% faster).
+- Live diagnosis: the first queued video is 03h10m14s / 1.64 GB; whisper-cli remained CPU-active and had prepared a 365 MB WAV, so the prior UI symptom was presentation rather than a stalled process.
+
+## [0.1.10-preview.43-rc.1] - 2026-09-27
+
+- Status: automatic whole-course transcription pipeline.
+- Every successfully downloaded course video is enqueued into one ordered background Whisper worker while the next video continues downloading.
+- Successful course transcription leaves only `<video-basename>.txt` beside the media file. Whisper SRT is generated only for internal validation and removed after promotion of the validated text.
+- The course UI has a second independent progress lane showing transcription progress, current media, queued count, completed texts and failures.
+- Resume/backfill scans already downloaded course media and skips videos with an existing non-empty same-name TXT. A fully downloaded course can therefore complete local transcription without reopening an authenticated GetCourse session.
+- Global pause affects both download and transcription child processes; global cancel cancels both. Completion actions wait for transcription drain and are suppressed when transcript failures remain.
+- Local and Managed desktop editions share the same collapsible advanced-tools layout and course-transcription behavior.
+- Qualification: Local/Managed Release builds 0 warnings/errors; Infrastructure 686 passed / 14 expected environment skips / 0 failed.
+
+## [0.1.10-preview.42-rc.1] - 2026-09-27
+
+- Status: final whole-course integrity follow-up.
+- Course verification now treats any manifest/media count mismatch as incomplete, including the previously unprotected case where a valid downloaded video exists but an old manifest expected zero.
+- Revisited lessons preserve existing valid media in the new expected-video count: `max(current candidates, saved HTML video evidence, ready media files)`.
+- Live archive audit: 161/161 lessons present, zero lessons below expected media/assets; 576/576 media files passed ffprobe with zero invalid containers. One 30-second historical video was the only file present beyond the old 575-video manifest total and is now covered by the new rule.
+
+## [0.1.10-preview.41-rc.1] - 2026-09-27
+
+- Status: GetCourse/Kinescope course-integrity hotfix.
+- Whole-course integrity now cross-checks saved GetCourse HTML for declared `o-lt-lesson-video` blocks. A stale lesson manifest with zero expected videos can no longer make a video lesson appear complete.
+- Kinescope embed URLs are discovered directly from lesson DOM and handed to the normal yt-dlp browser-download pipeline, so a WebView iframe reset no longer prevents extraction when Kinescope itself remains downloadable.
+- Partial discovery is fail-closed: when the page declares more video blocks than VideoGrabber resolved, the lesson stays incomplete and automatic course recovery revisits it.
+- Live archive audit found eight affected lessons across modules 7–8 with 149 declared video blocks and no downloaded media; this exact false-completion pattern is now detected.
+- Qualification: direct Kinescope embed probe PASS; targeted regression 13/13; full Infrastructure 686 passed / 14 expected environment skips / 0 failed; Local and Managed Release builds 0 warnings/errors.
+
+## [0.1.10-preview.40-rc.1] - 2026-09-26
+
+- Status: YouTube SABR fallback follow-up.
+- YouTube analysis and server download now request `mweb,default` player clients. This preserves anonymous mweb + PO-token handling while allowing yt-dlp's current default/visionOS path when mweb is placed into YouTube's SABR-only experiment.
+- Live probe through the production social-egress resolved real Shorts formats from 144p through 2160p and completed a 360x640 MP4 download with audio, without YouTube cookies.
+- Instagram Reel, current TikTok and Pinterest video-pin anonymous probes remain successful.
+
+## [0.1.10-preview.39-rc.1] - 2026-09-26
+
+- Status: portrait/social quality correctness follow-up.
+- Portrait media quality is orientation-aware: 360p/720p/1080p use yt-dlp `res:<N>` instead of literal video height.
+- Storyboards and non-video formats are excluded from the quality list, preventing false 180p choices and review_required retries.
+- Public Shorts, Instagram Reel, TikTok video and Pinterest video-pin anonymous extraction were rechecked through the production social path.
+- Public product surfaces continue to expose no repository URL; Windows package and checksum stay on the VideoGrabber domain.
+
+## [0.1.10-preview.38-rc.1] - 2026-09-25
+
+- Status: unified public-social delivery for Web and Windows Managed.
+- Public YouTube/Shorts, Instagram/Reels, TikTok and Pinterest links use the qualified server social pipeline without site cookies by default.
+- Managed Windows downloads the verified server artifact into the selected local folder; explicit site-cookie selection keeps the local/browser-session fallback.
+- Social operations no longer double-reserve Free quota in the Windows client.
+- Public reverse proxy dynamically resolves the API Docker service to survive container recreation without 502.
+- Public distribution remains on the VideoGrabber domain; the project's own repository URL is not exposed in the product/site/docs.
+
+## [0.1.10-preview.37-rc.1] - 2026-09-25
+
+- Status: social-video / Windows reservation correctness candidate.
+- Public URL pipeline: YouTube and Shorts, Instagram/Reels, TikTok, Pinterest video pins.
+- YouTube server path: Deno 2.9.6 + bgutil PO-token provider 2.0.0 + mweb player client + isolated WARP/wireproxy social egress for datacenter-IP bot challenges.
+- Social egress is userspace-only and scoped to yt-dlp traffic; it does not replace the VPS host route or SSH path.
+- Managed Windows dispatches authorized local UI work back through DispatcherQueue before touching WinUI controls.
+- TikTok / Instagram / Pinterest path: yt-dlp browser impersonation backed by curl_cffi.
+- Windows Managed: refreshes expired API session during reservation; failed/cancelled local work releases the reservation; successful local work commits the Free credit through a dedicated account/device-scoped endpoint.
+- Support correction before this release: six preview.36 UI failures were released from reserved back to available, leaving the user Free grant at 10 available / 0 reserved.
+- Distribution privacy: the public site exposes no repository URL; Windows ZIP and current SHA-256 are served directly by the VideoGrabber domain.
+- Qualification: public YouTube Shorts, Instagram Reel, TikTok video and Pinterest video pin were all resolved through the anonymous social-video path; ledger DB tests 6/6, Worker 31/31, Core 32/32, Infrastructure 691 passed / 1 fixture skip.
+
+## [0.1.10-preview.36-rc.1] - 2026-09-25
+
+- Status: YouTube server-runtime / Free-reservation hotfix.
+- Previous version: 0.1.10-preview.35-rc.1.
+- API image now contains Python 3 and Node.js; SourceAnalysisService invokes yt-dlp with the Node JavaScript runtime.
+- Worker image also contains Node.js and uses the same runtime for actual downloads.
+- Source analysis reports stable user-facing reasons: source_unavailable, source_login_required, source_rate_limited, source_runtime_incomplete.
+- Failed source analysis happens before job admission and does not reserve Free quota.
+- Windows desktop-worker refreshes an expired managed session once before treating a device as revoked/offline.
+- Support correction: one legacy review-required desktop reservation from the preview.35 migration window was released with an auditable ledger release; Free returned to 10 available / 0 reserved.
+
+## [0.1.10-preview.35-rc.1] - 2026-09-25
+
+- Status: direct web download / simplified desktop UX candidate.
+- Previous version: 0.1.10-preview.34-rc.1.
+- Web: ordinary video and paid MP3 can run on the server worker and download directly in the browser; Windows is optional unless the user explicitly selects Windows delivery.
+- Browser delivery: completed server artifacts are exposed only through account-owned jobs and five-minute HMAC-scoped download tickets; large files stream normally instead of being buffered as a page Blob.
+- Managed Windows: the main downloader stays compact; MP3, GetCourse, page-video discovery and transcription are collapsed under an explicit «Дополнительные возможности» section. Whole-course buttons remain visible after expansion and explain prerequisites/tariff state.
+- Desktop worker: signed-in Windows clients accept explicitly-addressed jobs by default; a remembered opt-out remains available in Account.
+- Branding: the actual VideoGrabber application icon is used by Web and Telegram Mini App.
+- Diagnostics: the earlier OLEG offline state was caused by missing desktop-worker enrollment, not by the application process being closed.
+
+## [0.1.10-preview.34-rc.1] - 2026-09-24
+
+- Status: interactive tariff guidance / Windows download candidate.
+- Previous version: 0.1.10-preview.33-rc.1.
+- Web: pricing cards are clickable and open a plan detail dialog; MP3 / Full Course remain selectable and explain plan requirements rather than disappearing.
+- Download: official /download/windows route points to the current GitHub Release package; the site also surfaces Windows 10/11 x64 requirements, release hashes and macOS development status.
+- Managed Windows: tariff-gated actions stay clickable and open a contextual plan dialog; Pause and Cancel explain their use when no operation is running.
+- Entitlement: top-level audio-only download now reserves premium_media, closing the remaining Free-to-MP3 presentation path.
+- Information page: documents all four plans, common button behavior and direct tariff/payment navigation.
+- Payment UX: Windows directs plan selection to the official website; server-side payment verification remains authoritative.
+
+## [0.1.10-preview.33-rc.1] - 2026-09-24
+
+- Status: unified account / subscription / Telegram Mini App synchronization candidate.
+- Previous version: 0.1.10-preview.32-rc.1.
+- Mini App: redesigned in the dark VideoGrabber style; account, downloads and subscription tabs share the same backend account/access state.
+- Auth/session: media and payment modules wait for verified Telegram session creation; the previous startup race that surfaced HTTP 401 is removed.
+- Free policy: one account receives 10 lifetime ordinary video downloads. MP3, editor/transcription and whole-course access are paid capabilities; enforcement is server-side and mirrored in Web, Windows and Telegram UI.
+- Managed Windows: download controls require a restored authenticated session; whole-course download is routed through Managed authorization and requires Full Course.
+- Verification: Core 32/32; Platform 328/328; Worker 31/31; Windows Infrastructure 677 passed / 14 environment integration skips / 0 failed; Managed Release build 0 warnings/errors.
+
 ## [0.1.10-preview.27] - 2026-09-19
 
 - Status: full self-contained desktop runtime / built-in transcription candidate.

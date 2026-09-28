@@ -61,15 +61,18 @@ public sealed class ToolLocatorTests
         }
         File.WriteAllText(Path.Combine(whisper, "whisper-cli.exe"), "exe");
         File.WriteAllText(Path.Combine(whisper, "ggml-base.bin"), "model");
+        File.WriteAllText(Path.Combine(whisper, "ggml-silero-v6.2.0.bin"), "vad");
 
         try
         {
             var locator = new ToolLocator(app, userTools);
             Assert.True(locator.UsesBundledRuntime);
             Assert.True(locator.WhisperAvailable);
+            Assert.True(locator.WhisperVadAvailable);
             Assert.Equal(Path.Combine(bundled, "yt-dlp.exe"), locator.YtDlp);
             Assert.Equal(Path.Combine(whisper, "whisper-cli.exe"), locator.WhisperCli);
             Assert.Equal(Path.Combine(whisper, "ggml-base.bin"), locator.WhisperModel);
+            Assert.Equal(Path.Combine(whisper, "ggml-silero-v6.2.0.bin"), locator.WhisperVadModel);
         }
         finally
         {

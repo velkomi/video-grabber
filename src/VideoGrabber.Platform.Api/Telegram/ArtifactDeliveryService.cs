@@ -419,25 +419,50 @@ public sealed class ArtifactDeliveryService(
         string? fileId,
         CancellationToken cancellationToken)
     {
+        var now = clock.GetUtcNow();
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             update licensing.delivery_attempts
             set state=@state,reason=@reason,message_id=@message,
                 telegram_file_id=@file,updated_at=@now
             where delivery_id=@delivery and account_id=@account
             returning delivery_id,state,message_id,telegram_file_id,reason
-            """, connection);
+            """, connection, transaction);
         command.Parameters.AddWithValue("state", state);
         command.Parameters.AddWithValue("reason", reason);
         command.Parameters.AddWithValue("message", (object?)messageId ?? DBNull.Value);
         command.Parameters.AddWithValue("file", (object?)fileId ?? DBNull.Value);
-        command.Parameters.AddWithValue("now", clock.GetUtcNow());
+        command.Parameters.AddWithValue("now", now);
         command.Parameters.AddWithValue("delivery", deliveryId);
         command.Parameters.AddWithValue("account", accountId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
             throw new KeyNotFoundException("Delivery was not found.");
-        return ReadView(reader);
+        var view = ReadView(reader);
+        await reader.DisposeAsync();
+
+        if (state == "delivered")
+        {
+            var cleanupAt = now.AddMinutes(5);
+            await using var retention = new NpgsqlCommand("""
+                update licensing.artifacts a
+                set retained_until=least(
+                    coalesce(a.retained_until,@cleanup),
+                    @cleanup)
+                from licensing.delivery_attempts d
+                where d.delivery_id=@delivery
+                  and d.account_id=@account
+                  and d.artifact_id=a.artifact_id
+                """, connection, transaction);
+            retention.Parameters.AddWithValue("cleanup", cleanupAt);
+            retention.Parameters.AddWithValue("delivery", deliveryId);
+            retention.Parameters.AddWithValue("account", accountId);
+            await retention.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return view;
     }
 
     private static DeliveryView ReadView(NpgsqlDataReader reader)

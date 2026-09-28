@@ -106,7 +106,8 @@ public sealed class WorkerMediaOperationTests
             artifacts,
             Path.Combine(root, "jobs"),
             new Uri("http://127.0.0.1:3128/"),
-            whisperModel);
+            socialProxyUri: null,
+            whisperModel: whisperModel);
 
     private static AttemptLease Lease(
         string kind,

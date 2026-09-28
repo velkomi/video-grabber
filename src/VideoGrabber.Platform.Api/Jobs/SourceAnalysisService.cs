@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -15,7 +15,10 @@ public sealed class SourceAnalysisService : IAsyncDisposable
     private readonly EgressProxy _egress;
     private readonly byte[] _key;
     private readonly string _ytDlp;
+    private readonly string _denoPath;
     private readonly Uri _proxyUri;
+    private readonly Uri? _socialProxyUri;
+    private readonly Uri? _youtubePotProviderUri;
 
     public SourceAnalysisService(
         IConfiguration configuration,
@@ -32,12 +35,34 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         _ytDlp = string.IsNullOrWhiteSpace(configuration["VG_YTDLP_PATH"])
             ? "yt-dlp"
             : configuration["VG_YTDLP_PATH"]!.Trim();
+        _denoPath = string.IsNullOrWhiteSpace(configuration["VG_DENO_PATH"])
+            ? "/usr/local/bin/deno"
+            : configuration["VG_DENO_PATH"]!.Trim();
+        var potProvider = configuration["VG_YOUTUBE_POT_PROVIDER_URL"];
+        if (!string.IsNullOrWhiteSpace(potProvider))
+        {
+            if (!Uri.TryCreate(potProvider, UriKind.Absolute, out var parsedPot)
+                || parsedPot.Scheme is not ("http" or "https")
+                || !string.IsNullOrEmpty(parsedPot.UserInfo))
+                throw new InvalidOperationException("YouTube PO-token provider URL is invalid.");
+            _youtubePotProviderUri = parsedPot;
+        }
         var proxy = configuration["VG_EGRESS_PROXY_URI"];
         if (!Uri.TryCreate(proxy, UriKind.Absolute, out var parsedProxy)
             || parsedProxy.Scheme is not ("http" or "https")
             || !string.IsNullOrEmpty(parsedProxy.UserInfo))
             throw new InvalidOperationException("Validated worker egress proxy URI is required.");
         _proxyUri = parsedProxy;
+
+        var socialProxy = configuration["VG_SOCIAL_EGRESS_PROXY_URI"];
+        if (!string.IsNullOrWhiteSpace(socialProxy))
+        {
+            if (!Uri.TryCreate(socialProxy, UriKind.Absolute, out var parsedSocial)
+                || parsedSocial.Scheme is not ("http" or "https" or "socks5" or "socks5h")
+                || !string.IsNullOrEmpty(parsedSocial.UserInfo))
+                throw new InvalidOperationException("Social egress proxy URI is invalid.");
+            _socialProxyUri = parsedSocial;
+        }
     }
 
     public async Task<AnalyzedMedia[]> AnalyzeAsync(
@@ -81,6 +106,108 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             sourceId, mediaId, title, durationMs, qualities, "server_worker")];
     }
 
+    public async Task<AnalyzedMedia> RegisterDesktopAsync(
+        Guid accountId,
+        RegisterDesktopSourceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (accountId == Guid.Empty)
+            throw new ArgumentException("Account is required.", nameof(accountId));
+        ArgumentNullException.ThrowIfNull(request);
+        if (!IsDesktopQuality(request.Quality))
+            throw new ArgumentException("Quality is invalid.", nameof(request));
+
+        await _egress.ValidatePublicTargetAsync(
+            request.Source, cancellationToken).ConfigureAwait(false);
+
+        var sourceId = "src_" + Guid.NewGuid().ToString("N");
+        var mediaId = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(request.Source.AbsoluteUri)))
+            .ToLowerInvariant()[..24];
+        var expires = _clock.GetUtcNow().AddMinutes(30);
+        var cipher = Encrypt(request.Source.AbsoluteUri);
+        var qualities = new[]
+        {
+            "best", "2160p", "1440p", "1080p", "720p", "480p", "360p"
+        };
+
+        try
+        {
+            await using var connection =
+                await _dataSource.OpenConnectionAsync(cancellationToken);
+            await using var command = new NpgsqlCommand("""
+                insert into licensing.sources(
+                  source_id,account_id,media_id,source_cipher,qualities,expires_at)
+                values(@source,@account,@media,@cipher,@qualities::jsonb,@expires)
+                """, connection);
+            command.Parameters.AddWithValue("source", sourceId);
+            command.Parameters.AddWithValue("account", accountId);
+            command.Parameters.AddWithValue("media", mediaId);
+            command.Parameters.AddWithValue("cipher", cipher);
+            command.Parameters.AddWithValue(
+                "qualities", JsonSerializer.Serialize(qualities));
+            command.Parameters.AddWithValue("expires", expires);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(cipher);
+        }
+
+        return new AnalyzedMedia(
+            sourceId,
+            mediaId,
+            request.Source.Host,
+            null,
+            qualities,
+            "desktop_worker");
+    }
+
+    public async Task<WorkerSourceDescriptor?> ResolveForDesktopAsync(
+        Guid accountId,
+        string sourceId,
+        string quality,
+        CancellationToken cancellationToken)
+    {
+        if (accountId == Guid.Empty
+            || string.IsNullOrWhiteSpace(sourceId)
+            || string.IsNullOrWhiteSpace(quality))
+            return null;
+
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select source_cipher,qualities,expires_at
+            from licensing.sources
+            where source_id=@source and account_id=@account
+            """, connection);
+        command.Parameters.AddWithValue("source", sourceId);
+        command.Parameters.AddWithValue("account", accountId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        var encrypted = reader.GetFieldValue<byte[]>(0);
+        var qualitiesJson = reader.GetFieldValue<string>(1);
+        var expires = reader.GetFieldValue<DateTimeOffset>(2);
+        if (expires <= _clock.GetUtcNow()) return null;
+
+        var qualities = JsonSerializer.Deserialize<string[]>(qualitiesJson) ?? [];
+        if (!qualities.Contains(quality, StringComparer.Ordinal)) return null;
+
+        var uriText = Decrypt(encrypted);
+        if (!Uri.TryCreate(uriText, UriKind.Absolute, out var uri)) return null;
+        await _egress.ValidatePublicTargetAsync(
+            uri, cancellationToken).ConfigureAwait(false);
+
+        // Do not bind quality to the physical height field here.
+        // For portrait media (Shorts/Reels/TikTok), 360p is commonly 360x640,
+        // so height=360 would select the wrong/nonexistent stream. The worker
+        // applies yt-dlp's orientation-aware res:<N> sort using Work.Quality.
+        return new WorkerSourceDescriptor(
+            sourceId, uri, "bestvideo+bestaudio/best", null, null,
+            "video/mp4", expires);
+    }
+
     public async Task<WorkerSourceDescriptor?> ResolveForWorkerAsync(
         string sourceId,
         string quality,
@@ -106,16 +233,42 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         var uriText = Decrypt(encrypted);
         if (!Uri.TryCreate(uriText, UriKind.Absolute, out var uri)) return null;
         await _egress.ValidatePublicTargetAsync(uri, cancellationToken).ConfigureAwait(false);
-        var height = ParseHeight(quality);
-        var format = height is int h
-            ? $"bestvideo[height={h}]+bestaudio/best[height={h}]"
-            : "bestvideo+bestaudio/best";
+        // Do not bind quality to the physical height field here.
+        // For portrait media (Shorts/Reels/TikTok), 360p is commonly 360x640,
+        // so height=360 would select the wrong/nonexistent stream. The worker
+        // applies yt-dlp's orientation-aware res:<N> sort using Work.Quality.
         return new WorkerSourceDescriptor(
-            sourceId, uri, format, null, height, "video/mp4", expires);
+            sourceId, uri, "bestvideo+bestaudio/best", null, null,
+            "video/mp4", expires);
     }
 
     private async Task<JsonElement> ProbeAsync(Uri source, CancellationToken cancellationToken)
     {
+        var selectedProxy = IsSocialVideoHost(source) && _socialProxyUri is not null
+            ? _socialProxyUri
+            : _proxyUri;
+        var arguments = new List<string>
+        {
+            "--dump-single-json", "--no-playlist", "--skip-download",
+            "--no-warnings", "--js-runtimes", "deno:" + _denoPath,
+            "--proxy", selectedProxy.AbsoluteUri
+        };
+
+        if (NeedsBrowserImpersonation(source))
+            arguments.AddRange(["--impersonate", "chrome"]);
+
+        if (IsYouTube(source) && _youtubePotProviderUri is not null)
+        {
+            arguments.AddRange([
+                "--extractor-args",
+                "youtube:player_client=mweb,default",
+                "--extractor-args",
+                "youtubepot-bgutilhttp:base_url=" + _youtubePotProviderUri.AbsoluteUri.TrimEnd('/')
+            ]);
+        }
+
+        arguments.AddRange(["--", source.AbsoluteUri]);
+
         var start = new ProcessStartInfo(_ytDlp)
         {
             UseShellExecute = false,
@@ -123,11 +276,9 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             RedirectStandardError = true,
             CreateNoWindow = true
         };
-        foreach (var argument in new[]
-        {
-            "--dump-single-json", "--no-playlist", "--skip-download",
-            "--no-warnings", "--proxy", _proxyUri.AbsoluteUri, "--", source.AbsoluteUri
-        }) start.ArgumentList.Add(argument);
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
+
         using var process = Process.Start(start)
             ?? throw new InvalidOperationException("yt-dlp could not be started.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -140,12 +291,58 @@ public sealed class SourceAnalysisService : IAsyncDisposable
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { }
             throw;
         }
+
         var stdout = await stdoutTask.ConfigureAwait(false);
-        _ = await stderrTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
         if (process.ExitCode != 0)
-            throw new InvalidDataException("yt-dlp source analysis failed.");
+            throw new InvalidDataException(ClassifyYtDlpFailure(stderr));
+
         using var document = JsonDocument.Parse(stdout);
         return document.RootElement.Clone();
+    }
+
+    private static bool IsYouTube(Uri source)
+    {
+        var host = source.Host.TrimEnd('.').ToLowerInvariant();
+        return host is "youtu.be" or "youtube.com" or "www.youtube.com"
+            or "m.youtube.com" or "music.youtube.com"
+            || host.EndsWith(".youtube.com", StringComparison.Ordinal);
+    }
+
+    private static bool IsSocialVideoHost(Uri source)
+        => IsYouTube(source) || NeedsBrowserImpersonation(source);
+
+    private static bool NeedsBrowserImpersonation(Uri source)
+    {
+        var host = source.Host.TrimEnd('.').ToLowerInvariant();
+        return host == "tiktok.com"
+            || host.EndsWith(".tiktok.com", StringComparison.Ordinal)
+            || host == "instagram.com"
+            || host.EndsWith(".instagram.com", StringComparison.Ordinal)
+            || host == "pinterest.com"
+            || host.EndsWith(".pinterest.com", StringComparison.Ordinal)
+            || host == "pin.it";
+    }
+
+    private static string ClassifyYtDlpFailure(string stderr)
+    {
+        if (stderr.Contains("This video is unavailable", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("Video unavailable", StringComparison.OrdinalIgnoreCase))
+            return "source_unavailable";
+        if (stderr.Contains("Sign in to confirm you’re not a bot", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("Sign in to confirm you're not a bot", StringComparison.OrdinalIgnoreCase))
+            return "source_bot_check";
+        if (stderr.Contains("Private video", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("members-only", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("login required", StringComparison.OrdinalIgnoreCase))
+            return "source_login_required";
+        if (stderr.Contains("HTTP Error 429", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("Too Many Requests", StringComparison.OrdinalIgnoreCase))
+            return "source_rate_limited";
+        if (stderr.Contains("python3", StringComparison.OrdinalIgnoreCase)
+            || stderr.Contains("No such file or directory", StringComparison.OrdinalIgnoreCase))
+            return "source_runtime_incomplete";
+        return "source_analysis_failed";
     }
 
     private static async Task<string> ReadBoundedAsync(
@@ -166,20 +363,88 @@ public sealed class SourceAnalysisService : IAsyncDisposable
 
     private static string[] ReadQualities(JsonElement metadata)
     {
-        var heights = new SortedSet<int>();
+        var resolutions = new SortedSet<int>();
         if (metadata.TryGetProperty("formats", out var formats)
             && formats.ValueKind == JsonValueKind.Array)
         {
             foreach (var format in formats.EnumerateArray())
-                if (format.TryGetProperty("height", out var height)
-                    && height.ValueKind == JsonValueKind.Number
-                    && height.TryGetInt32(out var h)
-                    && h is >= 144 and <= 4320)
-                    heights.Add(h);
+            {
+                if (!IsRealVideoFormat(format))
+                    continue;
+
+                var quality = FormatQuality(format);
+                if (quality is >= 144 and <= 4320)
+                    resolutions.Add(quality.Value);
+            }
         }
-        return heights.Count == 0
+
+        return resolutions.Count == 0
             ? ["best"]
-            : heights.Reverse().Take(12).Select(h => h + "p").ToArray();
+            : resolutions.Reverse().Take(12)
+                .Select(value => value + "p")
+                .ToArray();
+    }
+
+    private static bool IsRealVideoFormat(JsonElement format)
+    {
+        if (format.TryGetProperty("vcodec", out var codec)
+            && codec.ValueKind == JsonValueKind.String)
+        {
+            var value = codec.GetString();
+            if (string.IsNullOrWhiteSpace(value)
+                || value.Equals("none", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("images", StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+        else
+        {
+            return false;
+        }
+
+        if (format.TryGetProperty("protocol", out var protocol)
+            && protocol.ValueKind == JsonValueKind.String
+            && protocol.GetString()?.Contains("mhtml", StringComparison.OrdinalIgnoreCase) == true)
+            return false;
+
+        return true;
+    }
+
+    private static int? FormatQuality(JsonElement format)
+    {
+        // yt-dlp's format_note is orientation-aware. A portrait 360p stream
+        // can be 360x640 while still reporting 360p. Prefer that label.
+        if (format.TryGetProperty("format_note", out var note)
+            && note.ValueKind == JsonValueKind.String)
+        {
+            var text = note.GetString() ?? string.Empty;
+            var p = text.IndexOf('p');
+            if (p > 0)
+            {
+                var start = p - 1;
+                while (start >= 0 && char.IsDigit(text[start]))
+                    start--;
+                start++;
+                if (start < p
+                    && int.TryParse(text.AsSpan(start, p - start), out var parsed)
+                    && parsed is >= 144 and <= 4320)
+                    return parsed;
+            }
+        }
+
+        int? width = null;
+        int? height = null;
+        if (format.TryGetProperty("width", out var widthNode)
+            && widthNode.ValueKind == JsonValueKind.Number
+            && widthNode.TryGetInt32(out var w))
+            width = w;
+        if (format.TryGetProperty("height", out var heightNode)
+            && heightNode.ValueKind == JsonValueKind.Number
+            && heightNode.TryGetInt32(out var h))
+            height = h;
+
+        if (width is int ww && height is int hh)
+            return Math.Min(ww, hh);
+        return height ?? width;
     }
 
     private static string? GetString(JsonElement root, string name)
@@ -214,6 +479,15 @@ public sealed class SourceAnalysisService : IAsyncDisposable
         aes.Decrypt(nonce, cipher, tag, plain);
         try { return Encoding.UTF8.GetString(plain); }
         finally { CryptographicOperations.ZeroMemory(plain); }
+    }
+
+    private static bool IsDesktopQuality(string quality)
+    {
+        if (string.Equals(quality, "best", StringComparison.Ordinal))
+            return true;
+        return quality.EndsWith('p')
+            && int.TryParse(quality.AsSpan(0, quality.Length - 1), out var height)
+            && height is >= 144 and <= 4320;
     }
 
     private static int? ParseHeight(string quality)

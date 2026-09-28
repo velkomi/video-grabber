@@ -15,6 +15,9 @@ public static class ArtifactUploadEndpoints
         endpoints.MapPost(
             "/v1/desktop-worker/devices/{deviceId:guid}/heartbeat", HeartbeatAsync)
             .RequireAuthorization();
+        endpoints.MapGet(
+            "/v1/desktop-worker/devices/{deviceId:guid}/sources/{sourceId}", ResolveSourceAsync)
+            .RequireAuthorization();
         endpoints.MapPost(
             "/v1/desktop-worker/devices/{deviceId:guid}/uploads", CreateUploadAsync)
             .RequireAuthorization();
@@ -23,6 +26,9 @@ public static class ArtifactUploadEndpoints
             .RequireAuthorization();
         endpoints.MapPost(
             "/v1/desktop-worker/devices/{deviceId:guid}/complete", CompleteAsync)
+            .RequireAuthorization();
+        endpoints.MapPost(
+            "/v1/desktop-worker/devices/{deviceId:guid}/complete-local", CompleteLocalAsync)
             .RequireAuthorization();
         return endpoints;
     }
@@ -65,6 +71,73 @@ public static class ArtifactUploadEndpoints
         return await jobs.HeartbeatAsync(lease, cancellationToken)
             ? Results.NoContent()
             : Results.Conflict(new { code = "attempt_lease_lost" });
+    }
+
+    private static async Task<IResult> ResolveSourceAsync(
+        Guid deviceId,
+        string sourceId,
+        string quality,
+        HttpContext http,
+        DeviceStore devices,
+        SourceAnalysisService sources,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
+        if (!await devices.IsActiveAsync(accountId, deviceId, cancellationToken))
+            return Results.NotFound();
+        try
+        {
+            var source = await sources.ResolveForDesktopAsync(
+                accountId, sourceId, quality, cancellationToken);
+            return source is null ? Results.NotFound() : Results.Ok(source);
+        }
+        catch (UnauthorizedAccessException)
+        { return Results.StatusCode(StatusCodes.Status403Forbidden); }
+    }
+
+    private static async Task<IResult> CompleteLocalAsync(
+        Guid deviceId,
+        DesktopLocalCompletionRequest request,
+        HttpContext http,
+        DeviceStore devices,
+        JobStore jobs,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
+        if (!await devices.IsActiveAsync(accountId, deviceId, cancellationToken))
+            return Results.NotFound();
+        if (!await jobs.ValidateDesktopAttemptAsync(
+                accountId, deviceId, request.Lease, cancellationToken))
+            return Results.NotFound();
+
+        try
+        {
+            if (request.Outcome == "success")
+            {
+                return Results.Ok(await jobs.CompleteLocalAsync(
+                    accountId, deviceId, request.Lease,
+                    request.EvidenceId, cancellationToken));
+            }
+
+            if (request.Outcome is not ("failed" or "review_required" or "cancelled"))
+                return Results.BadRequest(new { code = "invalid_completion_outcome" });
+
+            return Results.Ok(await jobs.CompleteAsync(
+                new AttemptCompletion(
+                    request.Lease.JobId,
+                    request.Lease.AttemptId,
+                    request.Lease.Fence,
+                    request.Outcome,
+                    null,
+                    request.EvidenceId),
+                cancellationToken));
+        }
+        catch (JobFenceConflictException)
+        { return Results.Conflict(new { code = "attempt_fence_stale" }); }
+        catch (ReservationConflictException)
+        { return Results.Conflict(new { code = "reservation_conflict" }); }
+        catch (ArgumentException ex)
+        { return Results.BadRequest(new { code = "invalid_completion", detail = ex.Message }); }
     }
 
     private static async Task<IResult> CreateUploadAsync(

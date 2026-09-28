@@ -13,7 +13,10 @@ public static class AccessEvaluator
             return new(false, false, false, null, 0, null, "account_blocked");
 
         if (account.Role == "owner_admin")
-            return new(true, true, true, null, 0, now.AddHours(72), "owner_unlimited");
+            return new(true, true, true, null, 0, now.AddHours(72), "owner_unlimited")
+            {
+                CanDownloadCourse = true
+            };
 
         var active = grants.Where(grant => !grant.Revoked
             && grant.StartsAt <= now
@@ -23,6 +26,13 @@ public static class AccessEvaluator
         var credits = active.Where(grant => grant.Kind is "credits" or "hybrid")
             .Sum(grant => Math.Max(0, grant.Available));
 
+        var activePlan = active
+            .Select(grant => ProductPlans.Find(grant.PlanId))
+            .Where(plan => plan is not null)
+            .Cast<ProductPlan>()
+            .OrderByDescending(plan => ProductPlans.Rank(plan.Id))
+            .FirstOrDefault();
+
         var timed = permanent || timeEnd > now;
         var validUntil = permanent ? null : timeEnd;
         DateTimeOffset? offline = null;
@@ -30,6 +40,53 @@ public static class AccessEvaluator
         {
             var maximum = now.AddHours(24);
             offline = timeEnd is { } end && end < maximum ? end : maximum;
+        }
+
+        if (activePlan is not null)
+        {
+            if (activePlan.Id == ProductPlans.FreeId)
+            {
+                if (timed)
+                {
+                    return new(true, true, permanent, validUntil, credits, offline, "time_access")
+                    {
+                        PlanId = activePlan.Id,
+                        CanDownloadCourse = false
+                    };
+                }
+
+                return new(credits > 0, false, false, null, credits, null,
+                    credits > 0 ? "free_lifetime_allowance" : "free_allowance_exhausted")
+                {
+                    PlanId = activePlan.Id,
+                    CanDownloadCourse = false
+                };
+            }
+
+            var hasPlanWindow = timed;
+            if (!hasPlanWindow)
+            {
+                return new(false, false, false, validUntil, credits, null, "plan_inactive")
+                {
+                    PlanId = activePlan.Id,
+                    CanDownloadCourse = false
+                };
+            }
+
+            return new(
+                true,
+                true,
+                activePlan.UnlimitedIndividualDownloads,
+                validUntil,
+                credits,
+                offline,
+                activePlan.Id == ProductPlans.StartId
+                    ? "start_daily_quota_online"
+                    : "subscription_access")
+            {
+                PlanId = activePlan.Id,
+                CanDownloadCourse = activePlan.CanDownloadCourse
+            };
         }
 
         if (permanent)

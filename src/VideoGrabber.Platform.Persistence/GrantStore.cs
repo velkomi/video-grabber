@@ -59,9 +59,9 @@ public sealed class GrantStore : IAsyncDisposable
         const string insertSql = """
             insert into licensing.entitlement_grants(
               grant_id,account_id,kind,source,valid_from,valid_until,available,reserved,
-              original_amount,admin_id,idempotency_key,payload_hash,reason,created_at)
+              original_amount,admin_id,idempotency_key,payload_hash,reason,created_at,plan_id)
             values(@id,@account,@kind,'admin_gift',@start,@end,@available,0,
-              @original,@admin,@key,@hash,@reason,@created)
+              @original,@admin,@key,@hash,@reason,@created,@plan)
             on conflict (admin_id,idempotency_key) do nothing
             """;
         await using var insert = new NpgsqlCommand(insertSql, connection, transaction);
@@ -78,6 +78,7 @@ public sealed class GrantStore : IAsyncDisposable
         insert.Parameters.AddWithValue("hash", payloadHash);
         insert.Parameters.AddWithValue("reason", request.Reason);
         insert.Parameters.AddWithValue("created", now);
+        insert.Parameters.AddWithValue("plan", (object?)request.PlanId ?? DBNull.Value);
         var inserted = await insert.ExecuteNonQueryAsync(cancellationToken);
         if (inserted == 0)
         {
@@ -97,7 +98,7 @@ public sealed class GrantStore : IAsyncDisposable
               event_id,account_id,actor_account_id,event_type,details,created_at)
             values(@event,@account,@admin,'grant_created',
               jsonb_build_object('grant_id',@grant,'kind',@kind,'source','admin_gift',
-                'original_amount',@amount,'reason',@reason),@created)
+                'original_amount',@amount,'plan_id',@plan,'reason',@reason),@created)
             """, connection, transaction);
         audit.Parameters.AddWithValue("event", Guid.NewGuid());
         audit.Parameters.AddWithValue("account", request.AccountId);
@@ -105,6 +106,10 @@ public sealed class GrantStore : IAsyncDisposable
         audit.Parameters.AddWithValue("grant", grantId.ToString("D"));
         audit.Parameters.AddWithValue("kind", request.Kind);
         audit.Parameters.AddWithValue("amount", amount);
+        // jsonb_build_object has no surrounding column type from which PostgreSQL
+        // can infer a NULL parameter. Bind nullable plan_id explicitly as text.
+        audit.Parameters.Add("plan", NpgsqlTypes.NpgsqlDbType.Text).Value =
+            (object?)request.PlanId ?? DBNull.Value;
         audit.Parameters.AddWithValue("reason", request.Reason);
         audit.Parameters.AddWithValue("created", now);
         await audit.ExecuteNonQueryAsync(cancellationToken);
@@ -139,7 +144,7 @@ public sealed class GrantStore : IAsyncDisposable
         await SetAccountAsync(connection, transaction, accountId, cancellationToken);
         await using var command = new NpgsqlCommand("""
             select grant_id,kind,source,valid_from,valid_until,available,reserved,
-                   revoked_at is not null,created_at
+                   revoked_at is not null,created_at,plan_id
             from licensing.entitlement_grants
             where account_id=@account order by created_at,grant_id
             """, connection, transaction);
@@ -150,7 +155,10 @@ public sealed class GrantStore : IAsyncDisposable
                 reader.GetFieldValue<DateTimeOffset>(3),
                 reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4),
                 reader.GetInt64(5), reader.GetInt64(6), reader.GetBoolean(7),
-                reader.GetFieldValue<DateTimeOffset>(8)));
+                reader.GetFieldValue<DateTimeOffset>(8))
+            {
+                PlanId = reader.IsDBNull(9) ? null : reader.GetString(9)
+            });
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
         return AccessEvaluator.Evaluate(account, grants, _clock.GetUtcNow());
@@ -228,6 +236,8 @@ public sealed class GrantStore : IAsyncDisposable
     {
         if (request.AccountId == Guid.Empty || request.IdempotencyKey == Guid.Empty)
             throw new ArgumentException("Account and idempotency key are required.");
+        if (request.PlanId is not null && ProductPlans.Find(request.PlanId) is null)
+            throw new ArgumentException("Unknown product plan.");
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Reason);
         if (request.Reason.Length > 500) throw new ArgumentException("Reason is too long.");
         switch (request.Kind)
@@ -254,7 +264,8 @@ public sealed class GrantStore : IAsyncDisposable
             request.Days,
             request.Credits,
             request.ExpiresAt,
-            request.Reason
+            request.Reason,
+            request.PlanId
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))
             .ToLowerInvariant();

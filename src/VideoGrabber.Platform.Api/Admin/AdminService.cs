@@ -9,6 +9,19 @@ public sealed record AdminAccountView(Guid AccountId, string Role, bool Blocked,
     DateTimeOffset? FirstPurchaseAt, Guid? MergedInto);
 public sealed record AdminAuditEntry(Guid EventId, Guid? ActorAccountId,
     string EventType, string Details, DateTimeOffset CreatedAt);
+public sealed record AdminGrantView(
+    Guid GrantId,
+    string Kind,
+    string Source,
+    string? PlanId,
+    DateTimeOffset ValidFrom,
+    DateTimeOffset? ValidUntil,
+    long Available,
+    long Reserved,
+    long OriginalAmount,
+    bool Revoked,
+    string Reason,
+    DateTimeOffset CreatedAt);
 
 public sealed class AdminService : IAsyncDisposable
 {
@@ -231,6 +244,52 @@ public sealed class AdminService : IAsyncDisposable
         await transaction.CommitAsync(cancellationToken);
         return result;
     }
+
+    public async Task<IReadOnlyList<AdminGrantView>> ReadGrantsAsync(
+        Guid actorId,
+        Guid targetId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection =
+            await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction =
+            await connection.BeginTransactionAsync(cancellationToken);
+        await EnsureAdminAsync(
+            connection, transaction, actorId, cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select grant_id,kind,source,plan_id,valid_from,valid_until,
+                   available,reserved,original_amount,
+                   revoked_at is not null,reason,created_at
+            from licensing.entitlement_grants
+            where account_id=@target
+            order by created_at desc,grant_id desc
+            limit 200
+            """, connection, transaction);
+        command.Parameters.AddWithValue("target", targetId);
+        await using var reader =
+            await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<AdminGrantView>();
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(new(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetFieldValue<DateTimeOffset>(4),
+                reader.IsDBNull(5)
+                    ? null
+                    : reader.GetFieldValue<DateTimeOffset>(5),
+                reader.GetInt64(6),
+                reader.GetInt64(7),
+                reader.GetInt64(8),
+                reader.GetBoolean(9),
+                reader.GetString(10),
+                reader.GetFieldValue<DateTimeOffset>(11)));
+        await reader.DisposeAsync();
+        await transaction.CommitAsync(cancellationToken);
+        return result;
+    }
+
     public async Task<IReadOnlyList<AdminAuditEntry>> ReadAuditAsync(Guid actorId, Guid targetId,
         CancellationToken cancellationToken)
     {

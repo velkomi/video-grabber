@@ -14,7 +14,8 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public async Task<TranscriptResult> TranscribeAsync(string input, string outputBase, string executable,
-        string model, string language, CancellationToken cancellationToken)
+        string model, string language, CancellationToken cancellationToken, bool hardenedRetry = false,
+        bool requireSubtitles = true)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var job = DiagnosticHub.Begin("transcription");
@@ -24,8 +25,11 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
         if (language != "auto" && (language.Length is < 2 or > 3 || language.Any(c => c is < 'a' or > 'z')))
             return new(false, "Некорректный код языка.");
         outputBase = Path.GetFullPath(outputBase);
-        if (File.Exists(outputBase + ".txt") || File.Exists(outputBase + ".srt"))
-            return new(false, "Текст или субтитры с таким именем уже существуют. Выберите новое имя.");
+        if (File.Exists(outputBase + ".txt")
+            || (requireSubtitles && File.Exists(outputBase + ".srt")))
+            return new(false, requireSubtitles
+                ? "Текст или субтитры с таким именем уже существуют. Выберите новое имя."
+                : "Текст с таким именем уже существует. Выберите новое имя.");
         var media = await (probe ?? new FfprobeMediaProbe(runner, tools))
             .ProbeAsync(input, cancellationToken).ConfigureAwait(false);
         if (!media.IsValid) return new(false, "Файл повреждён или не является корректным видео/аудио: FFprobe не смог его прочитать.");
@@ -47,24 +51,79 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
                 null, cancellationToken).ConfigureAwait(false);
             if (!audio.IsSuccess)
                 return new(false, "Не удалось подготовить аудиодорожку для распознавания.");
+            var whisperArgs = new List<string>
+            {
+                "-m", model,
+                "-f", wav,
+                "-l", language,
+                "-otxt",
+                "-of", temporaryBase,
+                "-t", Math.Min(6, Environment.ProcessorCount).ToString(),
+                "-ng",
+                "-np",
+                "-sns"
+            };
+            if (requireSubtitles)
+                whisperArgs.Add("-osrt");
+            if (hardenedRetry)
+            {
+                whisperArgs.AddRange([
+                    "-mc", "0",
+                    "-nf",
+                    "-tp", "0",
+                    "-tpi", "0"
+                ]);
+                DiagnosticHub.Log.Write(
+                    "transcription.retry",
+                    "hardened",
+                    "decoder-context=0; no-fallback; strict-vad");
+            }
+            if (tools.WhisperVadAvailable)
+            {
+                whisperArgs.AddRange([
+                    "--vad",
+                    "--vad-model", tools.WhisperVadModel
+                ]);
+                if (hardenedRetry)
+                {
+                    whisperArgs.AddRange([
+                        "--vad-threshold", "0.60",
+                        "--vad-min-silence-duration-ms", "250",
+                        "--vad-max-speech-duration-s", "15",
+                        "--vad-speech-pad-ms", "100"
+                    ]);
+                }
+                else
+                {
+                    whisperArgs.AddRange([
+                        "--vad-min-silence-duration-ms", "300",
+                        "--vad-max-speech-duration-s", "30"
+                    ]);
+                }
+            }
+
             var result = await runner.RunAsync(new ProcessSpec(executable,
-                ["-m", model, "-f", wav, "-l", language, "-otxt", "-osrt", "-of", temporaryBase,
-                    "-t", Math.Min(4, Environment.ProcessorCount).ToString(), "-ng", "-np"],
+                whisperArgs,
                 Path.GetDirectoryName(executable), SuppressOutputLogging: true), null, cancellationToken).ConfigureAwait(false);
-            if (!result.IsSuccess || !File.Exists(textPath) || !File.Exists(srtPath))
-                return new(false, "Whisper не создал оба результата. Проверьте совместимость EXE и модели.");
-            if (!WithinReadLimit(textPath) || !WithinReadLimit(srtPath))
+            if (!result.IsSuccess || !File.Exists(textPath)
+                || (requireSubtitles && !File.Exists(srtPath)))
+                return new(false, requireSubtitles
+                    ? "Whisper не создал оба результата. Проверьте совместимость EXE и модели."
+                    : "Whisper не создал текстовый результат. Проверьте совместимость EXE и модели.");
+            if (!WithinReadLimit(textPath)
+                || (requireSubtitles && !WithinReadLimit(srtPath)))
             {
                 retainArtifacts = true;
                 DiagnosticHub.Log.Write("transcription.validate", "failed", "kind=artifact-size");
                 return PreservedFailure("Результат распознавания превышает допустимый размер.", directory);
             }
 
-            string transcript, subtitles;
+            string transcript, subtitles = string.Empty;
             try
             {
                 transcript = await File.ReadAllTextAsync(textPath, StrictUtf8, cancellationToken).ConfigureAwait(false);
-                subtitles = await File.ReadAllTextAsync(srtPath, StrictUtf8, cancellationToken).ConfigureAwait(false);
+                if (requireSubtitles)
+                    subtitles = await File.ReadAllTextAsync(srtPath, StrictUtf8, cancellationToken).ConfigureAwait(false);
             }
             catch (DecoderFallbackException)
             {
@@ -78,7 +137,22 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
                 DiagnosticHub.Log.Write("transcription.validate", "failed", "kind=empty-text");
                 return PreservedFailure("Речь не распознана; пустой текст не считается успешным результатом.", directory);
             }
-            if (!SrtValidator.TryValidate(subtitles, mediaDuration, out var validationError))
+            if (!TranscriptTextValidator.TryValidate(transcript, out var textValidationError))
+            {
+                retainArtifacts = true;
+                DiagnosticHub.Log.Write("transcription.validate", "failed",
+                    "kind=" + (textValidationError ?? "text-quality"));
+                return PreservedFailure(
+                    textValidationError switch
+                    {
+                        "blank-audio-dominant" => "Whisper почти не распознал речь: результат состоит преимущественно из [BLANK_AUDIO].",
+                        "repetition-loop" or "repetition-dominant" => "Whisper попал в повторяющуюся текстовую петлю; такой результат не считается готовой транскрибацией.",
+                        _ => "Текст Whisper не прошёл проверку качества."
+                    },
+                    directory);
+            }
+            if (requireSubtitles
+                && !SrtValidator.TryValidate(subtitles, mediaDuration, out var validationError))
             {
                 retainArtifacts = true;
                 DiagnosticHub.Log.Write("transcription.validate", "failed",
@@ -89,10 +163,13 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(textPath, outputBase + ".txt", overwrite: false);
             textMoved = true;
-            File.Move(srtPath, outputBase + ".srt", overwrite: false);
+            if (requireSubtitles)
+                File.Move(srtPath, outputBase + ".srt", overwrite: false);
             complete = true;
             job.Complete();
-            return new(true, "Текст и субтитры созданы локально.", outputBase + ".txt", outputBase + ".srt");
+            return requireSubtitles
+                ? new(true, "Текст и субтитры созданы локально.", outputBase + ".txt", outputBase + ".srt")
+                : new(true, "Текст создан локально.", outputBase + ".txt", null);
         }
         catch (OperationCanceledException ex)
         {
@@ -105,7 +182,9 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
         {
             retainArtifacts = true;
             DiagnosticHub.Log.Write("transcription.promote", "failed", "kind=" + ex.GetType().Name);
-            return PreservedFailure("Не удалось безопасно сохранить оба результата распознавания.", directory);
+            return PreservedFailure(requireSubtitles
+                ? "Не удалось безопасно сохранить оба результата распознавания."
+                : "Не удалось безопасно сохранить текст распознавания.", directory);
         }
         finally
         {

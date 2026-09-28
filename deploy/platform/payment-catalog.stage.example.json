@@ -1,0 +1,39 @@
+{
+  "version": "plans-2026-09-21",
+  "environment": "stage",
+  "products": [
+    {
+      "sku": "plan.start.monthly",
+      "kind": "time",
+      "planId": "start",
+      "credits": 0,
+      "days": 30,
+      "recurringAllowed": true,
+      "prices": {
+        "yookassa": { "minorUnits": 150000, "currency": "RUB" }
+      }
+    },
+    {
+      "sku": "plan.unlimited_video.monthly",
+      "kind": "time",
+      "planId": "unlimited_video",
+      "credits": 0,
+      "days": 30,
+      "recurringAllowed": true,
+      "prices": {
+        "yookassa": { "minorUnits": 250000, "currency": "RUB" }
+      }
+    },
+    {
+      "sku": "plan.full_course.monthly",
+      "kind": "time",
+      "planId": "full_course",
+      "credits": 0,
+      "days": 30,
+      "recurringAllowed": true,
+      "prices": {
+        "yookassa": { "minorUnits": 500000, "currency": "RUB" }
+      }
+    }
+  ]
+}

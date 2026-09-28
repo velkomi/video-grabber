@@ -16,6 +16,9 @@ public sealed partial class MainWindow
     private Button _courseResumeButton = null!;
     private Button _courseClearCacheButton = null!;
     private ComboBox _courseQualityBox = null!;
+    private CheckBox _courseTranscriptionCheckBox = null!;
+    private TextBlock _courseTranscriptionOptionHint = null!;
+    private bool _courseTranscriptionEnabledForRun;
     private Grid _courseProgressTrack = null!;
     private Border _courseProgressFill = null!;
     private TextBlock _courseProgressPercent = null!;
@@ -50,6 +53,8 @@ public sealed partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
         _lastDownloadedMediaPath = path;
+        if (_courseDownloadActive && _courseTranscriptionEnabledForRun)
+            EnqueueCourseTranscription(path);
         if (_transcribeDownloadedButton is not null)
         {
             _transcribeDownloadedButton.IsEnabled =
@@ -61,11 +66,17 @@ public sealed partial class MainWindow
 
     private async Task TranscribeLastDownloadedAsync()
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                "Транскрибация доступна на платных тарифах",
+                "transcribe"))
+            return;
+
         var path = _lastDownloadedMediaPath;
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
         {
-            _browserHint.Text =
-                "Сначала успешно скачайте видео.";
+            _browserHint.Text = "Сначала успешно скачайте видео.";
+            await ExplainMissingDownloadedMediaAsync();
             return;
         }
 
@@ -77,7 +88,7 @@ public sealed partial class MainWindow
     }
 
     private Task DownloadWholeGetCourseAsync()
-        => RunWholeGetCourseAsync(resume: false);
+        => RunManagedWholeCourseAsync(resume: false);
 
     private async Task ResumeWholeGetCourseAsync()
     {
@@ -89,7 +100,55 @@ public sealed partial class MainWindow
                 return;
         }
 
-        await RunWholeGetCourseAsync(resume: true);
+        await RunManagedWholeCourseAsync(resume: true);
+    }
+
+    private async Task RunManagedWholeCourseAsync(bool resume)
+    {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.FullCourse,
+                "Скачивание полного курса доступно на Full Course",
+                "course_download"))
+            return;
+
+        if (!resume && (_mediaBrowser?.CoreWebView2 is null || _browserPageUri is null))
+        {
+            await ShowOperationalHelpAsync(
+                "Сначала откройте курс",
+                "Для полного курса вставьте ссылку в основное поле сверху, разверните дополнительные возможности и нажмите «Открыть курс во встроенном браузере». Для закрытого курса войдите в свой аккаунт GetCourse и дождитесь страницы курса. После этого нажмите «Скачать весь курс».");
+            return;
+        }
+
+        var source = (resume ? _cachedCourseRoot : _browserPageUri)?.AbsoluteUri ?? "course";
+        var operation = CreateLocalOperation(
+            "course_download",
+            source,
+            SelectedCourseQuality(),
+            resume ? "resume" : "new");
+        try
+        {
+            await _managedCoordinator.RunAsync(
+                operation,
+                token => RunOnUiThreadAsync(async () =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    await RunWholeGetCourseAsync(resume);
+                    return OperationOutcome.Succeeded;
+                }),
+                ManagedReport,
+                _windowLifetime.Token);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _browserHint.Text = ex.Message == "managed_sign_in_required"
+                ? "Сначала войдите в VideoGrabber-аккаунт. Полный курс доступен только после авторизации и на тарифе Full Course."
+                : "Скачивание полного курса недоступно на текущем тарифе. Нужен Full Course.";
+            await ShowFeatureAccessDialogAsync(
+                FeatureAccessKind.FullCourse,
+                "Скачивание полного курса недоступно",
+                ex.Message);
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task<bool> LoadCourseResumeProjectAsync()
@@ -642,6 +701,26 @@ public sealed partial class MainWindow
         }
         return removed;
     }
+    private static int CountReadyCourseMediaFiles(string folder)
+    {
+        if (!Directory.Exists(folder)) return 0;
+        var mediaExtensions = new HashSet<string>(
+            [".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3", ".aac", ".opus", ".ts"],
+            StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            return Directory.EnumerateFiles(folder, "*", SearchOption.TopDirectoryOnly)
+                .Count(path =>
+                    mediaExtensions.Contains(Path.GetExtension(path))
+                    && !IsCourseTemporaryFile(path)
+                    && new FileInfo(path).Length > 0);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
     private static bool CourseLessonLooksCompleteOnDisk(
         string courseRoot,
         GetCourseLessonPlan lesson)
@@ -723,6 +802,15 @@ public sealed partial class MainWindow
                 return false;
             }
 
+            var archivedHtml = Path.Combine(folder, "Страница.html");
+            var declaredVideoCount = CourseVideoBlockEvidence.CountDeclaredVideoBlocks(
+                File.ReadAllText(archivedHtml));
+            if (declaredVideoCount > manifest.ExpectedVideoCount)
+            {
+                reason = $"video-evidence-mismatch:{manifest.ExpectedVideoCount}/{declaredVideoCount}";
+                return false;
+            }
+
             var mediaExtensions = new HashSet<string>(
                 [".mp4", ".mkv", ".webm", ".mov", ".m4a", ".mp3", ".aac", ".opus", ".ts"],
                 StringComparer.OrdinalIgnoreCase);
@@ -730,9 +818,9 @@ public sealed partial class MainWindow
                 .Where(path => mediaExtensions.Contains(Path.GetExtension(path))
                     && new FileInfo(path).Length > 0)
                 .ToArray();
-            if (readyMedia.Length < manifest.ExpectedVideoCount)
+            if (readyMedia.Length != manifest.ExpectedVideoCount)
             {
-                reason = $"media-missing:{readyMedia.Length}/{manifest.ExpectedVideoCount}";
+                reason = $"media-count-mismatch:{readyMedia.Length}/{manifest.ExpectedVideoCount}";
                 return false;
             }
 
@@ -780,7 +868,7 @@ public sealed partial class MainWindow
     private async Task RunWholeGetCourseAsync(bool resume)
     {
         if (_courseDownloadActive) return;
-        if (_mediaBrowser?.CoreWebView2 is null)
+        if (_mediaBrowser?.CoreWebView2 is null && !resume)
         {
             _browserHint.Text =
                 "Сначала откройте курс во встроенном браузере и войдите на GetCourse.";
@@ -815,6 +903,13 @@ public sealed partial class MainWindow
         if (!resume)
             _courseActiveQuality = SelectedCourseQuality();
         SetCourseQualitySelection(_courseActiveQuality);
+        _courseTranscriptionEnabledForRun =
+            _courseTranscriptionCheckBox?.IsChecked == true;
+        if (!_courseTranscriptionEnabledForRun)
+        {
+            CancelCourseTranscription();
+            UpdateCourseTranscriptionSelectionUi();
+        }
 
         var originalCookieIndex = _cookiesBox.SelectedIndex;
         SelectEmbeddedBrowserSession();
@@ -870,6 +965,13 @@ public sealed partial class MainWindow
             }
 
             _courseTotalLessons = plan.Lessons.Length;
+            if (_courseTranscriptionEnabledForRun)
+                InitializeCourseTranscriptionPipeline(rootFolder, token);
+            else
+            {
+                CancelCourseTranscription();
+                UpdateCourseTranscriptionSelectionUi();
+            }
             ClearCourseNetworkWarning();
             _courseCurrentLessonIndex = Math.Clamp(
                 _courseResumeLessonIndex,
@@ -890,18 +992,57 @@ public sealed partial class MainWindow
 
             BeginCourseDownloadProgress(plan, resume);
 
-            await DownloadCoursePlanWithAutomaticRecoveryAsync(
-                plan,
-                rootFolder,
-                token);
+            if (_courseCompletedLessons.Count < plan.Lessons.Length)
+            {
+                if (_mediaBrowser?.CoreWebView2 is null)
+                {
+                    _courseResumeAvailable = true;
+                    SetCourseProgressError(
+                        _courseTranscriptionEnabledForRun
+                            ? "Часть видео курса ещё не скачана. Для их докачки откройте GetCourse во встроенном браузере и войдите на сайт. Уже имеющиеся видео продолжают транскрибироваться локально."
+                            : "Часть видео курса ещё не скачана. Для их докачки откройте GetCourse во встроенном браузере и войдите на сайт. Транскрибация для этого запуска выключена.");
+                    if (_courseTranscriptionEnabledForRun)
+                        await WaitForCourseTranscriptionAsync(token);
+                    return;
+                }
+
+                await DownloadCoursePlanWithAutomaticRecoveryAsync(
+                    plan,
+                    rootFolder,
+                    token);
+            }
 
             if (_courseCompletedLessons.Count >= plan.Lessons.Length)
             {
-                _courseResumeAvailable = false;
                 _courseResumeLessonIndex = plan.Lessons.Length;
-                SetCourseProgressFinished(
-                    $"Готово: полностью сохранено {plan.Lessons.Length} из {plan.Lessons.Length} уроков.");
-                ScheduleCompletionActionAfterDownloads("course");
+                if (_courseTranscriptionEnabledForRun)
+                {
+                    _courseStageText.Text =
+                        $"Видео курса готовы: {plan.Lessons.Length}/{plan.Lessons.Length}. Завершаю фоновую транскрибацию…";
+                    await WaitForCourseTranscriptionAsync(token);
+
+                    if (CourseTranscriptionFailureCount == 0)
+                    {
+                        _courseResumeAvailable = false;
+                        SetCourseProgressFinished(
+                            $"Готово: сохранено {plan.Lessons.Length}/{plan.Lessons.Length} уроков и все видео транскрибированы.");
+                        ScheduleCompletionActionAfterDownloads("course");
+                    }
+                    else
+                    {
+                        _courseResumeAvailable = true;
+                        SetCourseProgressFinished(
+                            $"Видео курса сохранены полностью. Транскрибация завершилась с ошибками: {CourseTranscriptionFailureCount}. Нажмите «Продолжить», чтобы повторить только отсутствующие TXT.");
+                    }
+                }
+                else
+                {
+                    _courseResumeAvailable = false;
+                    SetCourseProgressFinished(
+                        $"Готово: сохранено {plan.Lessons.Length}/{plan.Lessons.Length} уроков. Транскрибация была выключена.");
+                    UpdateCourseTranscriptionSelectionUi();
+                    ScheduleCompletionActionAfterDownloads("course");
+                }
             }
             else
             {
@@ -1351,13 +1492,33 @@ public sealed partial class MainWindow
             if (candidates.Count == 0)
                 candidates = await WaitForCourseMediaAsync(token);
 
+            var archivedHtml = Path.Combine(lessonFolder, "Страница.html");
+            var declaredVideoCount = 0;
+            try
+            {
+                if (File.Exists(archivedHtml))
+                    declaredVideoCount = CourseVideoBlockEvidence.CountDeclaredVideoBlocks(
+                        await File.ReadAllTextAsync(archivedHtml, token));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DiagnosticHub.Log.Write(
+                    "course.media.evidence",
+                    "failed",
+                    ex.GetType().Name);
+            }
+
+            var existingMediaCount = CountReadyCourseMediaFiles(lessonFolder);
+            var expectedVideoCount = Math.Max(
+                Math.Max(candidates.Count, declaredVideoCount),
+                existingMediaCount);
             var quality = CourseQuality();
             await CourseLessonVerificationManifestStore.SaveAtomicAsync(
                 lessonFolder,
                 new CourseLessonVerificationManifest(
                     CourseLessonVerificationManifestStore.CurrentSchemaVersion,
                     lesson.Uri.AbsoluteUri,
-                    candidates.Count,
+                    expectedVideoCount,
                     archive.ExpectedAssets,
                     quality,
                     DateTimeOffset.UtcNow),
@@ -1365,23 +1526,43 @@ public sealed partial class MainWindow
 
             if (candidates.Count == 0)
             {
+                if (expectedVideoCount == 0)
+                {
+                    if (archive.PageSaved && archive.AssetErrors == 0)
+                        await MarkCourseLessonCompletedAsync(
+                            lessonKey,
+                            lessonIndex,
+                            plan.Lessons.Length,
+                            rootFolder,
+                            lesson);
 
-                if (archive.PageSaved && archive.AssetErrors == 0)
-                    await MarkCourseLessonCompletedAsync(
-                        lessonKey,
-                        lessonIndex,
-                        plan.Lessons.Length,
-                        rootFolder,
-                        lesson);
-
-                DiagnosticHub.Log.Write(
-                    "course.lesson",
-                    archive.PageSaved ? "succeeded" : "observed",
-                    "Lesson archived without downloadable video");
+                    DiagnosticHub.Log.Write(
+                        "course.lesson",
+                        archive.PageSaved ? "succeeded" : "observed",
+                        "Lesson archived without declared video blocks");
+                }
+                else
+                {
+                    videoErrors += expectedVideoCount;
+                    DiagnosticHub.Log.Write(
+                        "course.media.missing",
+                        "observed",
+                        $"declared={expectedVideoCount} discovered=0; lesson remains incomplete");
+                }
                 continue;
             }
 
-            var lessonVideoErrors = 0;
+            var lessonVideoErrors = Math.Max(
+                0,
+                expectedVideoCount - candidates.Count);
+            if (lessonVideoErrors > 0)
+            {
+                videoErrors += lessonVideoErrors;
+                DiagnosticHub.Log.Write(
+                    "course.media.missing",
+                    "observed",
+                    $"declared={expectedVideoCount} discovered={candidates.Count}; lesson remains incomplete");
+            }
             for (var videoIndex = 0;
                  videoIndex < candidates.Count;
                  videoIndex++)
@@ -1939,7 +2120,11 @@ public sealed partial class MainWindow
     private void CourseElapsedTimer_Tick(
         Microsoft.UI.Dispatching.DispatcherQueueTimer sender,
         object args)
-        => UpdateCourseElapsed();
+    {
+        UpdateCourseElapsed();
+        if (IsCourseTranscriptionBusy)
+            UpdateCourseTranscriptionUi();
+    }
 
     private void UpdateCourseElapsed()
     {
@@ -2306,10 +2491,10 @@ public sealed partial class MainWindow
 
     private void ClearCourseTemporaryFiles()
     {
-        if (_courseDownloadActive || _operations.IsBusy)
+        if (_courseDownloadActive || _operations.IsBusy || IsCourseTranscriptionBusy)
         {
             _browserHint.Text =
-                "Сначала остановите текущую загрузку кнопкой «Отменить всё», затем очищайте временные файлы.";
+                "Сначала остановите текущую загрузку или фоновую транскрибацию кнопкой «Отменить всё», затем очищайте временные файлы.";
             return;
         }
 
@@ -2330,6 +2515,47 @@ public sealed partial class MainWindow
 
         try
         {
+            // Whisper course transcription creates owned .vg-asr-* working
+            // directories. They contain only temporary audio/transcript evidence
+            // and must never survive an explicit cache cleanup.
+            var asrDirectories = Directory.EnumerateDirectories(
+                    root,
+                    ".vg-asr-*",
+                    SearchOption.AllDirectories)
+                .OrderByDescending(path => path.Length)
+                .ToArray();
+
+            foreach (var directory in asrDirectories)
+            {
+                try
+                {
+                    if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+                        continue;
+                    deletedFiles += Directory.EnumerateFiles(
+                        directory,
+                        "*",
+                        SearchOption.AllDirectories).Count();
+                    Directory.Delete(directory, recursive: true);
+                    deletedDirectories++;
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+
+            foreach (var file in Directory.EnumerateFiles(
+                         root,
+                         ".vg-course-transcript-*",
+                         SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.Delete(file);
+                    deletedFiles++;
+                }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+
             var jobs = Directory.EnumerateDirectories(
                     root,
                     ".vg-job-*",
@@ -2403,7 +2629,7 @@ public sealed partial class MainWindow
             _courseStageText.Text =
                 "Временные файлы очищены.";
             _courseCurrentText.Text =
-                $"Удалено временных файлов: {deletedFiles}; пустых рабочих папок: {deletedDirectories}.";
+                $"Удалено временных файлов: {deletedFiles}; временных/пустых рабочих папок: {deletedDirectories}.";
             _courseEtaText.Text =
                 preservedReadyMedia > 0
                     ? $"Сохранено {preservedReadyMedia} готовых медиафайлов из старых рабочих папок — они не удалены."
@@ -2645,7 +2871,9 @@ public sealed partial class MainWindow
     }
     private void UpdateCourseControls()
     {
-        var busy = _courseDownloadActive || _operations.IsBusy;
+        var busy = _courseDownloadActive || _operations.IsBusy || IsCourseTranscriptionBusy;
+        var editableCourseSettings =
+            IsCourseTranscriptionBusy && CourseTranscriptionSettingsCanChange;
 
         if (_mp3Button is not null)
             _mp3Button.IsEnabled = !busy;
@@ -2659,6 +2887,12 @@ public sealed partial class MainWindow
         if (_courseQualityBox is not null)
             _courseQualityBox.IsEnabled = !busy;
 
+        if (_courseTranscriptionCheckBox is not null)
+            _courseTranscriptionCheckBox.IsEnabled = !busy;
+
+        if (_languageBox is not null)
+            _languageBox.IsEnabled = !busy || editableCourseSettings;
+
         if (_courseResumeButton is not null)
             _courseResumeButton.IsEnabled = !busy;
 
@@ -2666,16 +2900,12 @@ public sealed partial class MainWindow
             _courseClearCacheButton.IsEnabled = !busy;
 
         if (_transcribeDownloadedButton is not null)
-            _transcribeDownloadedButton.IsEnabled =
-                !busy
-                && !string.IsNullOrWhiteSpace(
-                    _lastDownloadedMediaPath)
-                && File.Exists(_lastDownloadedMediaPath);
+            _transcribeDownloadedButton.IsEnabled = !busy;
 
         if (_cancelButton is not null)
-            _cancelButton.IsEnabled =
-                busy || _isInstallingComponents;
+            _cancelButton.IsEnabled = true;
 
         UpdatePauseButtonsAvailability(busy || _isInstallingComponents);
+        UpdateWhisperModelUi();
     }
 }

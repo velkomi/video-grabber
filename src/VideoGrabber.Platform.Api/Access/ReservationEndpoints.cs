@@ -9,8 +9,51 @@ public static class ReservationEndpoints
     {
         endpoints.MapPost("/v1/reservations", ReserveAsync)
             .RequireAuthorization();
+        endpoints.MapPost(
+            "/v1/reservations/{reservationId:guid}/local-outcome",
+            LocalOutcomeAsync)
+            .RequireAuthorization();
         return endpoints;
     }
+
+
+    private static async Task<IResult> LocalOutcomeAsync(
+        Guid reservationId,
+        LocalReservationOutcome request,
+        HttpContext http,
+        CreditLedger ledger,
+        DeviceStore devices,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(http.User.FindFirst("account_id")?.Value, out var accountId))
+            return Results.Unauthorized();
+        if (!await devices.IsActiveAsync(accountId, request.DeviceId, cancellationToken))
+            return Results.NotFound();
+        try
+        {
+            return Results.Ok(await ledger.FinalizeLocalClientAsync(
+                accountId,
+                request.DeviceId,
+                reservationId,
+                request.Outcome,
+                request.EvidenceId,
+                cancellationToken));
+        }
+        catch (ReservationConflictException)
+        {
+            return Results.Conflict(new { code = "reservation_conflict" });
+        }
+        catch (ArgumentException exception)
+        {
+            return Results.BadRequest(
+                new { code = "invalid_local_outcome", detail = exception.Message });
+        }
+    }
+
+    private sealed record LocalReservationOutcome(
+        Guid DeviceId,
+        string Outcome,
+        string EvidenceId);
 
     private static async Task<IResult> ReserveAsync(
         ReservationRequest request,

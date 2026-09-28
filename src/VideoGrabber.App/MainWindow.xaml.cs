@@ -284,6 +284,8 @@ public sealed partial class MainWindow : Window
         _cookiesBox.Items.Add(ComboItem("Встроенный браузер — только эта загрузка", "embedded"));
 
         _audioOnlyBox = new CheckBox { Content = "Скачать MP3 (только звук)" };
+        _audioOnlyBox.Checked += (_, _) => _downloadButton.Content = "Скачать MP3";
+        _audioOnlyBox.Unchecked += (_, _) => _downloadButton.Content = "Скачать";
 
         _completionActionBox = new ComboBox
         {
@@ -300,17 +302,8 @@ public sealed partial class MainWindow : Window
         _downloadButton = PrimaryButton("Скачать");
         _downloadButton.Click += Download_Click;
         _cancelButton = DangerButton("Отменить всё");
-        _cancelButton.IsEnabled = false;
-        _cancelButton.Click += (_, _) => CancelOperation();
-        var browserButton = BrowserActionButton("Открыть во встроенном браузере");
-        browserButton.Click += OpenBrowser_Click;
-        var browserButtonHint = new TextBlock
-        {
-            Text = "↓ После нажатия прокрутите эту страницу ниже: встроенный браузер откроется внизу. Для закрытого курса войдите там в свой аккаунт.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = MutedBrush,
-            Margin = new Thickness(2, 4, 2, 0)
-        };
+        _cancelButton.IsEnabled = true;
+        _cancelButton.Click += async (_, _) => await CancelOrExplainAsync();
         var openFolderButton = PrimaryButton("Открыть папку загрузок");
         var topPauseButton = PauseButton();
         openFolderButton.Click += OpenOutputFolder_Click;
@@ -319,7 +312,6 @@ public sealed partial class MainWindow : Window
         downloadForm.Children.Add(_urlBox);
         downloadForm.Children.Add(TwoColumn(_outputFolderBox, chooseFolder, secondAuto: true));
         downloadForm.Children.Add(TwoColumn(_qualityBox, _cookiesBox));
-        downloadForm.Children.Add(_audioOnlyBox);
         downloadForm.Children.Add(_completionActionBox);
         downloadForm.Children.Add(MutedText(
             "Действие выполняется только после успешного завершения всех загрузок на 100%."));
@@ -328,8 +320,6 @@ public sealed partial class MainWindow : Window
             topPauseButton,
             _cancelButton,
             openFolderButton));
-        downloadForm.Children.Add(browserButton);
-        downloadForm.Children.Add(browserButtonHint);
         body.Children.Add(Card(downloadForm));
 
         _downloadStatus = new TextBlock { Text = "Готово к работе", TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true, FontWeight = FontWeights.SemiBold };
@@ -371,8 +361,40 @@ public sealed partial class MainWindow : Window
         browserContent.Children.Add(_browserHost);
         _browserCard = Card(browserContent);
         _browserCard.Visibility = Visibility.Collapsed;
-        body.Children.Add(_browserCard);
-        body.Children.Add(BuildMediaActionsCard());
+
+        body.Children.Add(MutedText(
+            "Ниже находятся дополнительные возможности: MP3, курсы GetCourse, отдельные видео со страниц и локальная транскрибация. " +
+            "Они скрыты по умолчанию, чтобы основной загрузчик оставался простым."));
+
+        var advancedToggle = SecondaryButton("▾  Развернуть дополнительные возможности");
+        advancedToggle.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        var advancedPanel = Vertical(12);
+        advancedPanel.Visibility = Visibility.Collapsed;
+
+        var audioDownload = Vertical(8);
+        audioDownload.Children.Add(SectionHeading("MP3 по ссылке"));
+        audioDownload.Children.Add(MutedText(
+            "Отметьте режим MP3, затем используйте основную кнопку «Скачать» наверху. " +
+            "Если функция не входит в тариф, VideoGrabber покажет подходящий тариф."));
+        audioDownload.Children.Add(_audioOnlyBox);
+        advancedPanel.Children.Add(Card(audioDownload));
+
+        advancedPanel.Children.Add(BuildCourseToolsCard());
+        advancedPanel.Children.Add(_browserCard);
+        advancedPanel.Children.Add(BuildMediaActionsCard());
+
+        advancedToggle.Click += (_, _) =>
+        {
+            var expand = advancedPanel.Visibility != Visibility.Visible;
+            advancedPanel.Visibility = expand ? Visibility.Visible : Visibility.Collapsed;
+            advancedToggle.Content = expand
+                ? "▴  Свернуть дополнительные возможности"
+                : "▾  Развернуть дополнительные возможности";
+        };
+
+        body.Children.Add(advancedToggle);
+        body.Children.Add(advancedPanel);
 
         return PageScrollViewer(body);
     }
@@ -423,7 +445,7 @@ public sealed partial class MainWindow : Window
         _editorInfo.Visibility = Visibility.Collapsed;
         body.Children.Add(_editorInfo);
         var cancelEdit = DangerButton("Отменить всё");
-        cancelEdit.Click += (_, _) => CancelOperation();
+        cancelEdit.Click += async (_, _) => await CancelOrExplainAsync();
         body.Children.Add(cancelEdit);
         return PageScrollViewer(body);
     }
@@ -528,6 +550,12 @@ public sealed partial class MainWindow : Window
 
     private async void Trim_Click(object sender, RoutedEventArgs e)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                "Обрезка видео доступна на платных тарифах",
+                "trim"))
+            return;
+
         if (!File.Exists(_trimInputBox.Text) ||
             string.IsNullOrWhiteSpace(_trimOutputBox.Text) ||
             !TimeSpan.TryParse(_trimStartBox.Text, out var start) ||
@@ -559,6 +587,12 @@ public sealed partial class MainWindow : Window
 
     private async void Join_Click(object sender, RoutedEventArgs e)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                "Склейка видео доступна на платных тарифах",
+                "join"))
+            return;
+
         if (_joinFiles.Count < 2 || string.IsNullOrWhiteSpace(_joinOutputBox.Text))
         {
             ShowEditorMessage("Выберите минимум два видео и путь сохранения.", InfoBarSeverity.Error);
@@ -575,11 +609,16 @@ public sealed partial class MainWindow : Window
         try
         {
             await _managedCoordinator.RunAsync(managed,
-                token => RunAuthorizedEditAsync(request, token), ManagedReport, _windowLifetime.Token);
+                token => RunOnUiThreadAsync(() => RunAuthorizedEditAsync(request, token)),
+                ManagedReport, _windowLifetime.Token);
         }
         catch (UnauthorizedAccessException ex)
         {
             ShowEditorMessage("Доступ к редактированию не разрешён: " + ex.Message, InfoBarSeverity.Error);
+            await ShowFeatureAccessDialogAsync(
+                FeatureAccessKind.PaidTools,
+                "Редактор недоступен на текущем тарифе",
+                ex.Message);
         }
         catch (OperationCanceledException) { }
     }
@@ -990,10 +1029,14 @@ public sealed partial class MainWindow : Window
         button.HorizontalContentAlignment = HorizontalAlignment.Center;
         button.FontWeight = FontWeights.SemiBold;
         button.IsEnabled = true;
-        button.IsHitTestVisible = false;
-        button.IsTabStop = false;
+        button.IsHitTestVisible = true;
+        button.IsTabStop = true;
+        button.Tag = false;
         button.Opacity = 1;
-        button.Click += (_, _) => TogglePause();
+        ToolTipService.SetToolTip(
+            button,
+            "Во время операции — поставить на паузу. Если работа ещё не запущена, нажмите для пояснения.");
+        button.Click += async (_, _) => await TogglePauseOrExplainAsync();
         _pauseButtons.Add(button);
         UpdatePauseButtonVisual(button);
         return button;
@@ -1001,15 +1044,24 @@ public sealed partial class MainWindow : Window
 
     private void TogglePause()
     {
-        if (!_operations.IsBusy && !_courseDownloadActive)
+        if (!_operations.IsBusy && !_courseDownloadActive && !IsCourseTranscriptionBusy)
             return;
         _operationPaused = !_operationPaused;
         if (_operationPaused)
             ProcessPauseRegistry.PauseAll();
         else
             ProcessPauseRegistry.ResumeAll();
+
+        var transcriptionState =
+            SetCourseTranscriptionPauseState(_operationPaused);
+        VideoGrabber.Infrastructure.Diagnostics.DiagnosticHub.Log.Write(
+            "operation.pause",
+            _operationPaused ? "paused" : "resumed",
+            transcriptionState);
+
         foreach (var button in _pauseButtons)
             UpdatePauseButtonVisual(button);
+        UpdateCourseControls();
     }
 
     private void ResetPauseState()
@@ -1027,8 +1079,9 @@ public sealed partial class MainWindow : Window
             // Keep the caption fully visible even while pause is unavailable.
             // WinUI dims disabled button content too aggressively on Windows 10.
             button.IsEnabled = true;
-            button.IsHitTestVisible = busy;
-            button.IsTabStop = busy;
+            button.IsHitTestVisible = true;
+            button.IsTabStop = true;
+            button.Tag = busy;
             button.Opacity = 1;
             UpdatePauseButtonVisual(button);
         }
@@ -1044,7 +1097,7 @@ public sealed partial class MainWindow : Window
             button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 22, 163, 74));
             button.Foreground = new SolidColorBrush(Colors.White);
         }
-        else if (button.IsHitTestVisible)
+        else if (button.Tag is true)
         {
             button.Content = "⏸  Пауза";
             button.Background = new SolidColorBrush(ColorHelper.FromArgb(255, 250, 204, 21));

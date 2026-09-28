@@ -7,7 +7,13 @@ public sealed record AccessSnapshot(
     DateTimeOffset? ValidUntil,
     long RemainingDownloads,
     DateTimeOffset? OfflineUntil,
-    string Reason);
+    string Reason)
+{
+    public string? PlanId { get; init; }
+    public bool CanDownloadCourse { get; init; }
+    public IReadOnlyDictionary<string, bool> FeatureOverrides { get; init; }
+        = new Dictionary<string, bool>(StringComparer.Ordinal);
+}
 
 public sealed record GrantRequest(
     Guid AccountId,
@@ -16,7 +22,10 @@ public sealed record GrantRequest(
     long Credits,
     DateTimeOffset? ExpiresAt,
     string Reason,
-    Guid IdempotencyKey);
+    Guid IdempotencyKey)
+{
+    public string? PlanId { get; init; }
+}
 
 public sealed record GrantReceipt(Guid GrantId, Guid AccountId, string Source);
 

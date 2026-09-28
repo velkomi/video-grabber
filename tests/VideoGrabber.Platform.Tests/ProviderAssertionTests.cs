@@ -161,7 +161,7 @@ public sealed class ProviderAssertionTests
     {
         await using var f = await ApiFixture.StartAsync();
         var response = await f.Anonymous.PostAsJsonAsync("/v1/auth/start",
-            new BeginSignIn("google", new Uri("https://client.example.test/after-login"), Pkce("redirect-verifier-0123456789")));
+            new BeginSignIn("google", new Uri("https://client.example.test/auth/complete"), Pkce("redirect-verifier-0123456789")));
         var started = await response.Content.ReadFromJsonAsync<SignInStart>();
         Assert.NotNull(started);
         Assert.Equal(f.Partition("google").CallbackUri.AbsoluteUri, QueryValue(started!.AuthorizationUri, "redirect_uri"));
@@ -224,8 +224,10 @@ public sealed class ProviderAssertionTests
         f.Anonymous.DefaultRequestHeaders.Add("Cookie", "vg=" + cookieSecret);
         f.Anonymous.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerSecret);
         const string verifier = "logging-verifier-0123456789";
+        _ = await f.Anonymous.GetAsync(
+            "/health/live?sig=" + Uri.EscapeDataString(signedUrlSecret));
         var begin = await f.Anonymous.PostAsJsonAsync("/v1/auth/start", new BeginSignIn("google",
-            new Uri("https://client.example.test/callback?sig=" + signedUrlSecret), Pkce(verifier)));
+            new Uri("https://client.example.test/auth/complete"), Pkce(verifier)));
         var started = await begin.Content.ReadFromJsonAsync<SignInStart>();
         Assert.NotNull(started);
         var response = await f.Anonymous.PostAsJsonAsync("/v1/auth/complete", new CompleteSignIn(
@@ -283,6 +285,14 @@ public sealed class ProviderAssertionTests
         var external = await f.Anonymous.PostAsJsonAsync("/v1/auth/start",
             new BeginSignIn("google", new Uri("http://client.example.test/videograbber-auth/callback"), Pkce(verifier)));
         Assert.Equal(HttpStatusCode.BadRequest, external.StatusCode);
+
+        var configuredWeb = await f.Anonymous.PostAsJsonAsync("/v1/auth/start",
+            new BeginSignIn("google", new Uri("https://client.example.test/auth/complete"), Pkce(verifier)));
+        Assert.Equal(HttpStatusCode.OK, configuredWeb.StatusCode);
+
+        var arbitraryHttps = await f.Anonymous.PostAsJsonAsync("/v1/auth/start",
+            new BeginSignIn("google", new Uri("https://evil.example.test/auth/complete"), Pkce(verifier)));
+        Assert.Equal(HttpStatusCode.BadRequest, arbitraryHttps.StatusCode);
     }
     [Theory]
     [InlineData("https://client.example.test/auth/complete", true)]

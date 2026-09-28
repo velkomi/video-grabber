@@ -5,7 +5,10 @@ public sealed record AccountProfile(
     string Role,
     bool Blocked,
     string[] LinkedProviders,
-    DateTimeOffset? FirstPurchaseAt);
+    DateTimeOffset? FirstPurchaseAt)
+{
+    public string? PrimaryAuthProvider { get; init; }
+}
 
 public sealed record VerifiedIdentity(
     string Issuer,
@@ -13,7 +16,10 @@ public sealed record VerifiedIdentity(
     string Subject,
     string? VerifiedEmail,
     DateTimeOffset AuthTime,
-    string Assurance);
+    string Assurance)
+{
+    public bool AllowProviderCoalescing { get; init; }
+}
 
 public interface IAccountStore
 {

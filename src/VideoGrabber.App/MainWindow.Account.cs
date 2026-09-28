@@ -32,14 +32,15 @@ public sealed partial class MainWindow
             "Вход открывается только в системном браузере. Сессия хранится через Windows DPAPI."));
         var auth = Vertical(10);
         auth.Children.Add(SectionHeading("Вход / привязка способа входа"));
-        auth.Children.Add(MutedText("До входа кнопка открывает сессию. После входа — безопасно привязывает дополнительный способ через отдельный PKCE/challenge flow. Media WebView2 не используется."));
+        auth.Children.Add(MutedText(
+            "Основной VideoGrabber-аккаунт создаётся через Google или e-mail Magic Link на сайте. " +
+            "Windows получает только одноразовый код входа и хранит refresh-сессию через DPAPI. Media WebView2 не используется."));
         auth.Children.Add(Horizontal(
             ProviderButton("Google", "google"),
-            ProviderButton("Apple", "apple"),
-            ProviderButton("Яндекс", "yandex")));
-        auth.Children.Add(Horizontal(
-            ProviderButton("Telegram", "telegram"),
             ProviderButton("Почта", "email")));
+        auth.Children.Add(MutedText(
+            "Telegram привязывается командой /link в @VideoGra_bot после входа в основной аккаунт. " +
+            "Apple и Яндекс в текущем публичном запуске не используются."));
         var refresh = SecondaryButton("Обновить данные");
         refresh.Click += async (_, _) => await LoadManagedAccountAsync();
         var signOut = SecondaryButton("Выйти");
@@ -89,9 +90,20 @@ public sealed partial class MainWindow
         button.Click += async (_, _) =>
         {
             if (_managedAccountId is not null && !string.IsNullOrWhiteSpace(_managedAccessToken))
+            {
                 await LinkManagedProviderAsync(provider);
-            else
-                await SignInProviderAsync(provider);
+                return;
+            }
+
+            if (provider is not ("google" or "email"))
+            {
+                SetAccountStatus(
+                    "Сначала войдите в основной аккаунт через Google или e-mail. " +
+                    "После этого можно привязать " + provider + ".");
+                return;
+            }
+
+            await SignInProviderAsync(provider);
         };
         return button;
     }
@@ -129,7 +141,9 @@ public sealed partial class MainWindow
     {
         if (_accountBusy) return;
         _accountBusy = true;
-        SetAccountStatus("Открываю системный браузер для входа…");
+        SetAccountStatus(
+            "Открываю сайт VideoGrabber в системном браузере. " +
+            "Выберите Google или e-mail Magic Link для входа…");
         try
         {
             var signIn = new SystemBrowserSignIn(_managedHttp, provider,
@@ -174,6 +188,7 @@ public sealed partial class MainWindow
 
     private void SetManagedSignedOut(string message)
     {
+        _managedAccessSnapshot = null;
         SetAccountStatus(message);
         AccountUi(() =>
         {
@@ -183,6 +198,7 @@ public sealed partial class MainWindow
             RenderManagedIdentities([]);
             RenderManagedDevices([]);
         });
+        SetOperationControls(false);
     }
 
     private async Task LoadManagedAccountAsync()
@@ -201,6 +217,7 @@ public sealed partial class MainWindow
             var devices = await ManagedGetAsync<DeviceReceipt[]>("/v1/devices", _windowLifetime.Token);
             var identities = await ManagedGetAsync<LinkedIdentity[]>("/v1/identities", _windowLifetime.Token);
             _managedAccountId = profile.AccountId;
+            _managedAccessSnapshot = access;
 
             await EnsureManagedDeviceAndLeaseAsync(profile, access, devices);
             devices = await ManagedGetAsync<DeviceReceipt[]>("/v1/devices", _windowLifetime.Token);
@@ -219,6 +236,7 @@ public sealed partial class MainWindow
                 RenderManagedDevices(devices);
                 _accountStatus.Text = "Данные аккаунта обновлены.";
             });
+            SetOperationControls(false);
             await RefreshManagedPaymentProductsAsync();
             await RefreshManagedSubscriptionsAsync();
         }
@@ -403,11 +421,15 @@ public sealed partial class MainWindow
         RebuildManagedCoordinator();
     }
 
-    private async Task RefreshManagedSensitiveSessionAsync()
+    private async Task RefreshManagedSensitiveSessionAsync(
+        CancellationToken cancellationToken = default)
     {
         var lifecycle = new SystemBrowserSignIn(_managedHttp, "email",
             timeout: TimeSpan.FromMinutes(5), sessionStore: _managedSessionStore);
-        var session = await lifecycle.RefreshAsync(_windowLifetime.Token);
+        var token = cancellationToken.CanBeCanceled
+            ? cancellationToken
+            : _windowLifetime.Token;
+        var session = await lifecycle.RefreshAsync(token);
         _managedAccessToken = session.AccessToken;
         RebuildManagedCoordinator();
     }
@@ -489,9 +511,19 @@ public sealed partial class MainWindow
                 VerticalAlignment = VerticalAlignment.Center
             };
             var unlink = SecondaryButton("Отвязать");
-            unlink.IsEnabled = canUnlink;
+            unlink.IsEnabled = true;
             var id = identity.IdentityId;
-            unlink.Click += async (_, _) => await UnlinkManagedIdentityAsync(id);
+            unlink.Click += async (_, _) =>
+            {
+                if (!canUnlink)
+                {
+                    await ShowOperationalHelpAsync(
+                        "Нельзя отвязать единственный способ входа",
+                        "У аккаунта должен остаться хотя бы один способ входа. Сначала привяжите Google или e-mail в этом разделе, затем текущий способ можно будет безопасно отвязать.");
+                    return;
+                }
+                await UnlinkManagedIdentityAsync(id);
+            };
             _accountIdentitiesPanel.Children.Add(TwoColumn(label, unlink, secondAuto: true));
         }
         _accountIdentitiesPanel.Children.Add(MutedText(
@@ -511,10 +543,21 @@ public sealed partial class MainWindow
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var revoke = SecondaryButton("Отозвать");
-            revoke.IsEnabled = !device.Revoked;
+            var revoke = SecondaryButton(device.Revoked ? "Уже отозван" : "Отозвать");
+            revoke.IsEnabled = true;
             var id = device.DeviceId;
-            revoke.Click += async (_, _) => await RevokeManagedDeviceAsync(id);
+            var alreadyRevoked = device.Revoked;
+            revoke.Click += async (_, _) =>
+            {
+                if (alreadyRevoked)
+                {
+                    await ShowOperationalHelpAsync(
+                        "Устройство уже отозвано",
+                        "Это устройство больше не может получать задания или обновлять офлайн-доступ. Если оно снова понадобится, войдите на нём в VideoGrabber и зарегистрируйте его заново.");
+                    return;
+                }
+                await RevokeManagedDeviceAsync(id);
+            };
             _accountDevicesPanel.Children.Add(TwoColumn(label, revoke, secondAuto: true));
         }
         if (_accountDevicesPanel.Children.Count == 1)

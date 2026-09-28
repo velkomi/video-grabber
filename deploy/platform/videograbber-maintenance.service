@@ -1,0 +1,10 @@
+[Unit]
+Description=VideoGrabber backup and retention qualification
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/assistant/apps/videograbber-platform/deploy/platform/videograbber-maintenance.sh
+User=root
+Group=root

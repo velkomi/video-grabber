@@ -17,7 +17,8 @@ $required = @(
     "whisper\whisper.dll",
     "whisper\ggml.dll",
     "whisper\ggml-base.dll",
-    "whisper\ggml-base.bin"
+    "whisper\ggml-base.bin",
+    "whisper\ggml-silero-v6.2.0.bin"
 )
 foreach ($relative in $required) {
     $candidate = Join-Path $runtime $relative

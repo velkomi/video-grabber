@@ -82,7 +82,7 @@ public sealed class ComponentInstallerTests
         Assert.Contains("service.RunAsync(intent, lease, operation.Token)", download);
         Assert.Contains("() => Volatile.Read(ref _componentServices).Downloader", download);
         Assert.Contains("components.Tools.WhisperCli", media);
-        Assert.Contains("components.Tools.WhisperModel", media);
+        Assert.Contains("EnsureWhisperModelAvailableAsync", media);
         Assert.Contains("components.Tools.WhisperAvailable", media);
     }
 

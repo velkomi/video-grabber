@@ -39,34 +39,39 @@ public sealed class SystemBrowserSignIn
         listener.Start(1);
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var returnUri = new Uri($"http://127.0.0.1:{port}{CallbackPath}");
-        var verifier = RandomToken();
-        var challenge = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier)));
 
-        using var startResponse = await _http.PostAsJsonAsync("/v1/auth/start",
-            new BeginSignIn(_provider, returnUri, challenge), cancellationToken).ConfigureAwait(false);
+        using var startResponse = await _http.PostAsJsonAsync(
+            "/v1/auth/desktop/start",
+            new DesktopSignInStartRequest(returnUri),
+            cancellationToken).ConfigureAwait(false);
         if (!startResponse.IsSuccessStatusCode)
             throw new UnauthorizedAccessException("managed_sign_in_start_failed");
-        var started = await startResponse.Content.ReadFromJsonAsync<SignInStart>(cancellationToken: cancellationToken)
-            .ConfigureAwait(false) ?? throw new InvalidDataException("Sign-in start response was empty.");
-        var expectedState = QueryValue(started.AuthorizationUri, "state");
-        if (string.IsNullOrWhiteSpace(expectedState)) throw new InvalidDataException("Sign-in state was missing.");
+        var started = await startResponse.Content.ReadFromJsonAsync<DesktopSignInStart>(
+            cancellationToken: cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidDataException("Desktop sign-in start response was empty.");
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(_timeout);
         var callbackTask = ReceiveCallbackAsync(listener, timeout.Token);
-        await _launch(started.AuthorizationUri, timeout.Token).ConfigureAwait(false);
+        await _launch(started.VerificationUri, timeout.Token).ConfigureAwait(false);
         var callback = await callbackTask.ConfigureAwait(false);
-        if (!FixedEquals(callback.State, expectedState))
+        if (!FixedEquals(callback.State, started.State))
             throw new UnauthorizedAccessException("managed_sign_in_state_mismatch");
 
-        using var complete = await _http.PostAsJsonAsync("/v1/auth/complete",
-            new CompleteSignIn(started.FlowId, callback.Code, callback.State, verifier), cancellationToken)
-            .ConfigureAwait(false);
+        using var complete = await _http.PostAsJsonAsync(
+            "/v1/auth/desktop/consume",
+            new DesktopSignInConsumeRequest(
+                started.FlowId,
+                callback.Code,
+                callback.State),
+            cancellationToken).ConfigureAwait(false);
         if (!complete.IsSuccessStatusCode)
             throw new UnauthorizedAccessException("managed_sign_in_complete_failed");
-        var session = await complete.Content.ReadFromJsonAsync<ApiSession>(cancellationToken: cancellationToken)
-            .ConfigureAwait(false) ?? throw new InvalidDataException("Sign-in completion response was empty.");
-        await SaveRefreshAsync(session.RefreshToken, cancellationToken).ConfigureAwait(false);
+        var session = await complete.Content.ReadFromJsonAsync<ApiSession>(
+            cancellationToken: cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidDataException("Sign-in completion response was empty.");
+        await SaveRefreshAsync(session.RefreshToken, cancellationToken)
+            .ConfigureAwait(false);
         return session;
     }
 

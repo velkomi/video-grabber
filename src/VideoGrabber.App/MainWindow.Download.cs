@@ -17,6 +17,12 @@ public sealed partial class MainWindow
 
     private async void Download_Click(object sender, RoutedEventArgs e)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.IndividualDownload,
+                "Загрузка недоступна на текущем тарифе",
+                "download"))
+            return;
+
         if (!UrlPolicy.TryValidate(_urlBox.Text, out var uri, out var error) || uri is null)
         {
             SetDownloadState(error, null, true);
@@ -24,6 +30,12 @@ public sealed partial class MainWindow
             return;
         }
         var intent = CaptureDownloadIntent(uri);
+        if (intent.AudioOnly
+            && !await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                "MP3 доступен на платных тарифах",
+                "mp3"))
+            return;
         await DownloadSourceAsync(intent);
     }
 
@@ -32,8 +44,17 @@ public sealed partial class MainWindow
             _audioOnlyBox.IsChecked == true, _outputFolderBox.Text,
             (_cookiesBox.SelectedItem as ComboBoxItem)?.Tag?.ToString(), Volatile.Read(ref _browserDiscoveryGeneration));
 
-    private Task<OperationOutcome> DownloadSourceAsync(UserDownloadIntent intent)
-        => RunDownloadOperationAsync(intent, new BrowserDownloadPreparation(this));
+    private async Task<OperationOutcome> DownloadSourceAsync(UserDownloadIntent intent)
+    {
+#if VIDEOGRABBER_MANAGED
+        if (ShouldUseManagedSocialServer(intent))
+            return await RunManagedSocialServerDownloadAsync(intent);
+#endif
+        return await RunDownloadOperationAsync(
+            intent,
+            new BrowserDownloadPreparation(this),
+            managedKind: intent.AudioOnly ? "mp3" : "direct_download");
+    }
 
     private async Task<OperationOutcome> RunDownloadOperationAsync(UserDownloadIntent intent,
         IBrowserDownloadPreparation preparation, bool resetCookieSelectionAfterUse = true,
@@ -43,13 +64,17 @@ public sealed partial class MainWindow
         try
         {
             return await _managedCoordinator.RunAsync(managed,
-                token => RunAuthorizedDownloadOperationAsync(intent, preparation,
-                    resetCookieSelectionAfterUse, queuedEntry, token),
+                token => RunOnUiThreadAsync(() => RunAuthorizedDownloadOperationAsync(
+                    intent, preparation, resetCookieSelectionAfterUse, queuedEntry, token)),
                 ManagedReport, _windowLifetime.Token);
         }
         catch (UnauthorizedAccessException ex)
         {
             SetDownloadState("Доступ к управляемой операции не разрешён.", ex.Message, true);
+            await ShowFeatureAccessDialogAsync(
+                FeatureAccessKind.IndividualDownload,
+                "Загрузка недоступна на текущем тарифе",
+                ex.Message);
             return OperationOutcome.Failed;
         }
         catch (OperationCanceledException)
@@ -147,16 +172,21 @@ public sealed partial class MainWindow
         ResetPauseState();
         _progressOwner = null;
         _courseCancellation?.Cancel();
+        CancelCourseTranscription();
         _operations.Cancel();
         _browserOperation?.Cancel();
         _operation?.Cancel();
+        UpdateCourseControls();
+        UpdateWhisperModelUi();
     }
 
     private void SetOperationControls(bool busy)
     {
-        _downloadButton.IsEnabled = _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive;
-        _cancelButton.IsEnabled = busy || _courseDownloadActive;
-        UpdatePauseButtonsAvailability(busy || _courseDownloadActive);
+        var courseBackgroundBusy = IsCourseTranscriptionBusy;
+        _downloadButton.IsEnabled = !busy && !_courseDownloadActive && !courseBackgroundBusy;
+        _mp3Button.IsEnabled = _textButton.IsEnabled = !busy && !_courseDownloadActive && !courseBackgroundBusy;
+        _cancelButton.IsEnabled = true;
+        UpdatePauseButtonsAvailability(busy || _courseDownloadActive || courseBackgroundBusy);
         UpdateCourseControls();
     }
 

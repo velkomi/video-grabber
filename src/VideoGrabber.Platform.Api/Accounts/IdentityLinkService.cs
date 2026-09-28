@@ -432,7 +432,8 @@ public sealed class IdentityLinkService : IAsyncDisposable
         MergeRequest request, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand("""
-            select grant_id,kind,valid_until,available,reserved,original_amount
+            select grant_id,kind,valid_until,available,reserved,original_amount,
+                   source,plan_id
             from licensing.entitlement_grants
             where account_id=@source and revoked_at is null and valid_from<=@now
               and (valid_until is null or valid_until>@now)
@@ -445,7 +446,9 @@ public sealed class IdentityLinkService : IAsyncDisposable
         while (await reader.ReadAsync(cancellationToken))
             grants.Add(new(reader.GetGuid(0), reader.GetString(1),
                 reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2),
-                reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5)));
+                reader.GetInt64(3), reader.GetInt64(4), reader.GetInt64(5),
+                reader.GetString(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7)));
         await reader.DisposeAsync();
         if (grants.Any(grant => grant.Reserved > 0))
             throw new FinancialMergeRequiresReconciliationException();
@@ -459,6 +462,18 @@ public sealed class IdentityLinkService : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var transferable = grant.Kind is "credits" or "hybrid" ? grant.Available : 0L;
+
+        if (grant.Source == "system_starter" && grant.PlanId == "free")
+        {
+            await RevokeSourceGrantAsync(
+                connection, transaction, grant.Id, now, cancellationToken);
+            if (transferable > 0)
+                await InsertMergeStarterVoidAsync(
+                    connection, transaction,
+                    request.SourceAccountId, grant.Id,
+                    transferable, adminId, request.Reason, cancellationToken);
+            return;
+        }
         if (grant.Kind is "credits" or "hybrid" && transferable <= 0)
         {
             await RevokeSourceGrantAsync(connection, transaction, grant.Id, now, cancellationToken);
@@ -503,6 +518,33 @@ public sealed class IdentityLinkService : IAsyncDisposable
             connection, transaction);
         command.Parameters.AddWithValue("now", now);
         command.Parameters.AddWithValue("grant", grantId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertMergeStarterVoidAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid accountId,
+        Guid grantId,
+        long available,
+        Guid adminId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            insert into licensing.credit_ledger(
+              ledger_id,account_id,grant_id,event_kind,available_delta,reserved_delta,
+              spent_delta,void_delta,actor_account_id,reason)
+            values(@id,@account,@grant,'adjustment',@available,0,0,@void,@admin,@reason)
+            """, connection, transaction);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("account", accountId);
+        command.Parameters.AddWithValue("grant", grantId);
+        command.Parameters.AddWithValue("available", -available);
+        command.Parameters.AddWithValue("void", available);
+        command.Parameters.AddWithValue("admin", adminId);
+        command.Parameters.AddWithValue(
+            "reason", "account merge: discard duplicate free starter; " + reason);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -666,8 +708,15 @@ public sealed class IdentityLinkService : IAsyncDisposable
         string Subject, string? VerifiedEmail, DateTimeOffset LinkedAt);
     private sealed record MergeAccountState(Guid Id, string Role, bool Blocked,
         DateTimeOffset? FirstPurchaseAt, Guid? MergedInto);
-    private sealed record MergeGrantState(Guid Id, string Kind, DateTimeOffset? EndsAt,
-        long Available, long Reserved, long OriginalAmount);
+    private sealed record MergeGrantState(
+        Guid Id,
+        string Kind,
+        DateTimeOffset? EndsAt,
+        long Available,
+        long Reserved,
+        long OriginalAmount,
+        string Source,
+        string? PlanId);
 
     public async Task<LinkChallenge> BeginRecoveryAsync(Guid adminId, Guid accountId, string proofSource, string reason, bool mfaVerified, CancellationToken cancellationToken)
     {

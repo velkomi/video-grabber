@@ -22,25 +22,31 @@ public sealed class TelegramAccountResolver : ITelegramAccountResolver, IAsyncDi
     private readonly AccountStore _accounts;
     private readonly bool _ownsDataSource;
 
-    public TelegramAccountResolver(IConfiguration configuration)
+    public TelegramAccountResolver(
+        IConfiguration configuration,
+        TimeProvider clock)
     {
         var dsn = configuration.GetConnectionString("PlatformIdentity")
             ?? configuration["VG_PLATFORM_IDENTITY_DSN"]
             ?? throw new InvalidOperationException("Platform identity database DSN is not configured.");
         _identityDataSource = NpgsqlDataSource.Create(dsn);
-        _accounts = new AccountStore(_identityDataSource);
+        _accounts = new AccountStore(_identityDataSource, clock);
         _ownsDataSource = true;
     }
 
-    private TelegramAccountResolver(NpgsqlDataSource identityDataSource)
+    private TelegramAccountResolver(
+        NpgsqlDataSource identityDataSource,
+        TimeProvider clock)
     {
         _identityDataSource = identityDataSource;
-        _accounts = new AccountStore(identityDataSource);
+        _accounts = new AccountStore(identityDataSource, clock);
         _ownsDataSource = false;
     }
 
-    public static TelegramAccountResolver CreateForTesting(NpgsqlDataSource identityDataSource)
-        => new(identityDataSource);
+    public static TelegramAccountResolver CreateForTesting(
+        NpgsqlDataSource identityDataSource,
+        TimeProvider? clock = null)
+        => new(identityDataSource, clock ?? TimeProvider.System);
 
     public async Task<Guid> ResolveAsync(
         long userId,

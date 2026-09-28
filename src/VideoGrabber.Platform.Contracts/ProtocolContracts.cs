@@ -24,6 +24,6 @@ public static class PlatformProtocol
     public static string[] CurrentWorkerOperations(
         bool serverAsrAvailable)
         => serverAsrAvailable
-            ? ["download", "mp3", "trim", "join", "transcribe"]
-            : ["download", "mp3", "trim", "join"];
+            ? ["download", "course_download", "mp3", "trim", "join", "transcribe"]
+            : ["download", "course_download", "mp3", "trim", "join"];
 }

@@ -17,7 +17,6 @@ public sealed partial class MainWindow
     private TextBox _localOutputBaseBox = null!;
     private TextBlock _localMediaStatus = null!;
     private TextBox _whisperExeBox = null!;
-    private TextBox _whisperModelBox = null!;
     private ComboBox _languageBox = null!;
     private Button _mp3Button = null!;
     private Button _textButton = null!;
@@ -28,10 +27,12 @@ public sealed partial class MainWindow
     {
         public string WhisperExecutable { get; set; } = "";
         public string WhisperModel { get; set; } = "";
+        public string WhisperModelProfile { get; set; } = WhisperModelCatalog.DefaultProfileId;
         public string Language { get; set; } = "auto";
         public LogMode LogMode { get; set; } = LogMode.Full;
         public string DownloadFolder { get; set; } = "";
         public string CompletionAction { get; set; } = "none";
+        public bool CourseAutoTranscription { get; set; }
     }
 
     private Border BuildMediaActionsCard()
@@ -64,7 +65,7 @@ public sealed partial class MainWindow
         _textButton.Click += async (_, _) => await RunLocalMediaAsync(true);
         var mediaPauseButton = PauseButton();
         var cancel = DangerButton("Отменить всё");
-        cancel.Click += (_, _) => CancelOperation();
+        cancel.Click += async (_, _) => await CancelOrExplainAsync();
         _localMediaStatus = MutedText(LocalMediaReadyHint);
         panel.Children.Add(TwoColumn(_localMediaBox, choose, secondAuto: true));
         panel.Children.Add(_localOutputBaseBox);
@@ -87,6 +88,14 @@ public sealed partial class MainWindow
     }
     private async Task RunLocalMediaAsync(bool text)
     {
+        if (!await EnsureFeatureAccessAsync(
+                FeatureAccessKind.PaidTools,
+                text
+                    ? "Транскрибация доступна на платных тарифах"
+                    : "MP3 доступен на платных тарифах",
+                text ? "transcribe" : "mp3"))
+            return;
+
         var input = _localMediaBox.Text.Trim().Trim('"');
         var output = _localOutputBaseBox.Text.Trim().Trim('"');
         if (!File.Exists(input) || string.IsNullOrWhiteSpace(output))
@@ -99,11 +108,18 @@ public sealed partial class MainWindow
         try
         {
             await _managedCoordinator.RunAsync(managed,
-                token => RunAuthorizedLocalMediaAsync(text, token), ManagedReport, _windowLifetime.Token);
+                token => RunOnUiThreadAsync(() => RunAuthorizedLocalMediaAsync(text, token)),
+                ManagedReport, _windowLifetime.Token);
         }
         catch (UnauthorizedAccessException ex)
         {
             _localMediaStatus.Text = "Доступ к операции не разрешён: " + ex.Message;
+            await ShowFeatureAccessDialogAsync(
+                FeatureAccessKind.PaidTools,
+                text
+                    ? "Транскрибация недоступна на текущем тарифе"
+                    : "MP3 недоступен на текущем тарифе",
+                ex.Message);
         }
         catch (OperationCanceledException) { }
     }
@@ -138,8 +154,9 @@ public sealed partial class MainWindow
                     _localMediaStatus.Text = "Встроенный Whisper отсутствует или повреждён. Переустановите полную версию VideoGrabber.";
                     return OperationOutcome.Failed;
                 }
+                var model = await EnsureWhisperModelAvailableAsync(operation.Token);
                 var result = await components.Transcriber.TranscribeAsync(input, output,
-                    components.Tools.WhisperCli, components.Tools.WhisperModel, language, operation.Token);                _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.TextPath + "\n" + result.SubtitlesPath : "");
+                    components.Tools.WhisperCli, model, language, operation.Token);                _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.TextPath + "\n" + result.SubtitlesPath : "");
                 operation.Token.ThrowIfCancellationRequested();
                 outcome = result.Success ? OperationOutcome.Succeeded : OperationOutcome.Failed;
                 job.Complete(result.Success);
@@ -176,25 +193,39 @@ public sealed partial class MainWindow
             Text = _tools.WhisperCli,
             IsReadOnly = true
         };
-        _whisperModelBox = new TextBox
-        {
-            Header = "Модель распознавания — входит в VideoGrabber",
-            Text = _tools.WhisperModel,
-            IsReadOnly = true
-        };
+        var modelSelector = CreateWhisperModelSelector();
+        var modelStatus = CreateWhisperModelStatusText();
+        var modelSource = CreateWhisperModelSourceLink();
         _languageBox = new ComboBox { Header = "Язык речи", HorizontalAlignment = HorizontalAlignment.Stretch };
         _languageBox.Items.Add(ComboItem("Определять автоматически", "auto"));
         _languageBox.Items.Add(ComboItem("Русский", "ru"));
         _languageBox.Items.Add(ComboItem("Английский", "en"));
         _languageBox.SelectedIndex = _preferences.Language == "ru" ? 1 : _preferences.Language == "en" ? 2 : 0;
+        _languageBox.SelectionChanged += (_, _) =>
+        {
+            var language =
+                (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()
+                ?? "auto";
+            if (string.Equals(
+                    _preferences.Language,
+                    language,
+                    StringComparison.Ordinal))
+                return;
+            _preferences.Language = language;
+            PersistUiPreferences();
+            RequestCourseTranscriptionRestartForSettingsChange(
+                "Язык транскрибации изменён.");
+        };
         var save = PrimaryButton("Сохранить язык");
         save.Click += (_, _) => SavePreferences();
         panel.Children.Add(_whisperExeBox);
-        panel.Children.Add(_whisperModelBox);
+        panel.Children.Add(modelSelector);
+        panel.Children.Add(modelStatus);
+        panel.Children.Add(modelSource);
         panel.Children.Add(_languageBox);
         panel.Children.Add(MutedText(
             _tools.WhisperAvailable
-                ? "Whisper и модель уже встроены. Ничего отдельно скачивать, устанавливать или выбирать не нужно."
+                ? "Движок Whisper уже встроен. Дополнительные модели при необходимости VideoGrabber скачает сам и сохранит на этом компьютере."
                 : "В этой сборке не найден встроенный Whisper. Нужен полный дистрибутив VideoGrabber."));
         panel.Children.Add(save);
         return Card(panel);
@@ -229,7 +260,6 @@ public sealed partial class MainWindow
         try
         {
             _preferences.WhisperExecutable = _whisperExeBox.Text.Trim().Trim('"');
-            _preferences.WhisperModel = _whisperModelBox.Text.Trim().Trim('"');
             _preferences.Language = (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "auto";
             _preferences.LogMode = DiagnosticHub.Log.Mode;
             PersistUiPreferences();

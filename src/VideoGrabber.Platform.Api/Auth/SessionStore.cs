@@ -211,6 +211,30 @@ public sealed class SessionStore(
         await transaction.CommitAsync(cancellationToken);
     }
 
+    public async Task RevokeAccountAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        if (accountId == Guid.Empty)
+            throw new ArgumentException("Account is required.", nameof(accountId));
+        var now = timeProvider.GetUtcNow();
+        await using var connection =
+            await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction =
+            await connection.BeginTransactionAsync(cancellationToken);
+        await SetAccountAsync(
+            connection, transaction, accountId, cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            update licensing.api_sessions
+            set revoked_at=coalesce(revoked_at,@now)
+            where account_id=@account
+            """, connection, transaction);
+        command.Parameters.AddWithValue("now", now);
+        command.Parameters.AddWithValue("account", accountId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     private async Task<ApiSession> InsertSessionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
         Guid accountId, Guid familyId, DateTimeOffset now, CancellationToken cancellationToken)
     {
