@@ -79,20 +79,21 @@ jobs:
           Compress-Archive -Path (Join-Path $env:VG_PACKAGE_ROOT "$version-Managed\*") -DestinationPath (Join-Path $out "VideoGrabber.Managed-win-x64-$version.zip") -CompressionLevel Optimal
           "VG_RELEASE_ASSETS=$out" >> $env:GITHUB_ENV
 
-      - name: Download verified NSIS 3.12
+      - name: Install pinned NSIS 3.12
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $url = 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.12/nsis-3.12.zip'
-          $zip = Join-Path $env:RUNNER_TEMP 'nsis-3.12.zip'
-          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
-          $expected = '56581f90db321581c5381193d796fffcf2d24b2f8fed2160a6c6a3baa67f2c4f'
-          $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) { throw "NSIS SHA-256 mismatch: $actual" }
-          $dir = Join-Path $env:RUNNER_TEMP 'nsis-3.12'
-          Expand-Archive -LiteralPath $zip -DestinationPath $dir
-          if (-not (Test-Path -LiteralPath (Join-Path $dir 'makensis.exe'))) { throw 'makensis.exe was not found.' }
-          "VG_NSIS=$dir\makensis.exe" >> $env:GITHUB_ENV
+          choco install nsis --version=3.12.0 -y --no-progress
+          if ($LASTEXITCODE -notin @(0, 3010)) { throw "Chocolatey NSIS install failed: $LASTEXITCODE" }
+          $candidates = @(
+            'C:\Program Files (x86)\NSIS\makensis.exe',
+            'C:\Program Files\NSIS\makensis.exe'
+          )
+          $makensis = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $makensis) { throw 'makensis.exe was not found after installing NSIS 3.12.0.' }
+          $versionText = (& $makensis /VERSION 2>&1 | Out-String).Trim()
+          if ($versionText -notmatch '3\.12') { throw "Unexpected NSIS version: $versionText" }
+          "VG_NSIS=$makensis" >> $env:GITHUB_ENV
 
       - name: Build Windows installer
         shell: pwsh
