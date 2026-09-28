@@ -1,3 +1,3 @@
 using Xunit;
 
-[assembly: CollectionBehavior(MaxParallelThreads = 4)]
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
