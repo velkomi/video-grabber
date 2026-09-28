@@ -106,7 +106,10 @@ public sealed class GrantStore : IAsyncDisposable
         audit.Parameters.AddWithValue("grant", grantId.ToString("D"));
         audit.Parameters.AddWithValue("kind", request.Kind);
         audit.Parameters.AddWithValue("amount", amount);
-        audit.Parameters.AddWithValue("plan", (object?)request.PlanId ?? DBNull.Value);
+        // jsonb_build_object has no surrounding column type from which PostgreSQL
+        // can infer a NULL parameter. Bind nullable plan_id explicitly as text.
+        audit.Parameters.Add("plan", NpgsqlTypes.NpgsqlDbType.Text).Value =
+            (object?)request.PlanId ?? DBNull.Value;
         audit.Parameters.AddWithValue("reason", request.Reason);
         audit.Parameters.AddWithValue("created", now);
         await audit.ExecuteNonQueryAsync(cancellationToken);
