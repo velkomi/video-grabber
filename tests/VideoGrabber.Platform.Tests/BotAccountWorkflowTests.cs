@@ -27,9 +27,22 @@ public sealed class BotAccountWorkflowTests
         var telegramAccess = await miniApp.GetFromJsonAsync<AccessSnapshot>("/v1/access");
 
         Assert.Equal(profile!.AccountId, telegramProfile!.AccountId);
-        Assert.Equal(access, telegramAccess);
+        Assert.NotNull(access);
+        Assert.NotNull(telegramAccess);
+        Assert.Equal(access!.CanDownload, telegramAccess!.CanDownload);
+        Assert.Equal(access.CanEdit, telegramAccess.CanEdit);
+        Assert.Equal(access.Unlimited, telegramAccess.Unlimited);
+        Assert.Equal(access.ValidUntil, telegramAccess.ValidUntil);
+        Assert.Equal(access.RemainingDownloads, telegramAccess.RemainingDownloads);
+        Assert.Equal(access.OfflineUntil, telegramAccess.OfflineUntil);
+        Assert.Equal(access.Reason, telegramAccess.Reason);
+        Assert.Equal(access.PlanId, telegramAccess.PlanId);
+        Assert.Equal(access.CanDownloadCourse, telegramAccess.CanDownloadCourse);
+        Assert.Equal(
+            access.FeatureOverrides.OrderBy(pair => pair.Key),
+            telegramAccess.FeatureOverrides.OrderBy(pair => pair.Key));
         Assert.Contains("telegram", profile.LinkedProviders);
-        Assert.Equal(3, access!.RemainingDownloads);
+        Assert.Equal(3, access.RemainingDownloads);
     }
 
     [Fact]
