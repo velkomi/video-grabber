@@ -74,6 +74,7 @@ public sealed partial class MainWindow
         CancellationToken courseToken)
     {
         CancelCourseTranscription();
+        CleanupStaleCourseTranscriptionWorkspaces(courseRoot);
 
         lock (_courseTranscriptionGate)
         {
@@ -421,6 +422,47 @@ public sealed partial class MainWindow
         }
 
         UpdateCourseTranscriptionUi();
+    }
+
+    private static void CleanupStaleCourseTranscriptionWorkspaces(
+        string courseRoot)
+    {
+        if (string.IsNullOrWhiteSpace(courseRoot)
+            || !Directory.Exists(courseRoot))
+            return;
+
+        foreach (var work in Directory.EnumerateDirectories(
+                     courseRoot,
+                     ".vg-asr-*",
+                     SearchOption.AllDirectories)
+                 .OrderByDescending(path => path.Length))
+        {
+            try
+            {
+                if ((File.GetAttributes(work) & FileAttributes.ReparsePoint) != 0)
+                    continue;
+                Directory.Delete(work, recursive: true);
+            }
+            catch (Exception ex) when (
+                ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+
+        foreach (var temp in Directory.EnumerateFiles(
+                     courseRoot,
+                     ".vg-course-transcript-*",
+                     SearchOption.AllDirectories))
+        {
+            try
+            {
+                File.Delete(temp);
+            }
+            catch (Exception ex) when (
+                ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private static void CleanupCourseTranscriptionWorkingDirectories(
