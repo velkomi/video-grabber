@@ -35,6 +35,7 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("_courseTranscriptionItemCancellation", transcription);
         Assert.Contains("RequestCourseTranscriptionRestartForSettingsChange", transcription);
         Assert.Contains("CleanupCourseTranscriptionWorkingDirectories", transcription);
+        Assert.Contains("CleanupStaleCourseTranscriptionWorkspaces(courseRoot)", transcription);
         Assert.Contains("Course mode never needs preserved Whisper evidence directories.", transcription);
         Assert.Contains("await WaitIfPausedAsync(token)", transcription);
         Assert.Contains("\".vg-asr-*\"", course);
