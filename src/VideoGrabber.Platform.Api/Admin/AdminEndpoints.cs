@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using VideoGrabber.Platform.Api.Accounts;
 using VideoGrabber.Platform.Contracts;
 
@@ -267,7 +268,7 @@ public static class AdminEndpoints
     private static async Task<IResult> DeleteFeatureAsync(
         Guid accountId,
         string feature,
-        AdminReasonRequest request,
+        [FromBody] AdminReasonRequest request,
         HttpContext http,
         AdminFeatureOverrideService overrides,
         TimeProvider clock,
