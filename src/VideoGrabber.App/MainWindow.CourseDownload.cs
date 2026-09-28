@@ -2831,7 +2831,8 @@ public sealed partial class MainWindow
     private void UpdateCourseControls()
     {
         var busy = _courseDownloadActive || _operations.IsBusy || IsCourseTranscriptionBusy;
-        var editableCourseSettings = CourseTranscriptionSettingsCanChange;
+        var editableCourseSettings =
+            IsCourseTranscriptionBusy && CourseTranscriptionSettingsCanChange;
 
         if (_mp3Button is not null)
             _mp3Button.IsEnabled = !busy;

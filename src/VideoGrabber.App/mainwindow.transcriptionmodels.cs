@@ -410,7 +410,8 @@ public sealed partial class MainWindow
                 }
             }
 
-            var editableCourseSettings = CourseTranscriptionSettingsCanChange;
+            var editableCourseSettings =
+            IsCourseTranscriptionBusy && CourseTranscriptionSettingsCanChange;
             var selectorEnabled = !downloading
                 && (editableCourseSettings
                     || (!_courseDownloadActive
