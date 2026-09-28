@@ -19,12 +19,20 @@ public sealed partial class MainWindow
         FullCourse
     }
 
-    private bool HasFeatureAccess(FeatureAccessKind feature)
+    private bool HasFeatureAccess(
+        FeatureAccessKind feature,
+        string? featureOverride = null)
     {
 #if VIDEOGRABBER_MANAGED
         if (string.IsNullOrWhiteSpace(_managedAccessToken)
             || _managedAccessSnapshot is null)
             return false;
+
+        if (!string.IsNullOrWhiteSpace(featureOverride)
+            && _managedAccessSnapshot.FeatureOverrides.TryGetValue(
+                featureOverride,
+                out var overridden))
+            return overridden;
 
         return feature switch
         {
@@ -40,9 +48,10 @@ public sealed partial class MainWindow
 
     private async Task<bool> EnsureFeatureAccessAsync(
         FeatureAccessKind feature,
-        string actionTitle)
+        string actionTitle,
+        string? featureOverride = null)
     {
-        if (HasFeatureAccess(feature))
+        if (HasFeatureAccess(feature, featureOverride))
             return true;
 
         await ShowFeatureAccessDialogAsync(feature, actionTitle);

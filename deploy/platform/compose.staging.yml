@@ -167,6 +167,7 @@ services:
         export VG_PLATFORM_SESSION_SIGNING_KEY="$$(cat /run/secrets/session_key)"
         export VG_PLATFORM_LEASE_SIGNING_KEY_PKCS8="$$(cat /run/secrets/lease_signing_key_pkcs8)"
         export VG_SOURCE_ENCRYPTION_KEY="$$(cat /run/secrets/source_encryption_key)"
+        export VG_ADMIN_MFA_ENCRYPTION_KEY="$$(cat /run/secrets/admin_mfa_encryption_key)"
         export VG_LAST_BACKUP_UTC="$$(cat /run/secrets/last_backup_utc)"
         export VG_RETENTION_DRY_RUN_UTC="$$(cat /run/secrets/retention_dry_run_utc)"
         export VG_TELEGRAM_BOT_TOKEN="$$(cat /run/secrets/telegram_bot_token)"
@@ -201,6 +202,7 @@ services:
       VG_SUPABASE_URL: ${VG_SUPABASE_URL:?}
       VG_SUPABASE_PUBLISHABLE_KEY: ${VG_SUPABASE_PUBLISHABLE_KEY:?}
       VG_WINDOWS_DOWNLOAD_PATH: /var/lib/videograbber/downloads/VideoGrabber-Windows.zip
+      VG_WINDOWS_SETUP_PATH: /var/lib/videograbber/downloads/VideoGrabber-Setup.exe
       VG_WINDOWS_CHECKSUM_PATH: /var/lib/videograbber/downloads/VideoGrabber-Windows.sha256.txt
     secrets:
       - api_dsn
@@ -214,6 +216,7 @@ services:
       - session_key
       - lease_signing_key_pkcs8
       - source_encryption_key
+      - admin_mfa_encryption_key
       - last_backup_utc
       - retention_dry_run_utc
       - telegram_bot_token
@@ -377,6 +380,8 @@ secrets:
     file: ${VG_LEASE_SIGNING_KEY_FILE:?}
   source_encryption_key:
     file: ${VG_SOURCE_ENCRYPTION_KEY_FILE:?}
+  admin_mfa_encryption_key:
+    file: ${VG_ADMIN_MFA_ENCRYPTION_KEY_FILE:?}
   warp_wireproxy_config:
     file: ${VG_WARP_WIREPROXY_CONFIG_FILE:?}
   last_backup_utc:

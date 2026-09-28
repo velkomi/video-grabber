@@ -1,3 +1,4 @@
+using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Api.Operations;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Core.Access;
@@ -24,6 +25,7 @@ public static class JobEndpoints
     private static async Task<IResult> CreateAsync(
         CreateJob request, HttpContext http, JobStore jobs, DeviceStore devices,
         IAccountStore accounts,
+        AdminFeatureOverrideService overrides,
         PlatformOperationalCounters counters,
         CancellationToken cancellationToken)
     {
@@ -43,7 +45,25 @@ public static class JobEndpoints
                 && (request.DeviceId is not Guid deviceId
                     || !await devices.IsActiveAsync(accountId, deviceId, cancellationToken)))
                 return Results.Conflict(new { code = "registered_device_required" });
-            return Results.Ok(await jobs.CreateAsync(accountId, request, cancellationToken));
+
+            var feature = FeatureFor(request.Kind);
+            var adminOverride = feature is null
+                ? null
+                : await overrides.ReadEffectiveAsync(
+                    accountId,
+                    feature,
+                    cancellationToken);
+            if (adminOverride is false)
+            {
+                counters.RecordBlockedAdmission();
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            return Results.Ok(await jobs.CreateAsync(
+                accountId,
+                request,
+                adminOverride is true,
+                cancellationToken));
         }
         catch (JobRequestConflictException)
         { return Results.Conflict(new { code = "job_request_conflict" }); }
@@ -65,6 +85,19 @@ public static class JobEndpoints
         { return Results.BadRequest(new { code = "invalid_job", detail = ex.Message }); }
     }
 
+
+    private static string? FeatureFor(string kind)
+        => kind switch
+        {
+            "download" => "download",
+            "mp3" => "mp3",
+            "trim" => "trim",
+            "join" => "join",
+            "transcribe" => "transcribe",
+            "course_download" => "course_download",
+            _ => null
+        };
+
     private static async Task<IResult> ListAsync(
         HttpContext http, JobStore jobs, CancellationToken cancellationToken)
     {
@@ -85,9 +118,15 @@ public static class JobEndpoints
         HttpContext http,
         JobStore jobs,
         BrowserDownloadTicketService tickets,
+        AdminFeatureOverrideService overrides,
         CancellationToken cancellationToken)
     {
         if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
+        if (await overrides.ReadEffectiveAsync(
+                accountId,
+                "browser_download",
+                cancellationToken) is false)
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
         var artifact = await jobs.ReadCompletedArtifactAsync(
             accountId, jobId, cancellationToken);
         if (artifact is null) return Results.NotFound();

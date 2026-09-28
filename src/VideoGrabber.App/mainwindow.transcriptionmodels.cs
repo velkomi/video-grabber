@@ -46,6 +46,8 @@ public sealed partial class MainWindow
             _preferences.WhisperModelProfile = id;
             PersistUiPreferences();
             SyncWhisperModelSelectors(id);
+            RequestCourseTranscriptionRestartForSettingsChange(
+                "Модель транскрибации изменена.");
             UpdateWhisperModelUi();
 
             var profile = WhisperModelCatalog.Get(id);
@@ -408,10 +410,12 @@ public sealed partial class MainWindow
                 }
             }
 
+            var editableCourseSettings = CourseTranscriptionSettingsCanChange;
             var selectorEnabled = !downloading
-                && !_courseDownloadActive
-                && !_operations.IsBusy
-                && !IsCourseTranscriptionBusy;
+                && (editableCourseSettings
+                    || (!_courseDownloadActive
+                        && !_operations.IsBusy
+                        && !IsCourseTranscriptionBusy));
             foreach (var selector in _whisperModelSelectors)
                 selector.IsEnabled = selectorEnabled;
 

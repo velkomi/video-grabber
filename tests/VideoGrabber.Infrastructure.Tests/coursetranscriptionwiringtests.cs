@@ -29,7 +29,13 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("? \"ru\"", transcription);
         Assert.Contains("Path.GetFileNameWithoutExtension(mediaPath) + \".txt\"", transcription);
         Assert.Contains("generatedSrt", transcription);
+        Assert.Contains("requireSubtitles: false", transcription);
         Assert.Contains("File.Delete(path)", transcription);
+        Assert.Contains("CourseTranscriptionSettingsCanChange", transcription);
+        Assert.Contains("_courseTranscriptionItemCancellation", transcription);
+        Assert.Contains("RequestCourseTranscriptionRestartForSettingsChange", transcription);
+        Assert.Contains("CleanupCourseTranscriptionWorkingDirectories", transcription);
+        Assert.Contains("await WaitIfPausedAsync(token)", transcription);
         Assert.Contains("OrderBy(", transcription);
         Assert.Contains("CourseTranscriptLooksReady", transcription);
         Assert.Contains("EnqueueCourseTranscription(path)", course);
@@ -37,7 +43,13 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("ScheduleCompletionActionAfterDownloads", course);
         Assert.Contains("Транскрибировать видео курса в TXT", browser);
         Assert.Contains("CreateWhisperModelSelector", browser);
-        Assert.Contains("Источник модели", File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.TranscriptionModels.cs")));
+        var modelUi = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.TranscriptionModels.cs"));
+        Assert.Contains("Источник модели", modelUi);
+        Assert.Contains("CourseTranscriptionSettingsCanChange", modelUi);
+        Assert.Contains("Модель транскрибации изменена.", modelUi);
+        Assert.Contains("editableCourseSettings", course);
+        var mediaActions = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.MediaActions.cs"));
+        Assert.Contains("Язык транскрибации изменён.", mediaActions);
         Assert.Contains("EnsureWhisperModelAvailableAsync", transcription);
         Assert.Contains("IsChecked = _preferences.CourseAutoTranscription", browser);
         Assert.Contains("может увеличить общее время на несколько часов", browser);

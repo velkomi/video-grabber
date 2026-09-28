@@ -213,6 +213,31 @@ builder.Services.AddSingleton(sp =>
         ?? throw new InvalidOperationException("Platform admin database DSN is not configured.");
     return AdminService.CreateOwned(adminDsn, sp.GetRequiredService<TimeProvider>());
 });
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var adminDsn = configuration.GetConnectionString("PlatformAdmin")
+        ?? configuration["VG_PLATFORM_ADMIN_DSN"]
+        ?? throw new InvalidOperationException("Platform admin database DSN is not configured.");
+    return AdminFeatureOverrideService.CreateOwned(
+        sp.GetRequiredService<NpgsqlDataSource>(),
+        adminDsn,
+        sp.GetRequiredService<TimeProvider>());
+});
+builder.Services.AddSingleton(sp =>
+{
+    var configuration = sp.GetRequiredService<IConfiguration>();
+    var adminDsn = configuration.GetConnectionString("PlatformAdmin")
+        ?? configuration["VG_PLATFORM_ADMIN_DSN"]
+        ?? throw new InvalidOperationException("Platform admin database DSN is not configured.");
+    var encryptionKey = configuration["VG_ADMIN_MFA_ENCRYPTION_KEY"]
+        ?? throw new InvalidOperationException("Admin MFA encryption key is not configured.");
+    return new AdminMfaService(
+        adminDsn,
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<SessionJwtOptions>(),
+        encryptionKey);
+});
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 builder.Services.AddSingleton(sp => new TelegramUpdateInbox(
@@ -378,6 +403,19 @@ app.MapArtifactUploadEndpoints();
 app.MapPlatformHealthEndpoints();
 app.MapOperationsEndpoints();
 app.MapGet("/download/windows", (IConfiguration configuration) =>
+    {
+        var path = configuration["VG_WINDOWS_SETUP_PATH"]
+            ?? "/var/lib/videograbber/downloads/VideoGrabber-Setup.exe";
+        if (!File.Exists(path))
+            return Results.NotFound(new { code = "windows_setup_unavailable" });
+        return Results.File(
+            path,
+            "application/vnd.microsoft.portable-executable",
+            "VideoGrabber-Setup.exe",
+            enableRangeProcessing: true);
+    })
+    .AllowAnonymous();
+app.MapGet("/download/windows/portable", (IConfiguration configuration) =>
     {
         var path = configuration["VG_WINDOWS_DOWNLOAD_PATH"]
             ?? "/var/lib/videograbber/downloads/VideoGrabber-Windows.zip";

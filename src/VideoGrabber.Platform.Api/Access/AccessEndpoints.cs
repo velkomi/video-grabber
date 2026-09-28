@@ -1,3 +1,4 @@
+using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
 
@@ -17,10 +18,25 @@ public static class AccessEndpoints
     private static async Task<IResult> ReadAsync(
         HttpContext http,
         GrantStore grants,
+        AdminFeatureOverrideService overrides,
         CancellationToken cancellationToken)
     {
         if (!TryGetAccountId(http, out var accountId)) return Results.Unauthorized();
-        try { return Results.Ok(await grants.EvaluateAsync(accountId, cancellationToken)); }
+        try
+        {
+            var access = await grants.EvaluateAsync(accountId, cancellationToken);
+            var features = await overrides.ReadEffectiveAsync(accountId, cancellationToken);
+            if (features.TryGetValue("download", out var download))
+                access = access with
+                {
+                    CanDownload = download,
+                    Unlimited = download || access.Unlimited
+                };
+            if (features.TryGetValue("course_download", out var course))
+                access = access with { CanDownloadCourse = course };
+            access = access with { FeatureOverrides = features };
+            return Results.Ok(access);
+        }
         catch (KeyNotFoundException) { return Results.NotFound(); }
     }
     private static async Task<IResult> GiftAsync(

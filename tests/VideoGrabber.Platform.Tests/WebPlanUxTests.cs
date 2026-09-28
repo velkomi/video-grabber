@@ -21,26 +21,62 @@ public sealed class WebPlanUxTests
         Assert.Contains("data-plan=\"full_course\"", html);
         Assert.Contains("id=\"plan-dialog\"", html);
         Assert.Contains("href=\"/download/windows\"", html);
-        Assert.Contains("Быстро", html);
-        Assert.Contains("Оптимально", html);
-        Assert.Contains("Максимальное качество", html);
-        Assert.Contains("около 181 МБ", html);
-        Assert.Contains("около 514 МБ", html);
-        Assert.Contains("повторно при обычном использовании не загружается", html);
+        Assert.Contains("href=\"/download/windows/portable\"", html);
+        Assert.Contains("Скачивание видео", html);
+        Assert.Contains("YouTube и Shorts", html);
+        Assert.Contains("Instagram Reels", html);
+        Assert.Contains("TikTok", html);
+        Assert.Contains("Pinterest", html);
+        Assert.Contains("Транскрибация", html);
+        Assert.Contains("Base, Small или Medium", html);
+        Assert.Contains("Видео-уроки и курсы", html);
+        Assert.Contains("DRM-защита не обходится", html);
+        Assert.Contains("Редактирование видео", html);
+        Assert.Contains("Скачать установщик (.exe)", html);
+        Assert.Contains("после установки VideoGrabber готов к работе", html);
+        Assert.Contains("Portable ZIP", html);
+        Assert.Contains("id=\"admin-link\"", html);
         Assert.Contains("/assets/videograbber-icon.png", html);
         Assert.DoesNotContain("/download/windows/checksum", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("SHA-256 текущей версии", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("github.com", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("github.com", js, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("github.com", program, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("VG_WINDOWS_SETUP_PATH", program);
+        Assert.Contains("VideoGrabber-Setup.exe", program);
         Assert.Contains("VG_WINDOWS_DOWNLOAD_PATH", program);
         Assert.Contains("VideoGrabber-Windows.zip", program);
+        Assert.Contains("MapGet(\"/download/windows/portable\"", program);
         Assert.Contains("https://t.me/Velkoshkin", html);
         Assert.Contains("openPlanDialog", js);
         Assert.Contains("recommendedPlanForOperation", js);
         Assert.DoesNotContain("courseOption.disabled", js, StringComparison.Ordinal);
         Assert.DoesNotContain("mp3Option.disabled", js, StringComparison.Ordinal);
         Assert.Contains("MapGet(\"/download/windows\"", program);
+    }
+
+    [Fact]
+    public void Owner_admin_surface_requires_totp_and_exposes_granular_controls()
+    {
+        var root = FindRepoRoot();
+        var adminHtml = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "admin", "index.html"));
+        var adminJs = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "admin", "admin.js"));
+        var program = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "Program.cs"));
+        var compose = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "compose.staging.yml"));
+
+        Assert.Contains("Двухфакторная аутентификация", adminHtml);
+        Assert.Contains("mfa-code", adminHtml);
+        Assert.Contains("feature-grid", adminHtml);
+        Assert.Contains("grant-all-button", adminHtml);
+        Assert.Contains("/v1/admin/mfa/status", adminJs);
+        Assert.Contains("/v1/admin/mfa/verify", adminJs);
+        Assert.Contains("vg_admin_access", adminJs);
+        Assert.Contains("VG_ADMIN_MFA_ENCRYPTION_KEY", program);
+        Assert.Contains("admin_mfa_encryption_key", compose);
     }
 
     [Fact]

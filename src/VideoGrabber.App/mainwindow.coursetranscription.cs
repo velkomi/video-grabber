@@ -14,8 +14,11 @@ public sealed partial class MainWindow
     private readonly HashSet<string> _courseTranscriptionKnown =
         new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _courseTranscriptionCancellation;
+    private CancellationTokenSource? _courseTranscriptionItemCancellation;
     private Task? _courseTranscriptionWorkerTask;
     private bool _courseTranscriptionActive;
+    private bool _courseTranscriptionRestartRequested;
+    private string? _courseTranscriptionRestartReason;
     private int _courseTranscriptionTotal;
     private int _courseTranscriptionCompleted;
     private int _courseTranscriptionFailed;
@@ -56,6 +59,16 @@ public sealed partial class MainWindow
         }
     }
 
+    private bool CourseTranscriptionSettingsCanChange
+    {
+        get
+        {
+            lock (_courseTranscriptionGate)
+                return _operationPaused
+                    || _courseTranscriptionCancellation is null;
+        }
+    }
+
     private void InitializeCourseTranscriptionPipeline(
         string courseRoot,
         CancellationToken courseToken)
@@ -71,6 +84,10 @@ public sealed partial class MainWindow
             _courseTranscriptionFailed = 0;
             _courseTranscriptionActive = false;
             _courseTranscriptionWorkerTask = null;
+            _courseTranscriptionItemCancellation?.Dispose();
+            _courseTranscriptionItemCancellation = null;
+            _courseTranscriptionRestartRequested = false;
+            _courseTranscriptionRestartReason = null;
             _courseTranscriptionCurrentMedia = null;
             _courseTranscriptionActiveStopwatch = null;
             _courseTranscriptionCurrentOrdinal = 0;
@@ -215,6 +232,7 @@ public sealed partial class MainWindow
         while (true)
         {
             token.ThrowIfCancellationRequested();
+            await WaitIfPausedAsync(token);
 
             string? mediaPath;
             lock (_courseTranscriptionGate)
@@ -250,6 +268,7 @@ public sealed partial class MainWindow
             UpdateCourseTranscriptionUi();
 
             var success = false;
+            var restartCurrent = false;
             for (var attempt = 1; attempt <= 2; attempt++)
             {
                 token.ThrowIfCancellationRequested();
@@ -262,12 +281,28 @@ public sealed partial class MainWindow
                     break;
                 }
 
+                CancellationTokenSource itemCancellation;
+                lock (_courseTranscriptionGate)
+                {
+                    _courseTranscriptionItemCancellation?.Dispose();
+                    itemCancellation =
+                        CancellationTokenSource.CreateLinkedTokenSource(token);
+                    _courseTranscriptionItemCancellation = itemCancellation;
+                }
+
                 try
                 {
                     success = await TranscribeCourseVideoToTextAsync(
                         mediaPath,
                         hardenedRetry: attempt > 1,
-                        token: token);
+                        token: itemCancellation.Token);
+                }
+                catch (OperationCanceledException)
+                    when (!token.IsCancellationRequested
+                          && IsCourseTranscriptionRestartRequested(mediaPath))
+                {
+                    restartCurrent = true;
+                    break;
                 }
                 catch (OperationCanceledException)
                 {
@@ -281,6 +316,17 @@ public sealed partial class MainWindow
                         ex.GetType().Name);
                     success = false;
                 }
+                finally
+                {
+                    lock (_courseTranscriptionGate)
+                    {
+                        if (ReferenceEquals(
+                                _courseTranscriptionItemCancellation,
+                                itemCancellation))
+                            _courseTranscriptionItemCancellation = null;
+                    }
+                    itemCancellation.Dispose();
+                }
 
                 if (success)
                     break;
@@ -289,6 +335,28 @@ public sealed partial class MainWindow
                     await Task.Delay(
                         TimeSpan.FromSeconds(3),
                         token);
+            }
+
+            if (restartCurrent)
+            {
+                CleanupCourseTranscriptionWorkingDirectories(mediaPath);
+                lock (_courseTranscriptionGate)
+                {
+                    var pending = _courseTranscriptionQueue.ToArray();
+                    _courseTranscriptionQueue.Clear();
+                    _courseTranscriptionQueue.Enqueue(mediaPath);
+                    foreach (var path in pending)
+                        _courseTranscriptionQueue.Enqueue(path);
+                    _courseTranscriptionRestartRequested = false;
+                    _courseTranscriptionRestartReason = null;
+                    ResetCourseTranscriptionCurrentStateLocked();
+                }
+                DiagnosticHub.Log.Write(
+                    "course.transcription",
+                    "restart_requested",
+                    "Current incomplete file will restart with updated settings.");
+                UpdateCourseTranscriptionUi();
+                continue;
             }
 
             lock (_courseTranscriptionGate)
@@ -310,6 +378,83 @@ public sealed partial class MainWindow
                 "file=" + Path.GetFileName(mediaPath));
             UpdateCourseTranscriptionUi();
         }
+    }
+
+
+    private bool IsCourseTranscriptionRestartRequested(string mediaPath)
+    {
+        lock (_courseTranscriptionGate)
+            return _courseTranscriptionRestartRequested
+                && string.Equals(
+                    _courseTranscriptionCurrentMedia,
+                    mediaPath,
+                    StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RequestCourseTranscriptionRestartForSettingsChange(
+        string reason)
+    {
+        CancellationTokenSource? itemCancellation = null;
+        lock (_courseTranscriptionGate)
+        {
+            if (!_operationPaused
+                || !_courseTranscriptionActive
+                || string.IsNullOrWhiteSpace(
+                    _courseTranscriptionCurrentMedia))
+                return;
+
+            _courseTranscriptionRestartRequested = true;
+            _courseTranscriptionRestartReason = reason;
+            itemCancellation = _courseTranscriptionItemCancellation;
+        }
+
+        DiagnosticHub.Log.Write(
+            "course.transcription.settings",
+            "restart_requested",
+            reason);
+        try
+        {
+            itemCancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        UpdateCourseTranscriptionUi();
+    }
+
+    private static void CleanupCourseTranscriptionWorkingDirectories(
+        string mediaPath)
+    {
+        var directory = Path.GetDirectoryName(mediaPath);
+        if (string.IsNullOrWhiteSpace(directory)
+            || !Directory.Exists(directory))
+            return;
+
+        foreach (var work in Directory.EnumerateDirectories(
+                     directory,
+                     ".vg-asr-*",
+                     SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                Directory.Delete(work, recursive: true);
+            }
+            catch (Exception ex) when (
+                ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private void ResetCourseTranscriptionCurrentStateLocked()
+    {
+        _courseTranscriptionActive = false;
+        _courseTranscriptionCurrentMedia = null;
+        _courseTranscriptionActiveStopwatch?.Stop();
+        _courseTranscriptionActiveStopwatch = null;
+        _courseTranscriptionCurrentOrdinal = 0;
+        _courseTranscriptionCurrentAttempt = 0;
     }
 
     private string ResolveCourseTranscriptionLanguage(string mediaPath)
@@ -340,6 +485,8 @@ public sealed partial class MainWindow
         var desiredText = CourseTranscriptPath(mediaPath);
         if (CourseTranscriptLooksReady(mediaPath))
             return true;
+
+        CleanupCourseTranscriptionWorkingDirectories(mediaPath);
 
         var components = Volatile.Read(ref _componentServices);
         if (!components.Tools.WhisperAvailable)
@@ -480,14 +627,20 @@ public sealed partial class MainWindow
     private void CancelCourseTranscription()
     {
         CancellationTokenSource? cancellation;
+        CancellationTokenSource? itemCancellation;
         lock (_courseTranscriptionGate)
         {
             cancellation = _courseTranscriptionCancellation;
             _courseTranscriptionCancellation = null;
+            itemCancellation = _courseTranscriptionItemCancellation;
+            _courseTranscriptionItemCancellation = null;
+            _courseTranscriptionRestartRequested = false;
+            _courseTranscriptionRestartReason = null;
         }
 
         try
         {
+            itemCancellation?.Cancel();
             cancellation?.Cancel();
         }
         catch (ObjectDisposedException)
@@ -495,6 +648,7 @@ public sealed partial class MainWindow
         }
         finally
         {
+            itemCancellation?.Dispose();
             cancellation?.Dispose();
         }
     }
@@ -572,6 +726,8 @@ public sealed partial class MainWindow
             TimeSpan activeElapsed;
             int activeOrdinal;
             int activeAttempt;
+            bool restartRequested;
+            string? restartReason;
             lock (_courseTranscriptionGate)
             {
                 total = _courseTranscriptionTotal;
@@ -584,6 +740,8 @@ public sealed partial class MainWindow
                     ?? TimeSpan.Zero;
                 activeOrdinal = _courseTranscriptionCurrentOrdinal;
                 activeAttempt = _courseTranscriptionCurrentAttempt;
+                restartRequested = _courseTranscriptionRestartRequested;
+                restartReason = _courseTranscriptionRestartReason;
             }
 
             var finished = completed + failed;
@@ -627,6 +785,11 @@ public sealed partial class MainWindow
                           + "Прошло: " + elapsedText
                         : "Формирую и запускаю очередь по порядку.")
                     + Environment.NewLine
+                    + (restartRequested
+                        ? "Настройки изменены: текущий незавершённый файл будет удалён из временной обработки и запущен заново после «Продолжить»."
+                          + (string.IsNullOrWhiteSpace(restartReason) ? string.Empty : " " + restartReason)
+                          + Environment.NewLine
+                        : string.Empty)
                     + $"В очереди: {queued}. Скачивание курса продолжается параллельно.";
             }
             else if (failed == 0)

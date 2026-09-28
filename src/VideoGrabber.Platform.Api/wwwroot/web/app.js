@@ -493,6 +493,8 @@ function renderAccount() {
 
   $("#account-title").textContent =
     profile.role === "owner_admin" ? "Owner account" : "VideoGrabber account";
+  const adminLink = $("#admin-link");
+  if (adminLink) adminLink.hidden = profile.role !== "owner_admin";
   $("#plan-value").textContent = planName(access.planId);
 
   if (access.unlimited) {
@@ -517,6 +519,13 @@ function renderAccount() {
   renderCourseHint();
 }
 
+function accessFeature(feature, fallback) {
+  const overrides = state.access?.featureOverrides || {};
+  if (Object.prototype.hasOwnProperty.call(overrides, feature))
+    return overrides[feature] === true;
+  return Boolean(fallback);
+}
+
 function renderCourseHint() {
   if (!state.access) return;
 
@@ -527,13 +536,13 @@ function renderCourseHint() {
   if (kind === "course_download") {
     browserOption.disabled = true;
     target.value = "desktop";
-    $("#course-hint").textContent = state.access.canDownloadCourse
+    $("#course-hint").textContent = accessFeature("course_download", state.access.canDownloadCourse)
       ? "Полный курс скачивается через Windows VideoGrabber: приложению нужна ваша авторизованная сессия курса. Перед запуском можно включить галочку транскрибации — тогда видео параллельно ставятся в локальную очередь Whisper, а TXT сохраняются рядом с ними."
       : "Полный курс доступен на Full Course. После выбора тарифа скачивание выполняется в Windows-приложении.";
   } else {
     browserOption.disabled = false;
     if (kind === "mp3") {
-      $("#course-hint").textContent = state.access.canEdit
+      $("#course-hint").textContent = accessFeature("mp3", state.access.canEdit)
         ? "MP3 можно подготовить прямо через сайт — Windows-приложение не требуется."
         : "MP3 относится к расширенным функциям. Нажмите «Скачать», чтобы увидеть подходящий тариф.";
     } else {
@@ -896,7 +905,7 @@ async function submitJob(event) {
     );
     return;
   }
-  if (kind === "mp3" && !state.access?.canEdit) {
+  if (kind === "mp3" && !accessFeature("mp3", state.access?.canEdit)) {
     setStatus("#job-status", "MP3 доступен на платных тарифах.", "error");
     openPlanDialog(
       "start",
@@ -904,7 +913,7 @@ async function submitJob(event) {
     );
     return;
   }
-  if (kind === "course_download" && !state.access?.canDownloadCourse) {
+  if (kind === "course_download" && !accessFeature("course_download", state.access?.canDownloadCourse)) {
     setStatus("#job-status", "Полный курс доступен на тарифе Full Course.", "error");
     openPlanDialog(
       "full_course",

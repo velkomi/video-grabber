@@ -92,7 +92,8 @@ public sealed partial class MainWindow
                 FeatureAccessKind.PaidTools,
                 text
                     ? "Транскрибация доступна на платных тарифах"
-                    : "MP3 доступен на платных тарифах"))
+                    : "MP3 доступен на платных тарифах",
+                text ? "transcribe" : "mp3"))
             return;
 
         var input = _localMediaBox.Text.Trim().Trim('"');
@@ -200,6 +201,21 @@ public sealed partial class MainWindow
         _languageBox.Items.Add(ComboItem("Русский", "ru"));
         _languageBox.Items.Add(ComboItem("Английский", "en"));
         _languageBox.SelectedIndex = _preferences.Language == "ru" ? 1 : _preferences.Language == "en" ? 2 : 0;
+        _languageBox.SelectionChanged += (_, _) =>
+        {
+            var language =
+                (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString()
+                ?? "auto";
+            if (string.Equals(
+                    _preferences.Language,
+                    language,
+                    StringComparison.Ordinal))
+                return;
+            _preferences.Language = language;
+            PersistUiPreferences();
+            RequestCourseTranscriptionRestartForSettingsChange(
+                "Язык транскрибации изменён.");
+        };
         var save = PrimaryButton("Сохранить язык");
         save.Click += (_, _) => SavePreferences();
         panel.Children.Add(_whisperExeBox);

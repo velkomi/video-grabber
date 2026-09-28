@@ -68,7 +68,8 @@ public sealed partial class MainWindow
     {
         if (!await EnsureFeatureAccessAsync(
                 FeatureAccessKind.PaidTools,
-                "Транскрибация доступна на платных тарифах"))
+                "Транскрибация доступна на платных тарифах",
+                "transcribe"))
             return;
 
         var path = _lastDownloadedMediaPath;
@@ -106,7 +107,8 @@ public sealed partial class MainWindow
     {
         if (!await EnsureFeatureAccessAsync(
                 FeatureAccessKind.FullCourse,
-                "Скачивание полного курса доступно на Full Course"))
+                "Скачивание полного курса доступно на Full Course",
+                "course_download"))
             return;
 
         if (!resume && (_mediaBrowser?.CoreWebView2 is null || _browserPageUri is null))
@@ -2829,6 +2831,7 @@ public sealed partial class MainWindow
     private void UpdateCourseControls()
     {
         var busy = _courseDownloadActive || _operations.IsBusy || IsCourseTranscriptionBusy;
+        var editableCourseSettings = CourseTranscriptionSettingsCanChange;
 
         if (_mp3Button is not null)
             _mp3Button.IsEnabled = !busy;
@@ -2844,6 +2847,9 @@ public sealed partial class MainWindow
 
         if (_courseTranscriptionCheckBox is not null)
             _courseTranscriptionCheckBox.IsEnabled = !busy;
+
+        if (_languageBox is not null)
+            _languageBox.IsEnabled = !busy || editableCourseSettings;
 
         if (_courseResumeButton is not null)
             _courseResumeButton.IsEnabled = !busy;

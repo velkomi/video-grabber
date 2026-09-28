@@ -22,6 +22,8 @@ public sealed class DeploymentAssetTests
         Assert.Contains("VG_PLATFORM_SESSION_SIGNING_KEY", compose, StringComparison.Ordinal);
         Assert.Contains("VG_OPERATIONS_TOKEN", compose, StringComparison.Ordinal);
         Assert.Contains("VG_SOURCE_ENCRYPTION_KEY", compose, StringComparison.Ordinal);
+        Assert.Contains("VG_ADMIN_MFA_ENCRYPTION_KEY", compose, StringComparison.Ordinal);
+        Assert.Contains("admin_mfa_encryption_key", compose, StringComparison.Ordinal);
         Assert.Contains("telegram_webhook_secret", compose, StringComparison.Ordinal);
         Assert.Contains("telegram_inbox_key", compose, StringComparison.Ordinal);
         Assert.Contains("telegram_bot_user_id", compose, StringComparison.Ordinal);

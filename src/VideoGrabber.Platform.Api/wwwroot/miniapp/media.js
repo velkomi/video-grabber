@@ -69,16 +69,27 @@ function fillSelect(select, values) {
   }
 }
 
+function accessFeature(access, feature, fallback) {
+  const overrides = access?.featureOverrides || {};
+  if (Object.prototype.hasOwnProperty.call(overrides, feature))
+    return overrides[feature] === true;
+  return Boolean(fallback);
+}
+
 async function loadCapabilities() {
   capabilities = await api("/v1/capabilities");
   const access = window.VideoGrabberApi.currentAccess();
   const permitted = capabilities.operations
     .filter((x) => x.available)
     .filter((x) => {
-      if (x.operation === "course_download") return access?.canDownloadCourse === true;
-      if (["mp3", "trim", "join", "transcribe", "transcription"].includes(x.operation))
-        return access?.canEdit === true;
-      return access?.canDownload === true;
+      if (x.operation === "course_download")
+        return accessFeature(access, "course_download", access?.canDownloadCourse);
+      if (x.operation === "mp3") return accessFeature(access, "mp3", access?.canEdit);
+      if (x.operation === "trim") return accessFeature(access, "trim", access?.canEdit);
+      if (x.operation === "join") return accessFeature(access, "join", access?.canEdit);
+      if (["transcribe", "transcription"].includes(x.operation))
+        return accessFeature(access, "transcribe", access?.canEdit);
+      return accessFeature(access, "download", access?.canDownload);
     })
     .map((x) => x.operation);
   fillSelect($("#media-operation"), permitted);
@@ -106,9 +117,20 @@ $("#media-form").addEventListener("submit", async (event) => {
     if (!window.VideoGrabberApi.isPrimaryAccount())
       throw new Error("Сначала свяжите Telegram с основным аккаунтом через /link");
     const access = window.VideoGrabberApi.currentAccess();
-    if (!access?.canDownload)
-      throw new Error("Лимит загрузок исчерпан. Выберите подписку.");
     const kind = $("#media-operation").value;
+    const effective = kind === "course_download"
+      ? accessFeature(access, "course_download", access?.canDownloadCourse)
+      : kind === "mp3"
+        ? accessFeature(access, "mp3", access?.canEdit)
+        : kind === "trim"
+          ? accessFeature(access, "trim", access?.canEdit)
+          : kind === "join"
+            ? accessFeature(access, "join", access?.canEdit)
+            : ["transcribe", "transcription"].includes(kind)
+              ? accessFeature(access, "transcribe", access?.canEdit)
+              : accessFeature(access, "download", access?.canDownload);
+    if (!effective)
+      throw new Error("Эта функция недоступна для текущих условий аккаунта.");
     status(kind === "course_download"
       ? "Проверяю ссылку курса для Windows…"
       : "Анализирую источник…");

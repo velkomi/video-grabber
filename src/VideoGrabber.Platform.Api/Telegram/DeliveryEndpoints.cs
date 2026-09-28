@@ -1,3 +1,4 @@
+using VideoGrabber.Platform.Api.Admin;
 using VideoGrabber.Platform.Contracts;
 
 namespace VideoGrabber.Platform.Api.Telegram;
@@ -18,9 +19,15 @@ public static class DeliveryEndpoints
         DeliveryRequest request,
         HttpContext http,
         ArtifactDeliveryService deliveries,
+        AdminFeatureOverrideService overrides,
         CancellationToken cancellationToken)
     {
         if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
+        if (await overrides.ReadEffectiveAsync(
+                accountId,
+                "telegram_delivery",
+                cancellationToken) is false)
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
         try
         {
             return Results.Ok(await deliveries.RequestAsync(

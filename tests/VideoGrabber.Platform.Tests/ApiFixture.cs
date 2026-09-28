@@ -465,6 +465,7 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_TELEGRAM_DOCUMENT_MAX_BYTES", (10L * 1024 * 1024).ToString());
         builder.UseSetting("VG_SERVER_WORKER_TOKEN", "test-server-worker-token");
         builder.UseSetting("VG_SOURCE_ENCRYPTION_KEY", "KSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0g=");
+        builder.UseSetting("VG_ADMIN_MFA_ENCRYPTION_KEY", "R0hJRktMTU5PUFFSU1RVVldYWVo0NTY3ODkwMTIzNDU=");
         builder.UseSetting("VG_EGRESS_PROXY_URI", "http://127.0.0.1:3128");
         builder.UseSetting("VG_YTDLP_PATH", "yt-dlp");
         builder.UseSetting("VG_FFMPEG_PATH", Environment.GetEnvironmentVariable("VG_WORKER_FFMPEG") ?? "ffmpeg");

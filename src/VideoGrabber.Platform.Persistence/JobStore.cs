@@ -33,9 +33,20 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         Action<string>? fault = null)
         => new(ledger, clock, fault);
 
+    public Task<JobView> CreateAsync(
+        Guid accountId,
+        CreateJob request,
+        CancellationToken cancellationToken)
+        => CreateAsync(
+            accountId,
+            request,
+            false,
+            cancellationToken);
+
     public async Task<JobView> CreateAsync(
         Guid accountId,
         CreateJob request,
+        bool adminAccessOverride,
         CancellationToken cancellationToken)
     {
         ValidateCreate(request);
@@ -47,7 +58,8 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.ReadCommitted, cancellationToken);
         await LockAccountAsync(connection, transaction, accountId, cancellationToken);
-        if (request.Kind == "course_download"
+        if (!adminAccessOverride
+            && request.Kind == "course_download"
             && !await HasCourseDownloadAccessAsync(
                 connection, transaction, accountId, now, cancellationToken))
             throw new ReservationUnavailableException();
@@ -66,7 +78,7 @@ public sealed class JobStore(CreditLedger ledger, TimeProvider clock)
 
         ReservationReceipt? reservation = null;
         var state = request.Executor == "server_worker" ? "queued" : "waiting_for_worker";
-        if (request.Executor == "server_worker")
+        if (request.Executor == "server_worker" && !adminAccessOverride)
         {
             reservation = await ledger.ReserveInTransactionAsync(
                 connection, transaction, accountId, ReservationFor(request), cancellationToken);

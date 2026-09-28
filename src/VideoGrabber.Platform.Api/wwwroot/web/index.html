@@ -79,21 +79,32 @@
           <p class="eyebrow">Приложение для компьютера</p>
           <h2>VideoGrabber для Windows</h2>
           <p class="download-lead">
-            Windows 10/11 x64. Полный пакет уже содержит yt-dlp, FFmpeg, FFprobe,
-            Deno и Whisper — после распаковки можно запускать VideoGrabber.Managed.exe.
+            Windows 10/11 x64. Установщик уже включает необходимые компоненты загрузки,
+            обработки и локальной транскрибации — после установки VideoGrabber готов к работе.
           </p>
-          <div class="model-summary" aria-label="Режимы транскрибации">
-            <div><strong>Быстро</strong><span>Base уже входит в приложение · минимум места · максимальная скорость</span></div>
-            <div><strong>Оптимально</strong><span>Small · лучше для курсов и русской речи · около 181 МБ</span></div>
-            <div><strong>Максимальное качество</strong><span>Medium · сложная речь и шумный звук · около 514 МБ</span></div>
+          <div class="feature-summary" aria-label="Возможности VideoGrabber">
+            <article>
+              <strong>Скачивание видео</strong>
+              <span>YouTube и Shorts, Instagram Reels, TikTok, Pinterest, а также поддерживаемые прямые ссылки и страницы с видео.</span>
+            </article>
+            <article>
+              <strong>Транскрибация</strong>
+              <span>Локальное распознавание речи без передачи аудио в облако. На выбор: Base, Small или Medium — от скорости к максимальному качеству.</span>
+            </article>
+            <article>
+              <strong>Видео-уроки и курсы</strong>
+              <span>Сохранение доступных вам учебных материалов из вашей авторизованной сессии для офлайн-работы при наличии соответствующего права или разрешения. DRM-защита не обходится.</span>
+            </article>
+            <article>
+              <strong>Редактирование видео</strong>
+              <span>Обрезка, объединение и извлечение аудио. Более профессиональные инструменты будут добавляться по запросам пользователей.</span>
+            </article>
           </div>
-          <p class="download-model-note">
-            Дополнительная модель скачивается автоматически только после вашего выбора,
-            сохраняется на компьютере и повторно при обычном использовании не загружается.
-          </p>
           <div class="download-actions">
-            <a class="button button-primary" href="/download/windows">Скачать Windows-версию</a>
+            <a class="button button-primary" href="/download/windows">Скачать установщик (.exe)</a>
+            <a class="button button-quiet" href="/download/windows/portable">Portable ZIP</a>
           </div>
+          <p class="download-model-note">Установщик размещает VideoGrabber в Program Files и создаёт обычные ярлыки Windows. Portable ZIP можно распаковать и запустить без установки.</p>
         </div>
         <aside class="platform-note">
           <span class="platform-chip">macOS</span>
@@ -225,6 +236,7 @@
               <div><dt>Курс</dt><dd id="course-value">—</dd></div>
               <div><dt>Telegram</dt><dd id="telegram-value">—</dd></div>
             </dl>
+            <a id="admin-link" class="text-link" href="/admin/" hidden>Админ-панель</a>
             <a class="text-link" href="/miniapp/">Открыть Telegram Mini App</a>
           </aside>
         </div>

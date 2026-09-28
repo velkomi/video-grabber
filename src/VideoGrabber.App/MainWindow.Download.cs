@@ -19,7 +19,8 @@ public sealed partial class MainWindow
     {
         if (!await EnsureFeatureAccessAsync(
                 FeatureAccessKind.IndividualDownload,
-                "Загрузка недоступна на текущем тарифе"))
+                "Загрузка недоступна на текущем тарифе",
+                "download"))
             return;
 
         if (!UrlPolicy.TryValidate(_urlBox.Text, out var uri, out var error) || uri is null)
@@ -32,7 +33,8 @@ public sealed partial class MainWindow
         if (intent.AudioOnly
             && !await EnsureFeatureAccessAsync(
                 FeatureAccessKind.PaidTools,
-                "MP3 доступен на платных тарифах"))
+                "MP3 доступен на платных тарифах",
+                "mp3"))
             return;
         await DownloadSourceAsync(intent);
     }
@@ -174,6 +176,8 @@ public sealed partial class MainWindow
         _operations.Cancel();
         _browserOperation?.Cancel();
         _operation?.Cancel();
+        UpdateCourseControls();
+        UpdateWhisperModelUi();
     }
 
     private void SetOperationControls(bool busy)

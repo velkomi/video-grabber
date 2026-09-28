@@ -1,4 +1,14 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.54-rc.1] - 2026-09-28
+
+- Status: public-site/installer/admin-MFA/course-settings completion release.
+- Public Web now presents product capabilities rather than three unexplained transcription-model cards, and `/download/windows` is wired to a real NSIS setup executable while portable ZIP remains separate.
+- Owner admin console is linked only for `owner_admin`, requires TOTP 2FA for privileged changes, and supports manual grants, account controls, audit and per-feature overrides.
+- Admin TOTP secrets use a dedicated 32-byte encryption key secret (`VG_ADMIN_MFA_ENCRYPTION_KEY`).
+- Paused course transcription unlocks model/language settings; a changed setting cancels and discards the unfinished ASR work and requeues that video for a clean restart. A stopped/cancelled project also unlocks settings immediately without closing VideoGrabber.
+- preview.53 TXT-only background course transcription and preview.52 hardened retry remain intact.
+- Targeted desktop/platform regression suites pass and Local/Managed/API builds complete with zero warnings/errors.
+
 ## [0.1.10-preview.53-rc.1] - 2026-09-28
 
 - Status: course background transcription is now TXT-only by design.

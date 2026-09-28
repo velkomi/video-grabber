@@ -552,7 +552,8 @@ public sealed partial class MainWindow : Window
     {
         if (!await EnsureFeatureAccessAsync(
                 FeatureAccessKind.PaidTools,
-                "Обрезка видео доступна на платных тарифах"))
+                "Обрезка видео доступна на платных тарифах",
+                "trim"))
             return;
 
         if (!File.Exists(_trimInputBox.Text) ||
@@ -588,7 +589,8 @@ public sealed partial class MainWindow : Window
     {
         if (!await EnsureFeatureAccessAsync(
                 FeatureAccessKind.PaidTools,
-                "Склейка видео доступна на платных тарифах"))
+                "Склейка видео доступна на платных тарифах",
+                "join"))
             return;
 
         if (_joinFiles.Count < 2 || string.IsNullOrWhiteSpace(_joinOutputBox.Text))
@@ -1059,6 +1061,7 @@ public sealed partial class MainWindow : Window
 
         foreach (var button in _pauseButtons)
             UpdatePauseButtonVisual(button);
+        UpdateCourseControls();
     }
 
     private void ResetPauseState()
