@@ -587,6 +587,11 @@ public sealed partial class MainWindow
                 {
                 }
             }
+
+            // Course mode never needs preserved Whisper evidence directories.
+            // The final same-name TXT is already promoted separately; failed or
+            // cancelled attempts must not leave .vg-asr-* folders behind.
+            CleanupCourseTranscriptionWorkingDirectories(mediaPath);
         }
     }
 
