@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.52-rc.1] - 2026-09-28
+
+- Status: hardened second-pass recovery for background course transcription.
+- Retry 2/2 now changes decoder/VAD behavior instead of repeating the same deterministic Whisper invocation: decoder context is reset, temperature fallback is disabled, and Silero VAD uses tighter splitting/padding.
+- Transcript/SRT quality gates remain strict; repeated hallucination loops and invalid timestamp order are still rejected rather than promoted as finished TXT.
+- Live reproduction on two preserved failed course audios recovered both a repetition-loop case and a cue-order case. Local/Managed builds complete with 0 warnings/errors; targeted Whisper promotion tests pass 6/6.
+
 ## [0.1.10-preview.51-rc.1] - 2026-09-27
 
 - Status: Whisper model cache/dedup UX finalization.

@@ -204,6 +204,53 @@ public sealed class WhisperPromotionTests
         finally { Directory.Delete(root, true); }
     }
     [Fact]
+    public async Task Hardened_retry_uses_independent_decoder_and_stricter_vad_profile()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var vadDirectory = Path.Combine(root, "tools", "whisper");
+            Directory.CreateDirectory(vadDirectory);
+            File.WriteAllBytes(Path.Combine(vadDirectory, "ggml-silero-v6.2.0.bin"), [1]);
+
+            IReadOnlyList<string>? captured = null;
+            var runner = new ScriptedRunner((spec, token) =>
+            {
+                var args = spec.Arguments.ToList();
+                var outputIndex = args.IndexOf("-of");
+                if (outputIndex < 0)
+                    return Task.FromResult(new ProcessResult(0, "", ""));
+
+                captured = args;
+                var outputBase = args[outputIndex + 1];
+                File.WriteAllText(outputBase + ".txt", "Speech");
+                File.WriteAllText(outputBase + ".srt",
+                    "1\n00:00:00,000 --> 00:00:01,000\nSpeech\n");
+                return Task.FromResult(new ProcessResult(0, "", ""));
+            });
+
+            var result = await Service(root, runner, 10).TranscribeAsync(
+                Path.Combine(root, "input.wav"), Path.Combine(root, "out"),
+                Path.Combine(root, "whisper.exe"), Path.Combine(root, "model.bin"),
+                "en", CancellationToken.None, hardenedRetry: true);
+
+            Assert.True(result.Success, result.Message);
+            Assert.NotNull(captured);
+            Assert.Contains("-mc", captured!);
+            Assert.Contains("-nf", captured!);
+            Assert.Contains("-tp", captured!);
+            Assert.Contains("-tpi", captured!);
+            Assert.Contains("--vad-threshold", captured!);
+            Assert.Contains("0.60", captured!);
+            Assert.Contains("--vad-max-speech-duration-s", captured!);
+            Assert.Contains("15", captured!);
+            Assert.Contains("--vad-speech-pad-ms", captured!);
+            Assert.Contains("100", captured!);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task Held_foreign_output_is_never_overwritten_or_deleted()
     {
         var root = CreateRoot();

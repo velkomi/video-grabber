@@ -266,7 +266,8 @@ public sealed partial class MainWindow
                 {
                     success = await TranscribeCourseVideoToTextAsync(
                         mediaPath,
-                        token);
+                        hardenedRetry: attempt > 1,
+                        token: token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -333,6 +334,7 @@ public sealed partial class MainWindow
 
     private async Task<bool> TranscribeCourseVideoToTextAsync(
         string mediaPath,
+        bool hardenedRetry,
         CancellationToken token)
     {
         var desiredText = CourseTranscriptPath(mediaPath);
@@ -367,7 +369,8 @@ public sealed partial class MainWindow
                 components.Tools.WhisperCli,
                 model,
                 language,
-                token);
+                token,
+                hardenedRetry);
 
             if (!result.Success
                 || string.IsNullOrWhiteSpace(result.TextPath)
@@ -616,6 +619,7 @@ public sealed partial class MainWindow
                 _courseTranscriptionCurrentText.Text =
                     (!string.IsNullOrWhiteSpace(activeMedia)
                         ? $"Видео {Math.Max(1, activeOrdinal)} из {total} · попытка {Math.Max(1, activeAttempt)}/2"
+                          + (activeAttempt > 1 ? " · усиленный повтор" : string.Empty)
                           + Environment.NewLine
                           + "Сейчас: " + Path.GetFileName(activeMedia)
                           + Environment.NewLine
