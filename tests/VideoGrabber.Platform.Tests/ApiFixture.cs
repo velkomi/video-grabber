@@ -270,22 +270,24 @@ public sealed class ApiFixture : IAsyncDisposable
             "Bearer", new JwtSecurityTokenHandler().WriteToken(token));
     }
 
-    public Task RestartAsync()
+    public async Task RestartAsync()
     {
         Anonymous.Dispose();
-        _factory.Dispose();
+        await _factory.DisposeAsync();
         _factory = CreateFactory();
         Anonymous = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false
         });
-        return Task.CompletedTask;
     }
 
     public async ValueTask DisposeAsync()
     {
         Anonymous.Dispose();
-        _factory.Dispose();
+        // WebApplicationFactory owns async-disposable singleton services
+        // (including DB-backed admin/MFA services). Await their disposal so
+        // server-side PostgreSQL sessions do not accumulate across fixtures.
+        await _factory.DisposeAsync();
         Broker.Dispose();
         await _operationsDataSource.DisposeAsync();
         await _deviceDataSource.DisposeAsync();
@@ -294,6 +296,10 @@ public sealed class ApiFixture : IAsyncDisposable
         await _identityDataSource.DisposeAsync();
         await _apiDataSource.DisposeAsync();
         await Database.DisposeAsync();
+        // Tests are serialized at assembly level. Clearing all remaining Npgsql
+        // pools here is safe and closes any pool created by an application
+        // singleton that is not part of the fixture's explicit role sources.
+        NpgsqlConnection.ClearAllPools();
         await DropDatabaseAsync(_clusterConnectionString, _databaseName);
     }
 
