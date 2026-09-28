@@ -14,7 +14,7 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public async Task<TranscriptResult> TranscribeAsync(string input, string outputBase, string executable,
-        string model, string language, CancellationToken cancellationToken)
+        string model, string language, CancellationToken cancellationToken, bool hardenedRetry = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var job = DiagnosticHub.Begin("transcription");
@@ -60,14 +60,41 @@ public sealed class WhisperTranscriber(IProcessRunner runner, ToolLocator tools,
                 "-np",
                 "-sns"
             };
+            if (hardenedRetry)
+            {
+                whisperArgs.AddRange([
+                    "-mc", "0",
+                    "-nf",
+                    "-tp", "0",
+                    "-tpi", "0"
+                ]);
+                DiagnosticHub.Log.Write(
+                    "transcription.retry",
+                    "hardened",
+                    "decoder-context=0; no-fallback; strict-vad");
+            }
             if (tools.WhisperVadAvailable)
             {
                 whisperArgs.AddRange([
                     "--vad",
-                    "--vad-model", tools.WhisperVadModel,
-                    "--vad-min-silence-duration-ms", "300",
-                    "--vad-max-speech-duration-s", "30"
+                    "--vad-model", tools.WhisperVadModel
                 ]);
+                if (hardenedRetry)
+                {
+                    whisperArgs.AddRange([
+                        "--vad-threshold", "0.60",
+                        "--vad-min-silence-duration-ms", "250",
+                        "--vad-max-speech-duration-s", "15",
+                        "--vad-speech-pad-ms", "100"
+                    ]);
+                }
+                else
+                {
+                    whisperArgs.AddRange([
+                        "--vad-min-silence-duration-ms", "300",
+                        "--vad-max-speech-duration-s", "30"
+                    ]);
+                }
             }
 
             var result = await runner.RunAsync(new ProcessSpec(executable,
