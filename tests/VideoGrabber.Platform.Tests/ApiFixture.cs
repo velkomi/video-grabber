@@ -85,7 +85,15 @@ public sealed class ApiFixture : IAsyncDisposable
         var dsn = Environment.GetEnvironmentVariable("VG_TEST_POSTGRES_DSN");
         if (string.IsNullOrWhiteSpace(dsn))
             throw new InvalidOperationException("VG_TEST_POSTGRES_DSN is required for Platform tests.");
-        var baseBuilder = new NpgsqlConnectionStringBuilder(dsn);
+        var baseBuilder = new NpgsqlConnectionStringBuilder(dsn)
+        {
+            // The CI PostgreSQL service uses the default server connection cap.
+            // Each fixture owns several role-specific pools, so keep every test
+            // pool deliberately small instead of allowing Npgsql's per-pool
+            // default to exhaust the shared service.
+            MaxPoolSize = 8,
+            MinPoolSize = 0
+        };
         ValidateTestTarget(baseBuilder);
 
         var clusterConnectionString = baseBuilder.ConnectionString;
@@ -377,7 +385,8 @@ public sealed class ApiFixture : IAsyncDisposable
             Options = "-c role=" + role,
             PersistSecurityInfo = true
         };
-        if (role == "vg_ledger") builder.MaxPoolSize = 32;
+        builder.MinPoolSize = 0;
+        builder.MaxPoolSize = role == "vg_ledger" ? 24 : 8;
         return builder.ConnectionString;
     }
 }
