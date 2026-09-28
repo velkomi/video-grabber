@@ -3,7 +3,7 @@ name: Package preview.55
 on:
   push:
     branches:
-      - release/preview55-builder
+      - release/preview55-builder-v2
 
 permissions:
   contents: write
