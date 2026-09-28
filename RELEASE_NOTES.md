@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.55-rc.1] - 2026-09-28
+
+- Status: Whisper workspace cleanup completion.
+- Explicit course cache cleanup now removes owned `.vg-asr-*` directories and `.vg-course-transcript-*` temporaries recursively.
+- Course background transcription also removes its owned ASR workspace after each file result so failed/cancelled attempts do not accumulate hidden folders.
+- Ready media/documents remain protected; legacy `.vg-job-*` containing possible completed media are preserved unless empty/temporary-only.
+
 ## [0.1.10-preview.54-rc.1] - 2026-09-28
 
 - Status: public-site/installer/admin-MFA/course-settings completion release.
