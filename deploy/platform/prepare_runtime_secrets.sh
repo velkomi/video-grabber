@@ -40,6 +40,7 @@ write_once worker_token rand_url
 write_once session_key rand_url
 write_once operations_token rand_url
 write_once source_encryption_key rand_b64_32
+write_once admin_mfa_encryption_key rand_b64_32
 write_text_once last_backup_utc "1970-01-01T00:00:00Z"
 write_text_once retention_dry_run_utc "1970-01-01T00:00:00Z"
 

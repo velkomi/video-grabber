@@ -24,6 +24,9 @@ public sealed class DeploymentAssetTests
         Assert.Contains("VG_SOURCE_ENCRYPTION_KEY", compose, StringComparison.Ordinal);
         Assert.Contains("VG_ADMIN_MFA_ENCRYPTION_KEY", compose, StringComparison.Ordinal);
         Assert.Contains("admin_mfa_encryption_key", compose, StringComparison.Ordinal);
+        var secretBootstrap = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "prepare_runtime_secrets.sh"));
+        Assert.Contains("write_once admin_mfa_encryption_key rand_b64_32", secretBootstrap, StringComparison.Ordinal);
         Assert.Contains("telegram_webhook_secret", compose, StringComparison.Ordinal);
         Assert.Contains("telegram_inbox_key", compose, StringComparison.Ordinal);
         Assert.Contains("telegram_bot_user_id", compose, StringComparison.Ordinal);
