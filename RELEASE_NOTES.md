@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.57-rc.1] - 2026-09-29
+
+- Status: final live-validation hotfix after preview.56.
+- Fixes stale course busy state after `Cancel all`: queue/current state is cleared immediately and controls unlock without restarting the application.
+- Live OLEG validation confirmed pause -> Base-to-Small change -> current Whisper cancellation -> workspace cleanup -> restart with Small; test data was restored afterward and Base was restored as the preferred profile.
+- All preview.56 website, installer, TOTP admin, TXT-only ASR, hardened retry and recursive cache-cleanup changes remain included.
+
 ## [0.1.10-preview.56-rc.1] - 2026-09-29
 
 - Status: final VideoGrabber 10 consolidation build from merged main.
