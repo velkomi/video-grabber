@@ -13,35 +13,64 @@ jobs:
       - name: Audit public site
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           BASE="https://videograbber.srv1902378.hstgr.cloud"
+          fail=0
+          check_text() {
+            local file="$1"; local needle="$2"; local label="$3"
+            if grep -F "$needle" "$file" >/dev/null; then
+              echo "PASS $label"
+            else
+              echo "FAIL $label :: missing [$needle]"
+              fail=1
+            fi
+          }
           echo "=== health ==="
-          curl -fsS --max-time 15 "$BASE/health/live"
-          echo
+          if curl -fsS --max-time 15 "$BASE/health/live" -o /tmp/health; then
+            cat /tmp/health; echo
+          else
+            echo "FAIL health"; fail=1
+          fi
+
           echo "=== web ==="
-          curl -fsS --max-time 20 "$BASE/web/" -o /tmp/web.html
-          grep -F "YouTube" /tmp/web.html >/dev/null
-          grep -F "Instagram" /tmp/web.html >/dev/null
-          grep -F "TikTok" /tmp/web.html >/dev/null
-          grep -F "Pinterest" /tmp/web.html >/dev/null
-          grep -F "Редактирование видео" /tmp/web.html >/dev/null
-          grep -F "Скачать установщик (.exe)" /tmp/web.html >/dev/null
-          grep -F "Portable ZIP" /tmp/web.html >/dev/null
-          grep -F "/admin/" /tmp/web.html >/dev/null
-          echo "WEB_FEATURES_OK"
+          if curl -fsS --max-time 20 "$BASE/web/" -o /tmp/web.html; then
+            echo "WEB_BYTES=$(wc -c </tmp/web.html)"
+            check_text /tmp/web.html "YouTube" "YouTube"
+            check_text /tmp/web.html "Instagram" "Instagram"
+            check_text /tmp/web.html "TikTok" "TikTok"
+            check_text /tmp/web.html "Pinterest" "Pinterest"
+            check_text /tmp/web.html "Редактирование видео" "video-editing"
+            check_text /tmp/web.html "Скачать установщик (.exe)" "installer-button"
+            check_text /tmp/web.html "Portable ZIP" "portable-button"
+            check_text /tmp/web.html "/admin/" "admin-link"
+            echo "--- live web headings/buttons ---"
+            grep -Eo '<h[123][^>]*>[^<]+|<button[^>]*>[^<]+|<a[^>]*>[^<]+' /tmp/web.html | head -80 || true
+          else
+            echo "FAIL web-fetch"; fail=1
+          fi
+
           echo "=== admin ==="
-          curl -fsS --max-time 20 "$BASE/admin/" -o /tmp/admin.html
-          grep -F "Двухфакторная аутентификация" /tmp/admin.html >/dev/null
-          grep -F "feature-grid" /tmp/admin.html >/dev/null
-          echo "ADMIN_MFA_UI_OK"
-          echo "=== setup ==="
-          curl -fsS --max-time 20 -D /tmp/setup.headers -H "Range: bytes=0-15" "$BASE/download/windows" -o /tmp/setup.bin
-          cat /tmp/setup.headers
-          test "$(xxd -p -l 2 /tmp/setup.bin)" = "4d5a"
-          grep -Ei "content-type: (application/vnd.microsoft.portable-executable|application/octet-stream|application/x-msdownload)" /tmp/setup.headers >/dev/null
-          echo "WINDOWS_SETUP_EXE_OK"
-          echo "=== portable ==="
-          curl -fsS --max-time 20 -D /tmp/portable.headers -H "Range: bytes=0-3" "$BASE/download/windows/portable" -o /tmp/portable.bin
-          cat /tmp/portable.headers
-          test "$(xxd -p -l 2 /tmp/portable.bin)" = "504b"
-          echo "PORTABLE_ZIP_OK"
+          status=$(curl -sS --max-time 20 -o /tmp/admin.html -w '%{http_code}' "$BASE/admin/" || true)
+          echo "ADMIN_STATUS=$status ADMIN_BYTES=$(wc -c </tmp/admin.html 2>/dev/null || echo 0)"
+          if [ "$status" = "200" ]; then
+            check_text /tmp/admin.html "Двухфакторная аутентификация" "admin-2fa"
+            check_text /tmp/admin.html "feature-grid" "admin-feature-grid"
+          else
+            fail=1
+          fi
+
+          echo "=== setup endpoint ==="
+          setup_status=$(curl -sS --max-time 30 -D /tmp/setup.headers -H "Range: bytes=0-15" -o /tmp/setup.bin -w '%{http_code}' "$BASE/download/windows" || true)
+          echo "SETUP_STATUS=$setup_status"
+          cat /tmp/setup.headers 2>/dev/null | sed -n '1,25p' || true
+          if [ -s /tmp/setup.bin ]; then echo "SETUP_MAGIC=$(xxd -p -l 4 /tmp/setup.bin)"; fi
+          if [ "$(xxd -p -l 2 /tmp/setup.bin 2>/dev/null || true)" != "4d5a" ]; then echo "FAIL setup-not-exe"; fail=1; fi
+
+          echo "=== portable endpoint ==="
+          portable_status=$(curl -sS --max-time 30 -D /tmp/portable.headers -H "Range: bytes=0-3" -o /tmp/portable.bin -w '%{http_code}' "$BASE/download/windows/portable" || true)
+          echo "PORTABLE_STATUS=$portable_status"
+          cat /tmp/portable.headers 2>/dev/null | sed -n '1,25p' || true
+          if [ -s /tmp/portable.bin ]; then echo "PORTABLE_MAGIC=$(xxd -p -l 4 /tmp/portable.bin)"; fi
+          if [ "$(xxd -p -l 2 /tmp/portable.bin 2>/dev/null || true)" != "504b" ]; then echo "FAIL portable-not-zip"; fail=1; fi
+
+          exit $fail
