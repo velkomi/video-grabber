@@ -1,0 +1,20 @@
+name: Audit self-hosted runner
+
+on:
+  push:
+    branches:
+      - audit/live-videograbber-20260929
+
+jobs:
+  probe:
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - name: Identify runner
+        shell: bash
+        run: |
+          echo "HOST=$(hostname)"
+          echo "USER=$(id -un)"
+          echo "OS=$(uname -a)"
+          command -v docker >/dev/null && echo "DOCKER=YES" || echo "DOCKER=NO"
+          test -d /home/assistant/apps && echo "ASSISTANT_APPS=YES" || echo "ASSISTANT_APPS=NO"
