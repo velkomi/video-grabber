@@ -1,4 +1,13 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.59-rc.1] - 2026-09-29
+
+- Status: Windows installer upgrade/Unicode hotfix.
+- NSIS source is now UTF-8 with BOM, fixing corrupted Russian text in the installer UI.
+- Before copying files the installer force-closes both current `VideoGrabber.Managed.exe` and legacy `VideoGrabber.exe`, waits for DLL handles to release, then performs the upgrade. The same guard is used by uninstall.
+- Live failure root cause: preview.58 attempted to overwrite `C:\\Program Files\\VideoGrabber\\CoreMessagingXP.dll` while preview.57 was still running from that directory.
+- Deployment regression tests enforce both the UTF-8 BOM and process-close-before-copy ordering.
+- All preview.52–58 fixes remain included.
+
 ## [0.1.10-preview.58-rc.1] - 2026-09-29
 
 - Status: release-pipeline anti-rollback hardening on top of preview.57.

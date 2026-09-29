@@ -221,6 +221,27 @@ public sealed class DeploymentAssetTests
     }
 
     [Fact]
+    public void Windows_installer_is_unicode_and_closes_running_app_before_copying()
+    {
+        var root = FindRepoRoot();
+        var path = Path.Combine(root, "deploy", "windows", "videograbber-setup.nsi");
+        var bytes = File.ReadAllBytes(path);
+        Assert.True(bytes.Length >= 3);
+        Assert.Equal((byte)0xEF, bytes[0]);
+        Assert.Equal((byte)0xBB, bytes[1]);
+        Assert.Equal((byte)0xBF, bytes[2]);
+
+        var script = File.ReadAllText(path);
+        Assert.Contains("taskkill.exe", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("VideoGrabber.Managed.exe", script, StringComparison.Ordinal);
+        Assert.Contains("VideoGrabber.exe", script, StringComparison.Ordinal);
+        Assert.Contains("Sleep 1500", script, StringComparison.Ordinal);
+        Assert.True(
+            script.IndexOf("taskkill.exe", StringComparison.OrdinalIgnoreCase)
+            < script.IndexOf("File /r \"${RELEASE_DIR}\\*.*\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Windows_download_updater_verifies_release_assets_and_swaps_atomically()
     {
         var root = FindRepoRoot();

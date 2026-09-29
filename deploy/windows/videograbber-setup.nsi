@@ -1,4 +1,4 @@
-; VideoGrabber Windows installer — NSIS 3.12
+﻿; VideoGrabber Windows installer — NSIS 3.12
 Unicode true
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
@@ -83,6 +83,16 @@ Var ModeNote
 
 Section "Основное приложение (обязательно)" SecCore
   SectionIn RO
+
+  DetailPrint "Закрываю запущенные экземпляры VideoGrabber перед обновлением..."
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /T /IM "VideoGrabber.Managed.exe"'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /T /IM "VideoGrabber.exe"'
+  Pop $0
+  Pop $1
+  Sleep 1500
+
   SetOutPath "$INSTDIR"
   File /r "${RELEASE_DIR}\*.*"
 
@@ -153,6 +163,15 @@ SectionEnd
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Section "Uninstall"
+  DetailPrint "Закрываю запущенные экземпляры VideoGrabber перед удалением..."
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /T /IM "VideoGrabber.Managed.exe"'
+  Pop $0
+  Pop $1
+  nsExec::ExecToStack '"$SYSDIR\taskkill.exe" /F /T /IM "VideoGrabber.exe"'
+  Pop $0
+  Pop $1
+  Sleep 1500
+
   SetShellVarContext all
   Delete "$DESKTOP\VideoGrabber.lnk"
   Delete "$SMPROGRAMS\VideoGrabber\VideoGrabber.lnk"
