@@ -6,6 +6,7 @@
 - Before copying files the installer force-closes both current `VideoGrabber.Managed.exe` and legacy `VideoGrabber.exe`, waits for DLL handles to release, then performs the upgrade. The same guard is used by uninstall.
 - Live failure root cause: preview.58 attempted to overwrite `C:\\Program Files\\VideoGrabber\\CoreMessagingXP.dll` while preview.57 was still running from that directory.
 - Deployment regression tests enforce both the UTF-8 BOM and process-close-before-copy ordering.
+- Added `scripts/Build-WindowsInstaller.ps1` as the canonical Setup builder; it forces `/INPUTCHARSET UTF8` and `/WX` and validates BOM, Managed input, PE output, ProductVersion and SHA-256.
 - All preview.52–58 fixes remain included.
 
 ## [0.1.10-preview.58-rc.1] - 2026-09-29

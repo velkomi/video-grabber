@@ -239,6 +239,15 @@ public sealed class DeploymentAssetTests
         Assert.True(
             script.IndexOf("taskkill.exe", StringComparison.OrdinalIgnoreCase)
             < script.IndexOf("File /r \"${RELEASE_DIR}\\*.*\"", StringComparison.Ordinal));
+
+        var builder = File.ReadAllText(Path.Combine(
+            root, "scripts", "Build-WindowsInstaller.ps1"));
+        Assert.Contains("/INPUTCHARSET", builder, StringComparison.Ordinal);
+        Assert.Contains("UTF8", builder, StringComparison.Ordinal);
+        Assert.Contains("/WX", builder, StringComparison.Ordinal);
+        Assert.Contains("must be UTF-8 with BOM", builder, StringComparison.Ordinal);
+        Assert.Contains("VideoGrabber.Managed.exe", builder, StringComparison.Ordinal);
+        Assert.Contains("ProductVersion", builder, StringComparison.Ordinal);
     }
 
     [Fact]
