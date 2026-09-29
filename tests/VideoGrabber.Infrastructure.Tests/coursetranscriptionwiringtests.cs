@@ -32,6 +32,9 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("requireSubtitles: false", transcription);
         Assert.Contains("File.Delete(path)", transcription);
         Assert.Contains("CourseTranscriptionSettingsCanChange", transcription);
+        Assert.Contains("if (_courseTranscriptionCancellation is null)", transcription);
+        Assert.Contains("_courseTranscriptionQueue.Clear();", transcription);
+        Assert.Contains("ResetCourseTranscriptionCurrentStateLocked();", transcription);
         Assert.Contains("_courseTranscriptionItemCancellation", transcription);
         Assert.Contains("RequestCourseTranscriptionRestartForSettingsChange", transcription);
         Assert.Contains("CleanupCourseTranscriptionWorkingDirectories", transcription);
