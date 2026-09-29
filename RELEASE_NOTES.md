@@ -1,4 +1,11 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.56-rc.1] - 2026-09-29
+
+- Status: final VideoGrabber 10 consolidation build from merged main.
+- Includes the final stale-ASR sweep on course resume in addition to explicit cache cleanup and per-file workspace cleanup.
+- Includes the public feature-oriented website, real NSIS installer endpoint, owner TOTP 2FA admin console, paused/stopped transcription settings restart, TXT-only background course transcription and hardened Whisper retry.
+- Release is intentionally new rather than overwriting preview.55, because preview.55 packaging was cut before the last stale-workspace sweep reached the merged main branch.
+
 ## [0.1.10-preview.55-rc.1] - 2026-09-28
 
 - Status: Whisper workspace cleanup completion.
