@@ -44,9 +44,13 @@ public sealed partial class MainWindow
         get
         {
             lock (_courseTranscriptionGate)
+            {
+                if (_courseTranscriptionCancellation is null)
+                    return false;
                 return _courseTranscriptionActive
                     || _courseTranscriptionQueue.Count > 0
                     || _courseTranscriptionWorkerTask is { IsCompleted: false };
+            }
         }
     }
 
@@ -681,8 +685,10 @@ public sealed partial class MainWindow
             _courseTranscriptionCancellation = null;
             itemCancellation = _courseTranscriptionItemCancellation;
             _courseTranscriptionItemCancellation = null;
+            _courseTranscriptionQueue.Clear();
             _courseTranscriptionRestartRequested = false;
             _courseTranscriptionRestartReason = null;
+            ResetCourseTranscriptionCurrentStateLocked();
         }
 
         try
