@@ -1,0 +1,47 @@
+name: Audit live VideoGrabber
+
+on:
+  push:
+    branches:
+      - audit/live-videograbber-20260929
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Audit public site
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="https://videograbber.srv1902378.hstgr.cloud"
+          echo "=== health ==="
+          curl -fsS --max-time 15 "$BASE/health/live"
+          echo
+          echo "=== web ==="
+          curl -fsS --max-time 20 "$BASE/web/" -o /tmp/web.html
+          grep -F "YouTube" /tmp/web.html >/dev/null
+          grep -F "Instagram" /tmp/web.html >/dev/null
+          grep -F "TikTok" /tmp/web.html >/dev/null
+          grep -F "Pinterest" /tmp/web.html >/dev/null
+          grep -F "Редактирование видео" /tmp/web.html >/dev/null
+          grep -F "Скачать установщик (.exe)" /tmp/web.html >/dev/null
+          grep -F "Portable ZIP" /tmp/web.html >/dev/null
+          grep -F "/admin/" /tmp/web.html >/dev/null
+          echo "WEB_FEATURES_OK"
+          echo "=== admin ==="
+          curl -fsS --max-time 20 "$BASE/admin/" -o /tmp/admin.html
+          grep -F "Двухфакторная аутентификация" /tmp/admin.html >/dev/null
+          grep -F "feature-grid" /tmp/admin.html >/dev/null
+          echo "ADMIN_MFA_UI_OK"
+          echo "=== setup ==="
+          curl -fsS --max-time 20 -D /tmp/setup.headers -H "Range: bytes=0-15" "$BASE/download/windows" -o /tmp/setup.bin
+          cat /tmp/setup.headers
+          test "$(xxd -p -l 2 /tmp/setup.bin)" = "4d5a"
+          grep -Ei "content-type: (application/vnd.microsoft.portable-executable|application/octet-stream|application/x-msdownload)" /tmp/setup.headers >/dev/null
+          echo "WINDOWS_SETUP_EXE_OK"
+          echo "=== portable ==="
+          curl -fsS --max-time 20 -D /tmp/portable.headers -H "Range: bytes=0-3" "$BASE/download/windows/portable" -o /tmp/portable.bin
+          cat /tmp/portable.headers
+          test "$(xxd -p -l 2 /tmp/portable.bin)" = "504b"
+          echo "PORTABLE_ZIP_OK"
