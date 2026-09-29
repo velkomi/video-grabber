@@ -221,6 +221,22 @@ public sealed class DeploymentAssetTests
     }
 
     [Fact]
+    public void Windows_download_updater_verifies_release_assets_and_swaps_atomically()
+    {
+        var root = FindRepoRoot();
+        var script = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "update_windows_downloads.sh"));
+
+        Assert.Contains("sha256sum -c", script, StringComparison.Ordinal);
+        Assert.Contains("VideoGrabber-Setup.exe.new", script, StringComparison.Ordinal);
+        Assert.Contains("VideoGrabber-Windows.zip.new", script, StringComparison.Ordinal);
+        Assert.Contains("mv -f", script, StringComparison.Ordinal);
+        Assert.Contains("VideoGrabber.Managed-win-x64-", script, StringComparison.Ordinal);
+        Assert.Contains("VideoGrabber.version", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("curl -k", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Public_edge_does_not_log_one_time_auth_query_tokens()
     {
         var root = FindRepoRoot();
