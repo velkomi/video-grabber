@@ -524,8 +524,8 @@ footer {
 }
 .feature-summary strong,
 .feature-summary span { display: block; }
-.feature-summary strong { margin-bottom: 8px; font-size: 18px; line-height: 1.2; }
-.feature-summary span { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.feature-summary strong { margin-bottom: 9px; font-size: 22px; line-height: 1.18; }
+.feature-summary span { color: var(--muted); font-size: 14px; line-height: 1.58; }
 .download-model-note {
   max-width: 760px;
   margin: 14px 0 0;
