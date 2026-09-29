@@ -42,6 +42,13 @@ public sealed class WebPlanUxTests
         Assert.DoesNotContain("github.com", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("github.com", js, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("github.com", program, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("billing-environment", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("billing-environment", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("YooKassa", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("YooKassa", js, StringComparison.Ordinal);
+        Assert.DoesNotContain("Whisper", js, StringComparison.Ordinal);
+        Assert.Contains("Оплата открывается на отдельной защищённой странице", html, StringComparison.Ordinal);
+        Assert.Contains("Сейчас не удалось открыть оплату", js, StringComparison.Ordinal);
         Assert.Contains("VG_WINDOWS_SETUP_PATH", program);
         Assert.Contains("VideoGrabber-Setup.exe", program);
         Assert.Contains("VG_WINDOWS_DOWNLOAD_PATH", program);
@@ -67,6 +74,8 @@ public sealed class WebPlanUxTests
             root, "src", "VideoGrabber.Platform.Api", "Program.cs"));
         var compose = File.ReadAllText(Path.Combine(
             root, "deploy", "platform", "compose.staging.yml"));
+        var ownerPolicy = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "Admin", "OwnerAdminAccessService.cs"));
 
         Assert.Contains("Двухфакторная аутентификация", adminHtml);
         Assert.Contains("mfa-code", adminHtml);
@@ -77,6 +86,11 @@ public sealed class WebPlanUxTests
         Assert.Contains("vg_admin_access", adminJs);
         Assert.Contains("VG_ADMIN_MFA_ENCRYPTION_KEY", program);
         Assert.Contains("admin_mfa_encryption_key", compose);
+        Assert.Contains("VG_OWNER_ADMIN_SUBJECT", compose, StringComparison.Ordinal);
+        Assert.Contains("VG_OWNER_ADMIN_SUBJECT", ownerPolicy, StringComparison.Ordinal);
+        Assert.Contains("provider_subject=@subject", ownerPolicy, StringComparison.Ordinal);
+        Assert.Contains("account_id<>@owner", ownerPolicy, StringComparison.Ordinal);
+        Assert.Contains("base_role='owner_admin'", ownerPolicy, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -403,7 +403,7 @@ public sealed partial class MainWindow : Window
     {
         var body = PageStack();
         body.Children.Add(PageHeading(
-            "Редактор FFmpeg",
+            "Редактор видео",
             "Быстрая обрезка и склейка без повторного кодирования. Исходные файлы не изменяются."));
 
         _trimInputBox = new TextBox { Header = "Исходный файл", IsReadOnly = true };
@@ -455,7 +455,7 @@ public sealed partial class MainWindow : Window
         var body = PageStack();
         body.Children.Add(PageHeading(
             "Настройки VideoGrabber",
-            "Компоненты, подключение, диагностика и параметры обработки в одном месте."));
+            "Подключение, диагностика и параметры обработки в одном месте."));
         _ytDlpStatus = new TextBlock();
         _ffmpegStatus = new TextBlock();
         _ffprobeStatus = new TextBlock();
@@ -463,16 +463,11 @@ public sealed partial class MainWindow : Window
         _whisperStatus = new TextBlock();
         _whisperModelStatus = new TextBlock();
         var content = Vertical(12);
-        content.Children.Add(SectionHeading("Комплект VideoGrabber"));
+        content.Children.Add(SectionHeading("Готовность приложения"));
         content.Children.Add(_ytDlpStatus);
-        content.Children.Add(_ffmpegStatus);
-        content.Children.Add(_ffprobeStatus);
-        content.Children.Add(_denoStatus);
-        content.Children.Add(_whisperStatus);
-        content.Children.Add(_whisperModelStatus);
         content.Children.Add(MutedText(
-            "Эти файлы поставляются вместе с VideoGrabber. Программа не должна скачивать их во время обычной работы. Обновляются они вместе с новой версией приложения."));
-        var refresh = SecondaryButton("Проверить встроенные инструменты");
+            "Все необходимые функции входят в установленную версию VideoGrabber и обновляются вместе с приложением."));
+        var refresh = SecondaryButton("Проверить готовность");
         refresh.Click += (_, _) => RefreshComponentStatus();
         content.Children.Add(refresh);
         body.Children.Add(Card(content));
@@ -636,7 +631,7 @@ public sealed partial class MainWindow : Window
         _operation = operation;
         SetOperationControls(true);
         var components = Volatile.Read(ref _componentServices);
-        ShowEditorMessage("FFmpeg обрабатывает видео…", InfoBarSeverity.Informational);
+        ShowEditorMessage("Обрабатываю видео…", InfoBarSeverity.Informational);
         try
         {
             await components.Editor.EditAsync(request, operation.Token);
@@ -783,14 +778,18 @@ public sealed partial class MainWindow : Window
 
     private void RefreshComponentStatus()
     {
-        _ytDlpStatus.Text = ToolStatus("yt-dlp", _tools.YtDlp);
-        _ffmpegStatus.Text = ToolStatus("FFmpeg", _tools.Ffmpeg);
-        _ffprobeStatus.Text = ToolStatus("FFprobe", _tools.Ffprobe);
-        _denoStatus.Text = ToolStatus("Deno", _tools.Deno);
+        var ready = RequiredComponentsAvailable()
+            && _tools.WhisperAvailable;
+        _ytDlpStatus.Text = ready
+            ? "✓ Все встроенные функции готовы к работе."
+            : "○ Часть встроенных функций недоступна. Переустановите VideoGrabber.";
+        _ffmpegStatus.Text = string.Empty;
+        _ffprobeStatus.Text = string.Empty;
+        _denoStatus.Text = string.Empty;
         if (_whisperStatus is not null)
-            _whisperStatus.Text = ToolStatus("Whisper", _tools.WhisperCli);
+            _whisperStatus.Text = string.Empty;
         if (_whisperModelStatus is not null)
-            _whisperModelStatus.Text = ToolStatus("Модель Whisper", _tools.WhisperModel);
+            _whisperModelStatus.Text = string.Empty;
     }
 
     private static string ToolStatus(string name, string path) =>

@@ -741,7 +741,7 @@ public sealed partial class MainWindow
             _courseTranscriptionStageText.Text =
                 "Фоновая транскрибация включена для следующего запуска";
             _courseTranscriptionCurrentText.Text =
-                "После загрузки ролика Whisper создаст рядом TXT с таким же именем. Скачивание продолжится параллельно.";
+                "После загрузки ролика VideoGrabber создаст рядом TXT с таким же именем. Скачивание продолжится параллельно.";
         }
         else
         {
@@ -820,7 +820,7 @@ public sealed partial class MainWindow
                 _courseTranscriptionStageText.Text =
                     "Фоновая транскрибация — ожидаю первое видео";
                 _courseTranscriptionCurrentText.Text =
-                    "После загрузки ролика Whisper автоматически создаст рядом TXT с таким же именем.";
+                    "После загрузки ролика VideoGrabber автоматически создаст рядом TXT с таким же именем.";
             }
             else if (active || queued > 0)
             {

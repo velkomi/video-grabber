@@ -285,7 +285,7 @@ public sealed partial class MainWindow
                 EnqueueBrowserPage(lease, core, () =>
                 {
                     if (IsCurrentBrowserPage(lease, core))
-                        _browserHint.Text = "Обнаружен зашифрованный HLS (EXT-X-KEY). Получение ключей не поддерживается.";
+                        _browserHint.Text = "Обнаружен защищённый видеопоток. Его сохранение не поддерживается.";
                 });
                 return;
             }

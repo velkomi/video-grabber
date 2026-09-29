@@ -16,6 +16,10 @@ public sealed class InformationThemeWiringTests
         Assert.Contains("BorderBrush = AuthorBorderBrush", window);
         Assert.Contains("AppThemeMode.Dark", info);
         Assert.Contains("Как в Windows", info);
+        Assert.Contains("Что умеет VideoGrabber", info);
+        foreach (var technicalName in new[] { "yt-dlp", "FFmpeg", "FFprobe", "Deno", "Whisper", "Kinescope", "HLS", "DASH", "GitHub" })
+            Assert.DoesNotContain(technicalName, info, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CreateWhisperModelSourceLink", browser, StringComparison.Ordinal);
     }
 
     private static string FindRepoRoot()

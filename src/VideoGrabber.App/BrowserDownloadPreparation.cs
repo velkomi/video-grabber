@@ -41,7 +41,7 @@ public sealed partial class MainWindow
                                 plan.HlsVideoSource, plan.HlsAudioSource, plan.DirectManifest, plan.ResolvedHlsLeaf,
                                 suggestedBaseNameOverride ?? MediaCandidatePresentation.SuggestedBaseName(candidate, candidate.PageOrdinal ?? ordinal, intent.Quality, queueContext?.Metadata ?? window._browserMetadata),
                                 expectedDuration, expectedAudio));
-                        }, error => throw new InvalidOperationException(error ?? "Не удалось проверить выбранное качество HLS."));
+                        }, error => throw new InvalidOperationException(error ?? "Не удалось проверить выбранное качество видео."));
                 }
                 EnsureSession();
                 if (!window.RequiredComponentsAvailable())

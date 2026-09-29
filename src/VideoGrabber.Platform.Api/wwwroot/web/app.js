@@ -537,7 +537,7 @@ function renderCourseHint() {
     browserOption.disabled = true;
     target.value = "desktop";
     $("#course-hint").textContent = accessFeature("course_download", state.access.canDownloadCourse)
-      ? "Полный курс скачивается через Windows VideoGrabber: приложению нужна ваша авторизованная сессия курса. Перед запуском можно включить галочку транскрибации — тогда видео параллельно ставятся в локальную очередь Whisper, а TXT сохраняются рядом с ними."
+      ? "Полный курс скачивается через Windows VideoGrabber: приложению нужна ваша авторизованная сессия курса. Перед запуском можно включить транскрибацию — тогда текст каждого видео будет автоматически сохраняться рядом с ним."
       : "Полный курс доступен на Full Course. После выбора тарифа скачивание выполняется в Windows-приложении.";
   } else {
     browserOption.disabled = false;
@@ -700,8 +700,6 @@ function renderBilling() {
     host.textContent = "Платёжный каталог не настроен.";
     return;
   }
-  $("#billing-environment").textContent = catalog.environment;
-
   const labels = {
     start: "Start",
     unlimited_video: "Unlimited Video",
@@ -732,7 +730,7 @@ function renderBilling() {
   }
 
   if (!host.children.length)
-    host.textContent = "Коммерческие YooKassa-тарифы пока не опубликованы в текущем окружении.";
+    host.textContent = "Тарифы сейчас недоступны для оформления. Попробуйте позже.";
 }
 
 async function loadDashboard() {
@@ -1084,13 +1082,13 @@ async function createCheckout(product) {
     }
     setStatus(
       "#job-status",
-      "Платёж создан, но провайдер не вернул ссылку. Проверьте конфигурацию YooKassa.",
+      "Не удалось открыть страницу оплаты. Попробуйте ещё раз позже.",
       "error"
     );
-  } catch (error) {
+  } catch {
     setStatus(
       "#job-status",
-      "YooKassa сейчас недоступна: " + error.message,
+      "Сейчас не удалось открыть оплату. Попробуйте ещё раз позже.",
       "error"
     );
   }

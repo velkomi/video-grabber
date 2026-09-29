@@ -132,7 +132,7 @@ public sealed partial class MainWindow
         {
             var enabled = _courseTranscriptionCheckBox.IsChecked == true;
             _courseTranscriptionOptionHint.Text = enabled
-                ? "Включено: каждое скачанное видео попадёт в фоновую очередь Whisper. Следующее видео продолжит скачиваться параллельно, но полное завершение курса будет ждать готовности TXT. Процесс заметно нагружает CPU и для больших курсов может увеличить общее время на несколько часов."
+                ? "Включено: после скачивания каждого видео автоматически будет создаваться TXT. Следующее видео продолжит скачиваться параллельно, но полное завершение курса будет ждать готовности текста. Процесс заметно нагружает процессор и для больших курсов может увеличить общее время на несколько часов."
                 : "Выключено: VideoGrabber скачает и проверит курс без фоновой транскрибации. TXT автоматически создаваться не будут.";
         }
         _courseTranscriptionCheckBox.Checked += (_, _) =>
@@ -152,9 +152,8 @@ public sealed partial class MainWindow
         RefreshCourseTranscriptionOptionHint();
         content.Children.Add(_courseTranscriptionCheckBox);
         content.Children.Add(_courseTranscriptionOptionHint);
-        content.Children.Add(CreateWhisperModelSelector("Модель транскрибации курса"));
+        content.Children.Add(CreateWhisperModelSelector("Качество транскрибации курса"));
         content.Children.Add(CreateWhisperModelStatusText());
-        content.Children.Add(CreateWhisperModelSourceLink());
 
         _courseDownloadButton = PrimaryButton("Скачать весь курс");
         _courseDownloadButton.Click += async (_, _) => await DownloadWholeGetCourseAsync();
@@ -227,8 +226,8 @@ public sealed partial class MainWindow
 
         content.Children.Add(SectionHeading("Фоновая транскрибация курса"));
         content.Children.Add(MutedText(
-            "Каждое видео после скачивания автоматически ставится в последовательную очередь Whisper. " +
-            "Пока распознаётся один ролик, следующий уже может скачиваться. Готовый TXT получает то же имя и лежит рядом с видео."));
+            "После скачивания каждого видео автоматически создаётся текст. " +
+            "Пока обрабатывается один ролик, следующий уже может скачиваться. Готовый TXT получает то же имя и лежит рядом с видео."));
         _courseTranscriptionStageText = new TextBlock
         {
             Text = "Фоновая транскрибация — ожидаю первое видео",
@@ -236,7 +235,7 @@ public sealed partial class MainWindow
             TextWrapping = TextWrapping.Wrap
         };
         _courseTranscriptionCurrentText = MutedText(
-            "После загрузки ролика Whisper автоматически создаст рядом TXT с таким же именем.");
+            "После загрузки ролика VideoGrabber автоматически создаст рядом TXT с таким же именем.");
         _courseTranscriptionProgressTrack = new Grid
         {
             Height = 8,
@@ -475,7 +474,7 @@ public sealed partial class MainWindow
                         {
                             _verifiedClearHls.TryRemove(responseUri.AbsoluteUri, out _);
                             RemoveMediaCandidatesReferencing(responseUri, lease, sender);
-                            _browserHint.Text = "Обнаружен зашифрованный HLS (EXT-X-KEY). Получение ключей не поддерживается.";
+                            _browserHint.Text = "Обнаружен защищённый видеопоток. Его сохранение не поддерживается.";
                             DiagnosticHub.Log.Write("browser.hls", "blocked", "HLS " + responseUri.IdnHost + " via WebResourceResponseReceived");
                             return;
                         }

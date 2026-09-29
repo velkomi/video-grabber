@@ -201,6 +201,7 @@ services:
       VG_WEB_AUTH_RETURN_URI: ${VG_WEB_AUTH_RETURN_URI:?}
       VG_SUPABASE_URL: ${VG_SUPABASE_URL:?}
       VG_SUPABASE_PUBLISHABLE_KEY: ${VG_SUPABASE_PUBLISHABLE_KEY:?}
+      VG_OWNER_ADMIN_SUBJECT: ${VG_OWNER_ADMIN_SUBJECT:?exclusive owner subject required}
       VG_WINDOWS_DOWNLOAD_PATH: /var/lib/videograbber/downloads/VideoGrabber-Windows.zip
       VG_WINDOWS_SETUP_PATH: /var/lib/videograbber/downloads/VideoGrabber-Setup.exe
       VG_WINDOWS_CHECKSUM_PATH: /var/lib/videograbber/downloads/VideoGrabber-Windows.sha256.txt

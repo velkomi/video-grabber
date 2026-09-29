@@ -1721,8 +1721,8 @@ public sealed partial class MainWindow
                     lessonIndex,
                     totalLessons,
                     lesson,
-                    $"Видео {videoIndex + 1}/{videoCount}: верхний HLS-вариант недоступен. " +
-                    $"Пробую рабочий вариант {attemptQuality}.");
+                    $"Видео {videoIndex + 1}/{videoCount}: выбранное качество временно недоступно. " +
+                    $"Пробую доступный вариант {attemptQuality}.");
                 DiagnosticHub.Log.Write(
                     "course.video.retry",
                     "observed",

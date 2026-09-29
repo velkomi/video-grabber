@@ -118,7 +118,7 @@ Section "Встроенная модель Base — быстро, ~141 МБ (о�
   SectionIn RO
 SectionEnd
 
-Section "Загрузчик, редактор, FFmpeg, Deno и встроенный браузер (обязательно)" SecRuntime
+Section "Загрузка, редактор и встроенный браузер (обязательно)" SecRuntime
   SectionIn RO
 SectionEnd
 

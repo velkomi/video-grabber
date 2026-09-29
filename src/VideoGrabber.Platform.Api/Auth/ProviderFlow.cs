@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Persistence;
+using VideoGrabber.Platform.Api.Admin;
 
 namespace VideoGrabber.Platform.Api.Auth;
 
@@ -31,20 +32,33 @@ public sealed class IdentityAccountResolver : IIdentityAccountResolver, IAsyncDi
 {
     private readonly Npgsql.NpgsqlDataSource _dataSource;
     private readonly AccountStore _store;
+    private readonly OwnerAdminAccessService _ownerAdmin;
 
     public IdentityAccountResolver(
         IConfiguration configuration,
-        TimeProvider clock)
+        TimeProvider clock,
+        OwnerAdminAccessService ownerAdmin)
     {
         var dsn = configuration.GetConnectionString("PlatformIdentity")
             ?? configuration["VG_PLATFORM_IDENTITY_DSN"]
             ?? throw new InvalidOperationException("Platform identity database DSN is not configured.");
         _dataSource = Npgsql.NpgsqlDataSource.Create(dsn);
         _store = new AccountStore(_dataSource, clock);
+        _ownerAdmin = ownerAdmin;
     }
 
-    public Task<AccountProfile> ResolveAsync(VerifiedIdentity identity, CancellationToken cancellationToken)
-        => _store.ResolveAsync(identity, cancellationToken);
+    public async Task<AccountProfile> ResolveAsync(
+        VerifiedIdentity identity,
+        CancellationToken cancellationToken)
+    {
+        var profile = await _store.ResolveAsync(identity, cancellationToken)
+            .ConfigureAwait(false);
+        return await _ownerAdmin.ReconcileIdentityAsync(
+                identity,
+                profile,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public ValueTask DisposeAsync() => _dataSource.DisposeAsync();
 }

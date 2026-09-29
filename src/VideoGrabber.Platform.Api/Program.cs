@@ -238,6 +238,9 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<SessionJwtOptions>(),
         encryptionKey);
 });
+builder.Services.AddSingleton<OwnerAdminAccessService>();
+builder.Services.AddHostedService<OwnerAdminAccessService>(
+    sp => sp.GetRequiredService<OwnerAdminAccessService>());
 builder.Services.AddSingleton<IdentityLinkService>();
 builder.Services.AddSingleton<IIdentityAccountResolver, IdentityAccountResolver>();
 builder.Services.AddSingleton(sp => new TelegramUpdateInbox(

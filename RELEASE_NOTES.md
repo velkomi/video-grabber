@@ -1,4 +1,13 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.60-rc.1] - 2026-09-29
+
+- Status: owner-admin exclusivity and user-facing terminology cleanup.
+- Owner admin is reconciled against one configured verified authentication subject. That account is promoted to `owner_admin`; any other `owner_admin` account is demoted to its normal guest/user role with an audit event.
+- Windows Information/Settings/Course UI now describes capabilities instead of exposing internal downloader/transcoder/transcription/runtime names or source links.
+- Web account billing no longer exposes the deployment environment (`stage`) or payment-provider branding/error details. Backend provider identifiers remain internal only.
+- Targeted API/app builds and UI regression suites pass with zero errors.
+- All preview.52–59 fixes remain included.
+
 ## [0.1.10-preview.59-rc.1] - 2026-09-29
 
 - Status: Windows installer upgrade/Unicode hotfix.

@@ -28,7 +28,7 @@ public sealed partial class MainWindow
         if (selected.Count == 0 && plan.ResolvedHlsLeaf && plan.Source != candidate.Source) selected.Add(plan.Source);
         if (selected.Count == 0) return false;
 
-        _browserHint.Text = "Проверяю выбранное качество HLS…";
+        _browserHint.Text = "Проверяю выбранное качество видео…";
         foreach (var source in selected.Distinct())
         {
             if (_verifiedClearHls.ContainsKey(source.AbsoluteUri)) continue;
@@ -47,7 +47,7 @@ public sealed partial class MainWindow
                 DiagnosticHub.Log.Write("browser.hls.preflight", result.Blocked ? "blocked" : "failed",
                     "host=" + source.IdnHost + " " + (result.Blocked ? "encrypted" : "manifest unavailable"));
                 _browserHint.Text = result.Blocked
-                    ? "Выбранное качество использует зашифрованный HLS. Оно не поддерживается."
+                    ? "Выбранное качество использует защищённый поток. Его сохранение не поддерживается."
                     : "Не удалось проверить выбранное качество. Повторите попытку или запустите видео для резервного обнаружения.";
                 return false;
             }

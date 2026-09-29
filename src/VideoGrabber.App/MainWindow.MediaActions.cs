@@ -20,7 +20,7 @@ public sealed partial class MainWindow
     private ComboBox _languageBox = null!;
     private Button _mp3Button = null!;
     private Button _textButton = null!;
-    private const string LocalMediaReadyHint = "«Извлечь MP3» сохраняет звуковую дорожку. «Получить текст + SRT» запускает встроенный Whisper локально на компьютере. Передачи аудио в облако нет.";
+    private const string LocalMediaReadyHint = "«Извлечь MP3» сохраняет звуковую дорожку. «Получить текст + SRT» выполняет локальную расшифровку речи прямо на компьютере. Передачи аудио в облако нет.";
     private const string LocalMediaCourseBusyHint = "Звук и текст временно недоступны: VideoGrabber сейчас выполняет другую операцию или скачивает курс. Дождитесь завершения либо остановите текущую работу — кнопки включатся автоматически.";    private UiPreferences _preferences = ReadPreferences();
     private static string PreferencesPath => Path.Combine(AppDataRoot, "preferences.json");
     private sealed class UiPreferences
@@ -151,7 +151,7 @@ public sealed partial class MainWindow
                 var language = (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "auto";
                 if (!components.Tools.WhisperAvailable)
                 {
-                    _localMediaStatus.Text = "Встроенный Whisper отсутствует или повреждён. Переустановите полную версию VideoGrabber.";
+                    _localMediaStatus.Text = "Локальная транскрибация недоступна. Переустановите полную версию VideoGrabber.";
                     return OperationOutcome.Failed;
                 }
                 var model = await EnsureWhisperModelAvailableAsync(operation.Token);
@@ -189,13 +189,12 @@ public sealed partial class MainWindow
         panel.Children.Add(SectionHeading("Встроенное распознавание речи"));
         _whisperExeBox = new TextBox
         {
-            Header = "Whisper CLI — входит в VideoGrabber",
+            Header = "Встроенное распознавание речи",
             Text = _tools.WhisperCli,
             IsReadOnly = true
         };
         var modelSelector = CreateWhisperModelSelector();
         var modelStatus = CreateWhisperModelStatusText();
-        var modelSource = CreateWhisperModelSourceLink();
         _languageBox = new ComboBox { Header = "Язык речи", HorizontalAlignment = HorizontalAlignment.Stretch };
         _languageBox.Items.Add(ComboItem("Определять автоматически", "auto"));
         _languageBox.Items.Add(ComboItem("Русский", "ru"));
@@ -218,15 +217,13 @@ public sealed partial class MainWindow
         };
         var save = PrimaryButton("Сохранить язык");
         save.Click += (_, _) => SavePreferences();
-        panel.Children.Add(_whisperExeBox);
         panel.Children.Add(modelSelector);
         panel.Children.Add(modelStatus);
-        panel.Children.Add(modelSource);
         panel.Children.Add(_languageBox);
         panel.Children.Add(MutedText(
             _tools.WhisperAvailable
-                ? "Движок Whisper уже встроен. Дополнительные модели при необходимости VideoGrabber скачает сам и сохранит на этом компьютере."
-                : "В этой сборке не найден встроенный Whisper. Нужен полный дистрибутив VideoGrabber."));
+                ? "Распознавание речи готово к работе. Дополнительные варианты качества при необходимости VideoGrabber подготовит автоматически."
+                : "Распознавание речи недоступно. Переустановите полную версию VideoGrabber."));
         panel.Children.Add(save);
         return Card(panel);
     }

@@ -34,11 +34,11 @@ public sealed partial class MainWindow
 
         var capabilities = Vertical(8);
         capabilities.Children.Add(SectionHeading("Что умеет VideoGrabber"));
-        capabilities.Children.Add(MutedText("• GetCourse, включая школы на собственных доменах: поиск HLS master, выбор качества и загрузка через встроенный браузер."));
-        capabilities.Children.Add(MutedText("• Kinescope и обычный HLS/DASH/MP4 без DRM; split video/audio объединяется FFmpeg."));
-        capabilities.Children.Add(MutedText("• Другие сайты, которые поддерживает установленный yt-dlp, если у пользователя есть доступ к видео."));
-        capabilities.Children.Add(MutedText("• MP3, быстрая обрезка/склейка, локальная расшифровка встроенным Whisper и точечная маршрутизация сайтов."));
-        capabilities.Children.Add(MutedText("• Полный комплект уже содержит yt-dlp, FFmpeg, FFprobe, Deno, Whisper и модель распознавания — отдельная установка для обычной работы не требуется."));
+        capabilities.Children.Add(MutedText("• Скачивает отдельные видео с поддерживаемых сайтов и страниц, к которым у пользователя есть доступ."));
+        capabilities.Children.Add(MutedText("• Сохраняет целые курсы и уроки с понятной структурой папок, видео, материалами и вложениями."));
+        capabilities.Children.Add(MutedText("• Позволяет выбирать качество видео, ставить загрузки на паузу, продолжать их и восстанавливать прерванную работу."));
+        capabilities.Children.Add(MutedText("• Создаёт MP3, обрезает и склеивает видео, а также расшифровывает речь в текст прямо на компьютере."));
+        capabilities.Children.Add(MutedText("• Проверяет результат загрузки и помогает повторить только то, что не удалось получить с первого раза."));
         body.Children.Add(Card(capabilities));
 
         var surfaces = Vertical(8);
@@ -112,9 +112,9 @@ public sealed partial class MainWindow
         getCourse.Children.Add(MutedText("2. Если сайт просит вход, введите логин и пароль прямо на странице GetCourse. VideoGrabber пароль не получает."));
         getCourse.Children.Add(MutedText("3. Дождитесь списка «Видео 01, Видео 02…». Запускать каждое видео вручную не требуется."));
         getCourse.Children.Add(MutedText("4. Для отдельного видео выберите нужное качество. Для всего курса есть отдельный предел: до 360p, до 480p, до 720p или лучшее доступное; если точной высоты нет, берётся ближайшая доступная ниже предела."));
-        getCourse.Children.Add(MutedText("5. Нажмите «Скачать выбранное видео» или «Скачать все найденные». Перед загрузкой выбранная HLS-дорожка автоматически проверяется."));
-        getCourse.Children.Add(MutedText("6. «Скачать весь курс» проходит модули и уроки, сохраняет Word/HTML/изображения/вложения/видео, перед запуском сверяет уже скачанное, а в конце выполняет полную проверку и автоматически повторяет пропуски. Кнопка «Пауза» не отменяет работу и превращается в «Продолжить»."));
-        getCourse.Children.Add(MutedText("Если master получить не удалось, запустите ролик на несколько секунд: это включает резервное обнаружение media-потока."));
+        getCourse.Children.Add(MutedText("5. Нажмите «Скачать выбранное видео» или «Скачать все найденные». Перед загрузкой VideoGrabber автоматически проверит, что видео доступно и готово к сохранению."));
+        getCourse.Children.Add(MutedText("6. «Скачать весь курс» проходит модули и уроки, сохраняет документы, изображения, вложения и видео, перед запуском сверяет уже скачанное, а в конце выполняет полную проверку и автоматически повторяет пропуски. Кнопка «Пауза» не отменяет работу и превращается в «Продолжить»."));
+        getCourse.Children.Add(MutedText("Если видео не определяется сразу, запустите его на странице на несколько секунд — VideoGrabber попробует найти его повторно."));
         body.Children.Add(Card(getCourse));
 
         var limits = Vertical(8);
