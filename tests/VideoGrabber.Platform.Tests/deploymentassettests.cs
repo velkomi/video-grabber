@@ -233,6 +233,10 @@ public sealed class DeploymentAssetTests
         Assert.Contains("mv -f", script, StringComparison.Ordinal);
         Assert.Contains("VideoGrabber.Managed-win-x64-", script, StringComparison.Ordinal);
         Assert.Contains("VideoGrabber.version", script, StringComparison.Ordinal);
+        Assert.Contains("DEFAULT_VERSION=", script, StringComparison.Ordinal);
+        Assert.Contains("$REPOSITORY_ROOT/VERSION", script, StringComparison.Ordinal);
+        Assert.Contains("VERSION=\"${1:-$DEFAULT_VERSION}\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("preview.56", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("curl -k", script, StringComparison.Ordinal);
 
         var verify = File.ReadAllText(Path.Combine(

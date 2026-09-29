@@ -11,6 +11,7 @@ param(
     [string]$SourceCommit,
     [string]$ReleaseRoot,
     [string]$BundledRuntimeRoot,
+    [switch]$SkipRestore,
     [switch]$SkipTests
 )
 
@@ -96,8 +97,10 @@ if (Test-Path -LiteralPath $output) {
 }
 New-Item -ItemType Directory -Force -Path $ReleaseRoot | Out-Null
 
-& $DotNet restore (Join-Path $repositoryRoot 'VideoGrabber.slnx') --locked-mode
-if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed' }
+if (-not $SkipRestore) {
+    & $DotNet restore (Join-Path $repositoryRoot 'VideoGrabber.slnx') --locked-mode
+    if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed' }
+}
 if (-not $SkipTests) {
     & $DotNet test (Join-Path $repositoryRoot 'VideoGrabber.slnx') -c $Configuration --no-restore
     if ($LASTEXITCODE -ne 0) { throw 'dotnet test failed' }

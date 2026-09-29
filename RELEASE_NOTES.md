@@ -1,4 +1,13 @@
 # Журнал подготовки релизов
+## [0.1.10-preview.58-rc.1] - 2026-09-29
+
+- Status: release-pipeline anti-rollback hardening on top of preview.57.
+- `deploy/platform/update_windows_downloads.sh` now defaults to the repository `VERSION` instead of a hardcoded preview, preventing an omitted CLI argument from republishing an older Windows build.
+- Deployment tests lock this behavior and reject a return of the old preview.56 default.
+- `Build-Release.ps1` supports explicit `-SkipRestore` for controlled builds from already-restored locked assets; normal release behavior still performs locked restore.
+- Live OLEG diagnostics already confirm pause/settings-change/restart/cancel behavior, and the current course tree contains zero `.vg-asr-*`, `.vg-course-transcript-*`, or unfinished downloader temp files.
+- All preview.52–57 fixes remain included.
+
 ## [0.1.10-preview.57-rc.1] - 2026-09-29
 
 - Status: final live-validation hotfix after preview.56.

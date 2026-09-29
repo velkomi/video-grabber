@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-VERSION="${1:-0.1.10-preview.56-rc.1}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPOSITORY_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+DEFAULT_VERSION="$(tr -d '\r\n' < "$REPOSITORY_ROOT/VERSION")"
+if [[ -z "$DEFAULT_VERSION" ]]; then
+  echo "Repository VERSION is empty" >&2
+  exit 2
+fi
+VERSION="${1:-$DEFAULT_VERSION}"
 DESTINATION="${2:-/home/assistant/apps/videograbber-downloads}"
 REPOSITORY="${VG_RELEASE_REPOSITORY:-velkomi/video-grabber}"
 TAG="v${VERSION}"
