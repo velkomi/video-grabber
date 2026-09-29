@@ -234,6 +234,13 @@ public sealed class DeploymentAssetTests
         Assert.Contains("VideoGrabber.Managed-win-x64-", script, StringComparison.Ordinal);
         Assert.Contains("VideoGrabber.version", script, StringComparison.Ordinal);
         Assert.DoesNotContain("curl -k", script, StringComparison.Ordinal);
+
+        var verify = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "verify_public_surface.sh"));
+        Assert.Contains("/download/windows", verify, StringComparison.Ordinal);
+        Assert.Contains("/download/windows/portable", verify, StringComparison.Ordinal);
+        Assert.Contains("Двухфакторная аутентификация", verify, StringComparison.Ordinal);
+        Assert.Contains("PUBLIC_SURFACE_OK", verify, StringComparison.Ordinal);
     }
 
     [Fact]
