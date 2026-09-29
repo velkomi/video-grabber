@@ -1,0 +1,28 @@
+name: Audit deploy capability
+
+on:
+  push:
+    branches:
+      - audit/live-videograbber-20260929
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployment secret availability
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          for n in VPS_SSH_KEY HOSTINGER_SSH_KEY SSH_PRIVATE_KEY DEPLOY_SSH_KEY VPS_HOST HOSTINGER_HOST DEPLOY_HOST VPS_USER DEPLOY_USER; do
+            if [ -n "${!n:-}" ]; then echo "$n=PRESENT"; else echo "$n=ABSENT"; fi
+          done
+          timeout 5 bash -c '</dev/tcp/videograbber.srv1902378.hstgr.cloud/22' && echo "SSH_PORT=OPEN" || echo "SSH_PORT=CLOSED_OR_FILTERED"
