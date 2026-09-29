@@ -15,3 +15,24 @@ The optional local Bot API profile is disabled by default. The currently qualifi
 `/health/live` proves the API process responds. `/health/ready` additionally checks migration history, DB access, worker capability secret presence and auth issuer configuration. Health responses expose no DSN or secret.
 
 Stage launch remains **BLOCKED** unless `VG_STAGE_START_AUTHORIZED=YES` is explicitly provided after configuration and registry digests are reviewed. This mechanism never changes DNS, firewall rules, production databases or neighboring Docker workloads.
+
+
+## Public Windows download refresh
+
+The public API serves the installer and portable archive from the host-mounted download directory. Refresh these files only after the corresponding GitHub prerelease exists and its SHA-256 manifest is published.
+
+On the production VPS, run:
+
+```bash
+bash deploy/platform/update_windows_downloads.sh 0.1.10-preview.56-rc.1 /home/assistant/apps/videograbber-downloads
+```
+
+The helper downloads the setup EXE and Managed portable ZIP from the public release, verifies both against the published manifest, stages them with `.new` suffixes, and only then atomically replaces `VideoGrabber-Setup.exe` and `VideoGrabber-Windows.zip`. It never replaces a live artifact before verification succeeds.
+
+After the API/static-site deployment and download refresh, verify the public surface:
+
+- `/health/live` returns live;
+- `/web/` contains the feature-oriented Windows section and the installer/portable controls;
+- `/admin/` contains the TOTP MFA admin surface;
+- `/download/windows` begins with the Windows PE magic `MZ`, not ZIP magic `PK`;
+- `/download/windows/portable` begins with ZIP magic `PK`.
