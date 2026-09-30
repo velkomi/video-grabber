@@ -51,7 +51,7 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("Транскрибировать видео курса в TXT", browser);
         Assert.Contains("CreateWhisperModelSelector", browser);
         var modelUi = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.TranscriptionModels.cs"));
-        Assert.Contains("Источник модели", modelUi);
+        Assert.DoesNotContain("Источник модели", modelUi, StringComparison.Ordinal);
         Assert.Contains("CourseTranscriptionSettingsCanChange", modelUi);
         Assert.Contains("Модель транскрибации изменена.", modelUi);
         Assert.Contains("editableCourseSettings", course);
