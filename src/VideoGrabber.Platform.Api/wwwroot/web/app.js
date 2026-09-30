@@ -1199,6 +1199,8 @@ async function start() {
     } catch (error) {
       const message = String(error.message || error);
       const translated = ({
+        "Проверьте адрес e-mail.":
+          "Проверьте адрес e-mail.",
         "Email address not authorized":
           "Для этого адреса пока недоступен вход по почте.",
         "email rate limit exceeded":
