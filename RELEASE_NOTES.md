@@ -6,6 +6,7 @@
 - Windows Information/Settings/Course UI now describes capabilities instead of exposing internal downloader/transcoder/transcription/runtime names or source links.
 - Web account billing no longer exposes the deployment environment (`stage`) or payment-provider branding/error details. Backend provider identifiers remain internal only.
 - Targeted API/app builds and UI regression suites pass with zero errors.
+- Added a PostgreSQL integration test that starts with two owner-admin accounts and verifies reconciliation leaves exactly one configured owner.
 - All preview.52–59 fixes remain included.
 
 ## [0.1.10-preview.59-rc.1] - 2026-09-29

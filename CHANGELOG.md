@@ -19,7 +19,8 @@
 
 - API и Windows-приложение собираются с 0 предупреждений / 0 ошибок;
 - WebPlanUx/Deployment regression: 14/14 PASS;
-- Information/Course transcription wiring: 2/2 PASS.
+- Information/Course transcription wiring: 2/2 PASS;
+- добавлен PostgreSQL integration-тест, который создаёт два Owner-аккаунта и подтверждает, что после reconciliation роль `owner_admin` остаётся только у настроенного владельца.
 
 ## [0.1.10-preview.59-rc.1] - 2026-09-29
 
