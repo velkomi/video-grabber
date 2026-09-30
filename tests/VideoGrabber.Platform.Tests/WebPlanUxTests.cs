@@ -14,6 +14,8 @@ public sealed class WebPlanUxTests
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web", "app.js"));
         var program = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "Program.cs"));
+        var publicSmoke = File.ReadAllText(Path.Combine(
+            root, "deploy", "platform", "verify_public_surface.sh"));
 
         var htmlIds = System.Text.RegularExpressions.Regex.Matches(
                 html, "id=\\\"([^\\\"]+)\\\"")
@@ -71,6 +73,10 @@ public sealed class WebPlanUxTests
         Assert.Contains("openPlanDialog", js);
         Assert.Contains("setupHeroScene", js);
         Assert.Contains("Не удалось загрузить данные аккаунта", js);
+        Assert.Contains("Скачивайте видео проще", publicSmoke);
+        Assert.Contains("Вход и синхронизация", publicSmoke);
+        Assert.Contains("Тарифы без скрытых", publicSmoke);
+        Assert.Contains("PUBLIC_SURFACE_OK", publicSmoke);
         Assert.Contains("recommendedPlanForOperation", js);
         Assert.DoesNotContain("courseOption.disabled", js, StringComparison.Ordinal);
         Assert.DoesNotContain("mp3Option.disabled", js, StringComparison.Ordinal);
