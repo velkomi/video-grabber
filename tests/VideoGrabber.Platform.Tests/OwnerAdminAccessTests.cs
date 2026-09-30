@@ -12,8 +12,8 @@ public sealed class OwnerAdminAccessTests
     public async Task Configured_owner_subject_is_the_only_owner_admin()
     {
         await using var fixture = await ApiFixture.StartAsync();
-        var ownerSubject = "exclusive-owner-" + Guid.NewGuid().ToString("N");
-        var otherSubject = "other-owner-" + Guid.NewGuid().ToString("N");
+        var ownerSubject = Guid.NewGuid().ToString("D");
+        var otherSubject = Guid.NewGuid().ToString("D");
 
         var owner = await fixture.AccountAsync("google", ownerSubject, "owner@example.test");
         var other = await fixture.AccountAsync("google", otherSubject, "other@example.test");

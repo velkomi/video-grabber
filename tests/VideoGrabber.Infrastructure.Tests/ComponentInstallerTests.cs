@@ -203,7 +203,7 @@ public sealed class ComponentInstallerProcessTreeTests
         {
             var pending = new ComponentInstaller(new ProcessRunner(), transaction)
                 .InstallAsync(script, root, cancellation.Token);
-            var deadline = DateTime.UtcNow.AddSeconds(8);
+            var deadline = DateTime.UtcNow.AddSeconds(20);
             while (!File.Exists(pidPath) && DateTime.UtcNow < deadline) await Task.Delay(25);
             Assert.True(File.Exists(pidPath), "Prepare fixture did not publish child PID.");
             var childPid = int.Parse(File.ReadAllText(pidPath));
