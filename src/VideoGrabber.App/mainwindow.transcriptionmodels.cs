@@ -10,7 +10,6 @@ public sealed partial class MainWindow
 {
     private readonly List<ComboBox> _whisperModelSelectors = [];
     private readonly List<TextBlock> _whisperModelStatusLabels = [];
-    private readonly List<HyperlinkButton> _whisperModelSourceLinks = [];
     private readonly SemaphoreSlim _whisperModelDownloadGate = new(1, 1);
     private CancellationTokenSource? _whisperModelDownloadCancellation;
     private bool _whisperModelSelectionSyncing;
@@ -88,20 +87,6 @@ public sealed partial class MainWindow
         _whisperModelStatusLabels.Add(text);
         UpdateWhisperModelUi();
         return text;
-    }
-
-    private HyperlinkButton CreateWhisperModelSourceLink()
-    {
-        var profile = WhisperModelCatalog.Get(_preferences.WhisperModelProfile);
-        var link = new HyperlinkButton
-        {
-            Content = "Источник модели ↗",
-            NavigateUri = new Uri(profile.SourcePageUrl),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Padding = new Thickness(0)
-        };
-        _whisperModelSourceLinks.Add(link);
-        return link;
     }
 
     private void SyncWhisperModelSelectors(string profileId)
@@ -423,8 +408,6 @@ public sealed partial class MainWindow
             foreach (var label in _whisperModelStatusLabels)
                 label.Text = status;
 
-            foreach (var link in _whisperModelSourceLinks)
-                link.NavigateUri = new Uri(profile.SourcePageUrl);
         });
     }
 }
