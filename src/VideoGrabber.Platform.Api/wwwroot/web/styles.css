@@ -22,7 +22,7 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: hidden; }
 body {
   margin: 0;
   min-width: 320px;
@@ -258,11 +258,14 @@ main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
     transform .2s ease;
 }
 .hero-hotspot:hover,
-.hero-hotspot:focus-visible {
-  background: rgba(83, 124, 255, .08);
-  border-color: rgba(133, 184, 255, .44);
-  box-shadow: 0 0 28px rgba(77, 98, 255, .25);
-  transform: translateZ(10px) scale(1.02);
+.hero-hotspot:focus-visible,
+.hero-hotspot.is-active {
+  background: rgba(83, 124, 255, .09);
+  border-color: rgba(133, 184, 255, .54);
+  box-shadow:
+    0 0 0 1px rgba(111, 153, 255, .14),
+    0 0 30px rgba(77, 98, 255, .28);
+  transform: translateZ(12px) scale(1.025);
 }
 .hotspot-url { left: 16%; top: 8%; width: 25%; height: 18%; }
 .hotspot-video { right: 8%; top: 8%; width: 27%; height: 20%; }
@@ -271,12 +274,87 @@ main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
 .hotspot-windows { left: 20%; bottom: 5%; width: 29%; height: 22%; }
 .hotspot-telegram { right: 8%; bottom: 5%; width: 27%; height: 21%; }
 
+.hero-feature-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 2.5%;
+  z-index: 4;
+  width: min(78%, 420px);
+  padding: 10px 14px;
+  border: 1px solid rgba(126, 165, 255, .22);
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(12, 24, 52, .88), rgba(7, 14, 31, .82));
+  box-shadow: 0 12px 36px rgba(0,0,0,.26), inset 0 0 20px rgba(91, 113, 255, .05);
+  backdrop-filter: blur(14px);
+  transform: translateX(-50%) translateY(5px);
+  opacity: .78;
+  pointer-events: none;
+  transition:
+    opacity .22s ease,
+    transform .22s ease,
+    border-color .22s ease,
+    box-shadow .22s ease;
+}
+.hero-feature-caption.is-active {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  border-color: rgba(133, 184, 255, .42);
+  box-shadow: 0 16px 42px rgba(0,0,0,.34), 0 0 26px rgba(79, 95, 255, .12);
+}
+.hero-feature-caption span,
+.hero-feature-caption strong,
+.hero-feature-caption small { display: block; }
+.hero-feature-caption span {
+  color: #84b9ff;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.hero-feature-caption strong {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+.hero-feature-caption small {
+  margin-top: 2px;
+  color: #9eb0cd;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .section { padding: 38px 0; position: relative; }
 .section-card, .sync-card, .download-card, .panel {
+  position: relative;
+  overflow: hidden;
   border: 1px solid var(--line);
   background: linear-gradient(145deg, rgba(13, 27, 53, .84), rgba(7, 15, 31, .82));
   box-shadow: var(--shadow);
   backdrop-filter: blur(16px);
+}
+.section-card::after,
+.sync-card::after,
+.download-card::after,
+.price-card::after {
+  content: "";
+  position: absolute;
+  inset: -45%;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--shine-x, 50%) var(--shine-y, 50%),
+    rgba(120, 164, 255, .10),
+    rgba(147, 88, 255, .05) 20%,
+    transparent 46%
+  );
+  opacity: 0;
+  transition: opacity .24s ease;
+}
+.section-card.has-pointer-shine::after,
+.sync-card.has-pointer-shine::after,
+.download-card.has-pointer-shine::after,
+.price-card.has-pointer-shine::after {
+  opacity: 1;
 }
 .section-card { border-radius: var(--radius); padding: 24px; }
 .section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 20px; }
@@ -498,8 +576,30 @@ footer {
   0%, 100% { translate: 0 0; }
   50% { translate: 0 -8px; }
 }
+@keyframes ambientDriftA {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-22px, 16px, 0) scale(1.05); }
+}
+@keyframes ambientDriftB {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(26px, -18px, 0) scale(1.04); }
+}
 @media (prefers-reduced-motion: no-preference) {
   .hero-art-shell { animation: heroArtFloat 7s ease-in-out infinite; }
+  .page-glow-a { animation: ambientDriftA 18s ease-in-out infinite; }
+  .page-glow-b { animation: ambientDriftB 22s ease-in-out infinite; }
+  body.motion-ready .reveal-item {
+    opacity: 0;
+    transform: translateY(18px) scale(.992);
+    transition:
+      opacity .55s ease,
+      transform .55s cubic-bezier(.22,.75,.18,1);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+  body.motion-ready .reveal-item.is-revealed {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @media (max-width: 1050px) {

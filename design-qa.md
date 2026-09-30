@@ -28,8 +28,13 @@
 - Hero parallax reacts to pointer movement.
 - Realtime WebGL enhancement initializes successfully on desktop; tested canvas size **697 × 537**, WebGL context present, **0 SEVERE console errors**.
 - WebGL is progressive: the approved 3D raster remains the fallback; reduced-motion and narrow viewports do not run an endless animation loop.
+- Feature hotspots are semantic: URL, Video, MP3, Course, Windows and Telegram update the caption and WebGL accent without moving the real action out of HTML.
+- WebGL animation pauses automatically when the hero leaves the viewport or the page is hidden.
+- Hover/focus on URL, Video, MP3, Course, Windows and Telegram changes the explanatory caption and WebGL accent while the real links remain normal HTML controls.
+- Scroll reveal and pointer sheen are progressive decorations; the content and controls remain available without them.
+- Reduced-motion was verified in Edge: motion classes stay disabled and the content remains visible.
 - Main anchors and destinations exist: How it works, Download, Pricing, Account, Windows installer, Portable ZIP, Telegram.
-- Mobile width smoke test passed without horizontal document overflow.
+- Mobile width smoke test passed without horizontal document overflow; a temporary overflow caused by animated background glows was detected and fixed by clipping the root x-axis.
 - Browser console check: **0 SEVERE errors**.
 
 ## Full-view comparison evidence

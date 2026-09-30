@@ -1,4 +1,13 @@
 # Журнал подготовки релизов
+
+## Web polish after preview.60 - 2026-09-30
+
+- The approved 3D hero now has semantic interactive hotspots for URL, video, MP3, full course, Windows and Telegram; each focus state updates a human-facing caption and WebGL accent.
+- Added progressive scroll reveal, subtle pointer sheen and slow ambient glow motion without moving primary controls into canvas.
+- WebGL rendering pauses when the hero leaves the viewport or the page is hidden; the approved static artwork remains the fallback.
+- Mobile overflow caused by animated background glows was detected in browser QA and fixed.
+- Targeted regression 14/14 PASS, JS syntax PASS, WebGL Edge smoke PASS, desktop/mobile browser smoke PASS with zero severe console errors.
+
 ## [0.1.10-preview.60-rc.1] - 2026-09-29
 
 - Status: owner-admin exclusivity and user-facing terminology cleanup.

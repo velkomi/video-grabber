@@ -12,6 +12,8 @@ public sealed class WebPlanUxTests
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web", "index.html"));
         var js = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web", "app.js"));
+        var styles = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web", "styles.css"));
         var program = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "Program.cs"));
         var publicSmoke = File.ReadAllText(Path.Combine(
@@ -54,6 +56,8 @@ public sealed class WebPlanUxTests
         Assert.Contains("hero-art-shell", html);
         Assert.Contains("id=\"hero-webgl\"", html);
         Assert.Contains("hero-hotspot", html);
+        Assert.Contains("data-feature=\"video\"", html);
+        Assert.Contains("id=\"hero-feature-caption\"", html);
         Assert.Contains("hero-visual", html);
         Assert.True(heroAsset.Exists);
         Assert.True(heroAsset.Length > 50_000);
@@ -87,8 +91,17 @@ public sealed class WebPlanUxTests
         Assert.Contains("openPlanDialog", js);
         Assert.Contains("setupHeroScene", js);
         Assert.Contains("setupHeroWebGL", js);
+        Assert.Contains("setupHeroFeatureFocus", js);
+        Assert.Contains("setupPointerShine", js);
+        Assert.Contains("setupScrollReveal", js);
+        Assert.Contains("videograbber:hero-accent", js);
+        Assert.Contains("IntersectionObserver", js);
         Assert.Contains("getContext(\"webgl\"", js);
         Assert.Contains("prefers-reduced-motion", js);
+        Assert.Contains("heroVisible", js);
+        Assert.Contains("IntersectionObserver", js);
+        Assert.Contains("overflow-x: hidden", styles);
+        Assert.Contains("motion-ready .reveal-item", styles);
         Assert.Contains("Не удалось загрузить данные аккаунта", js);
         Assert.Contains("Скачивайте видео проще", publicSmoke);
         Assert.Contains("Вход и синхронизация", publicSmoke);

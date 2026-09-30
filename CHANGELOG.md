@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+### Улучшение публичного сайта
+
+- 3D-сцена стала смысловой: шесть зон (URL, видео, MP3, курс, Windows, Telegram) подсвечиваются отдельно, меняют акцент WebGL и показывают короткое человеческое пояснение;
+- добавлены мягкие scroll-reveal переходы и локальный световой sheen для карточек без переноса основных действий в canvas;
+- фоновые glow-слои получили медленное атмосферное движение с учётом `prefers-reduced-motion`;
+- WebGL-рендер автоматически ставится на паузу, когда hero уходит за пределы экрана или вкладка скрыта, и возобновляется при возвращении;
+- сохранён статичный утверждённый 3D-арт как fallback на случай отсутствия WebGL;
+- исправлен мобильный горизонтальный overflow от анимированных фоновых glow-слоёв.
+
+### Проверено
+
+- WebPlanUx/Deployment regression: 14/14 PASS;
+- JavaScript syntax check: PASS;
+- Edge WebGL smoke: контекст активен, canvas 697×537, console SEVERE = 0;
+- desktop interaction smoke: feature-caption, hotspot focus, scroll reveal и pointer sheen работают;
+- mobile layout smoke: horizontal overflow отсутствует.
+
 ## [0.1.10-preview.60-rc.1] - 2026-09-29
 
 ### Интерфейс и администрирование

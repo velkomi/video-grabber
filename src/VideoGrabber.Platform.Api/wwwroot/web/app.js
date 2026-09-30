@@ -1122,6 +1122,39 @@ async function refreshDevicesQuietly() {
   } catch {}
 }
 
+const heroFeatureCatalog = {
+  url: {
+    title: "Вставьте ссылку",
+    copy: "Скопируйте ссылку — VideoGrabber подготовит доступный сценарий загрузки.",
+    accent: [0.28, 0.62, 1.0]
+  },
+  video: {
+    title: "Скачайте видео",
+    copy: "Обычное видео можно получить прямо через сайт — без открытия Windows-приложения.",
+    accent: [0.22, 0.74, 1.0]
+  },
+  mp3: {
+    title: "Получите MP3",
+    copy: "Извлеките аудиодорожку из доступного видео и сохраните её отдельным файлом.",
+    accent: [1.0, 0.58, 0.36]
+  },
+  course: {
+    title: "Скачайте полный курс",
+    copy: "Для курсов и закрытых страниц используйте Windows VideoGrabber с сохранением структуры.",
+    accent: [0.72, 0.38, 1.0]
+  },
+  windows: {
+    title: "Работайте в Windows",
+    copy: "Локальный клиент нужен для курсов, закрытых страниц и сохранения прямо в выбранную папку.",
+    accent: [0.30, 0.78, 1.0]
+  },
+  telegram: {
+    title: "Используйте Telegram",
+    copy: "Отправьте ссылку боту и продолжайте работу с тем же аккаунтом VideoGrabber.",
+    accent: [0.30, 0.68, 1.0]
+  }
+};
+
 function setupHeroWebGL(visual) {
   const canvas = $("#hero-webgl");
   if (!canvas) return;
@@ -1148,6 +1181,7 @@ function setupHeroWebGL(visual) {
     uniform vec2 uResolution;
     uniform vec2 uPointer;
     uniform float uTime;
+    uniform vec3 uAccent;
 
     mat2 rotate2d(float angle) {
       float s = sin(angle);
@@ -1202,14 +1236,14 @@ function setupHeroWebGL(visual) {
       float rings = max(ring1 * orbitPulse, ring2 * (1.0 - inside * 0.6));
 
       vec3 sphereColor =
-        vec3(0.18, 0.48, 1.0) * (0.08 + diffuse * 0.13) +
-        vec3(0.52, 0.32, 1.0) * fresnel * 0.32 +
-        vec3(0.48, 0.78, 1.0) * specular * 0.95 +
-        vec3(0.36, 0.42, 1.0) * energy * 0.055;
+        mix(vec3(0.18, 0.48, 1.0), uAccent, 0.44) * (0.08 + diffuse * 0.13) +
+        mix(vec3(0.52, 0.32, 1.0), uAccent, 0.30) * fresnel * 0.32 +
+        mix(vec3(0.48, 0.78, 1.0), uAccent, 0.22) * specular * 0.95 +
+        uAccent * energy * 0.055;
 
       vec3 ringColor = mix(
-        vec3(0.22, 0.56, 1.0),
-        vec3(0.76, 0.34, 1.0),
+        mix(vec3(0.22, 0.56, 1.0), uAccent, 0.58),
+        mix(vec3(0.76, 0.34, 1.0), uAccent, 0.34),
         0.5 + 0.5 * sin(uTime * 0.35)
       );
 
@@ -1267,6 +1301,7 @@ function setupHeroWebGL(visual) {
   const resolution = gl.getUniformLocation(program, "uResolution");
   const pointerUniform = gl.getUniformLocation(program, "uPointer");
   const timeUniform = gl.getUniformLocation(program, "uTime");
+  const accentUniform = gl.getUniformLocation(program, "uAccent");
 
   gl.useProgram(program);
   gl.enableVertexAttribArray(position);
@@ -1274,6 +1309,16 @@ function setupHeroWebGL(visual) {
   gl.clearColor(0, 0, 0, 0);
 
   const pointer = { x: .5, y: .5 };
+  const accentCurrent = [0.28, 0.62, 1.0];
+  const accentTarget = [...accentCurrent];
+
+  visual.addEventListener("videograbber:hero-accent", (event) => {
+    const next = event.detail?.accent;
+    if (!Array.isArray(next) || next.length !== 3) return;
+    for (let i = 0; i < 3; i += 1)
+      accentTarget[i] = Number(next[i]) || 0;
+  });
+
   visual.addEventListener("pointermove", (event) => {
     const rect = visual.getBoundingClientRect();
     pointer.x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
@@ -1300,23 +1345,53 @@ function setupHeroWebGL(visual) {
   const narrowViewport = matchMedia("(max-width: 720px)").matches;
   const startedAt = performance.now();
   let animationFrame = 0;
+  let heroVisible = true;
 
   const render = (now = startedAt) => {
+    animationFrame = 0;
     resize();
+    for (let i = 0; i < 3; i += 1)
+      accentCurrent[i] += (accentTarget[i] - accentCurrent[i]) * 0.085;
+
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(program);
     gl.uniform2f(resolution, canvas.width, canvas.height);
     gl.uniform2f(pointerUniform, pointer.x, pointer.y);
     gl.uniform1f(timeUniform, (now - startedAt) / 1000);
+    gl.uniform3f(accentUniform, accentCurrent[0], accentCurrent[1], accentCurrent[2]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-    if (!reducedMotion && !narrowViewport && !document.hidden)
+    if (!reducedMotion && !narrowViewport && !document.hidden && heroVisible)
       animationFrame = requestAnimationFrame(render);
   };
 
   if ("ResizeObserver" in window) {
     const observer = new ResizeObserver(() => render(performance.now()));
     observer.observe(canvas);
+  }
+
+  if ("IntersectionObserver" in window) {
+    const visibilityObserver = new IntersectionObserver(
+      ([entry]) => {
+        heroVisible = Boolean(entry?.isIntersecting);
+        if (!heroVisible && animationFrame) {
+          cancelAnimationFrame(animationFrame);
+          animationFrame = 0;
+          return;
+        }
+        if (
+          heroVisible &&
+          !reducedMotion &&
+          !narrowViewport &&
+          !document.hidden &&
+          !animationFrame
+        ) {
+          animationFrame = requestAnimationFrame(render);
+        }
+      },
+      { rootMargin: "160px 0px" }
+    );
+    visibilityObserver.observe(visual);
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -1332,11 +1407,121 @@ function setupHeroWebGL(visual) {
   render();
 }
 
+function setupHeroFeatureFocus(visual) {
+  const caption = $("#hero-feature-caption");
+  const hotspots = $$(".hero-hotspot[data-feature]");
+  if (!caption || !hotspots.length) return;
+
+  const defaultAccent = [0.28, 0.62, 1.0];
+  const resetCaption = () => {
+    for (const hotspot of hotspots)
+      hotspot.classList.remove("is-active");
+    caption.classList.remove("is-active");
+    caption.querySelector("span").textContent = "Живая 3D-сцена";
+    caption.querySelector("strong").textContent = "Наведите на возможность";
+    caption.querySelector("small").textContent =
+      "Сцена подскажет, что именно умеет VideoGrabber.";
+    visual.dispatchEvent(new CustomEvent("videograbber:hero-accent", {
+      detail: { accent: defaultAccent }
+    }));
+  };
+
+  const activate = (hotspot) => {
+    const feature = heroFeatureCatalog[hotspot.dataset.feature];
+    if (!feature) return;
+
+    for (const item of hotspots)
+      item.classList.toggle("is-active", item === hotspot);
+
+    caption.classList.add("is-active");
+    caption.querySelector("span").textContent = "Возможность VideoGrabber";
+    caption.querySelector("strong").textContent = feature.title;
+    caption.querySelector("small").textContent = feature.copy;
+
+    visual.dispatchEvent(new CustomEvent("videograbber:hero-accent", {
+      detail: { accent: feature.accent }
+    }));
+  };
+
+  for (const hotspot of hotspots) {
+    hotspot.addEventListener("pointerenter", () => activate(hotspot));
+    hotspot.addEventListener("focus", () => activate(hotspot));
+    hotspot.addEventListener("pointerleave", () => {
+      if (document.activeElement !== hotspot) resetCaption();
+    });
+    hotspot.addEventListener("blur", () => {
+      if (!hotspot.matches(":hover")) resetCaption();
+    });
+  }
+}
+
+function setupPointerShine() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  const targets = $$(
+    ".section-card, .sync-card, .download-card, .price-card"
+  );
+  for (const target of targets) {
+    target.addEventListener("pointermove", (event) => {
+      const rect = target.getBoundingClientRect();
+      target.style.setProperty(
+        "--shine-x",
+        (((event.clientX - rect.left) / rect.width) * 100).toFixed(1) + "%"
+      );
+      target.style.setProperty(
+        "--shine-y",
+        (((event.clientY - rect.top) / rect.height) * 100).toFixed(1) + "%"
+      );
+      target.classList.add("has-pointer-shine");
+    });
+    target.addEventListener("pointerleave", () =>
+      target.classList.remove("has-pointer-shine")
+    );
+  }
+}
+
+function setupScrollReveal() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (!("IntersectionObserver" in window)) return;
+
+  const targets = [
+    ...$$(".how-section"),
+    ...$$(".sync-card"),
+    ...$$(".price-card"),
+    ...$$(".download-card")
+  ];
+  if (!targets.length) return;
+
+  document.body.classList.add("motion-ready");
+  targets.forEach((target, index) => {
+    target.classList.add("reveal-item");
+    target.style.setProperty(
+      "--reveal-delay",
+      Math.min(index % 4, 3) * 65 + "ms"
+    );
+  });
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        entry.target.classList.add("is-revealed");
+        observer.unobserve(entry.target);
+      }
+    },
+    { threshold: 0.12, rootMargin: "0px 0px -7% 0px" }
+  );
+
+  for (const target of targets)
+    observer.observe(target);
+}
+
 function setupHeroScene() {
   const visual = $("#hero-visual");
   if (!visual) return;
 
   setupHeroWebGL(visual);
+  setupHeroFeatureFocus(visual);
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
   const update = (event) => {
@@ -1356,6 +1541,8 @@ function setupHeroScene() {
 
 async function start() {
   setupHeroScene();
+  setupPointerShine();
+  setupScrollReveal();
   captureTelegramAccountLink();
   captureDesktopFlow();
 
