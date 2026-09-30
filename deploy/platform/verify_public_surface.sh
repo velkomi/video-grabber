@@ -9,7 +9,7 @@ curl -fsS --max-time 15 "$BASE/health/live" |
   grep -F '"status":"live"' >/dev/null
 
 curl -fsS --max-time 20 "$BASE/web/" -o "$tmp/web.html"
-for needle in   "Скачивайте видео проще"   "Вход и синхронизация"   ">Тарифы</h2>"   "10 обычных видео навсегда"   "Популярный"   "Для курсов"   "Full Course"   "/assets/videograbber-hero.webp" "hero-art-shell"   "Скачать установщик"   "Portable ZIP"   "/admin/"
+for needle in   "Скачивайте видео проще"   "Вход и синхронизация"   ">Тарифы</h2>"   "10 обычных видео навсегда"   "Популярный"   "Для курсов"   "Full Course"   "/assets/videograbber-hero.webp" "hero-art-shell" "id=\"hero-webgl\""   "Скачать установщик"   "Portable ZIP"   "/admin/"
 do
   grep -F "$needle" "$tmp/web.html" >/dev/null
 done

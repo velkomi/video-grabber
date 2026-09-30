@@ -1122,9 +1122,222 @@ async function refreshDevicesQuietly() {
   } catch {}
 }
 
+function setupHeroWebGL(visual) {
+  const canvas = $("#hero-webgl");
+  if (!canvas) return;
+
+  const gl = canvas.getContext("webgl", {
+    alpha: true,
+    antialias: true,
+    premultipliedAlpha: false
+  });
+  if (!gl) {
+    canvas.hidden = true;
+    return;
+  }
+
+  const vertexSource = `
+    attribute vec2 aPosition;
+    void main() {
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+  `;
+
+  const fragmentSource = `
+    precision mediump float;
+    uniform vec2 uResolution;
+    uniform vec2 uPointer;
+    uniform float uTime;
+
+    mat2 rotate2d(float angle) {
+      float s = sin(angle);
+      float c = cos(angle);
+      return mat2(c, -s, s, c);
+    }
+
+    void main() {
+      vec2 uv = gl_FragCoord.xy / uResolution.xy;
+      uv.y = 1.0 - uv.y;
+
+      float aspect = uResolution.x / max(uResolution.y, 1.0);
+      vec2 center = vec2(0.48, 0.405);
+      center += (uPointer - vec2(0.5)) * vec2(0.010, 0.007);
+
+      vec2 p = uv - center;
+      p.x *= aspect;
+
+      float radius = 0.186;
+      float sphereDistance = length(p);
+      float inside = 1.0 - smoothstep(radius - 0.004, radius + 0.002, sphereDistance);
+
+      float z = sqrt(max(radius * radius - dot(p, p), 0.0));
+      vec3 normal = normalize(vec3(p / radius, z / radius));
+
+      vec3 light = normalize(vec3(
+        -0.34 + cos(uTime * 0.23) * 0.42,
+        0.48 + sin(uTime * 0.17) * 0.18,
+        1.0
+      ));
+      float diffuse = max(dot(normal, light), 0.0);
+      float fresnel = pow(1.0 - max(normal.z, 0.0), 2.35);
+      float specular = pow(max(dot(reflect(-light, normal), vec3(0.0, 0.0, 1.0)), 0.0), 26.0);
+
+      float energy = 0.5 + 0.5 * sin(
+        normal.x * 17.0 +
+        normal.y * 12.0 +
+        normal.z * 8.0 +
+        uTime * 0.65
+      );
+      energy = pow(energy, 7.0);
+
+      vec2 q1 = rotate2d(-0.18) * p;
+      float ellipse1 = abs(length(vec2(q1.x / (radius * 1.72), q1.y / (radius * 0.35))) - 1.0);
+      float ring1 = 1.0 - smoothstep(0.014, 0.038, ellipse1);
+
+      vec2 q2 = rotate2d(0.48) * p;
+      float ellipse2 = abs(length(vec2(q2.x / (radius * 1.45), q2.y / (radius * 0.28))) - 1.0);
+      float ring2 = 1.0 - smoothstep(0.016, 0.043, ellipse2);
+
+      float orbitPulse = 0.72 + 0.28 * sin(uTime * 0.8 + q1.x * 18.0);
+      float rings = max(ring1 * orbitPulse, ring2 * (1.0 - inside * 0.6));
+
+      vec3 sphereColor =
+        vec3(0.18, 0.48, 1.0) * (0.08 + diffuse * 0.13) +
+        vec3(0.52, 0.32, 1.0) * fresnel * 0.32 +
+        vec3(0.48, 0.78, 1.0) * specular * 0.95 +
+        vec3(0.36, 0.42, 1.0) * energy * 0.055;
+
+      vec3 ringColor = mix(
+        vec3(0.22, 0.56, 1.0),
+        vec3(0.76, 0.34, 1.0),
+        0.5 + 0.5 * sin(uTime * 0.35)
+      );
+
+      vec3 color = sphereColor * inside + ringColor * rings * 0.34;
+      float alpha =
+        inside * (0.055 + fresnel * 0.18 + specular * 0.30 + energy * 0.025) +
+        rings * 0.15;
+
+      if (alpha < 0.003) discard;
+      gl_FragColor = vec4(color, min(alpha, 0.48));
+    }
+  `;
+
+  const compileShader = (type, source) => {
+    const shader = gl.createShader(type);
+    if (!shader) throw new Error("WebGL shader allocation failed");
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const detail = gl.getShaderInfoLog(shader) || "unknown shader error";
+      gl.deleteShader(shader);
+      throw new Error(detail);
+    }
+    return shader;
+  };
+
+  let program;
+  try {
+    const vertexShader = compileShader(gl.VERTEX_SHADER, vertexSource);
+    const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
+    program = gl.createProgram();
+    if (!program) throw new Error("WebGL program allocation failed");
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS))
+      throw new Error(gl.getProgramInfoLog(program) || "WebGL link failed");
+  } catch (error) {
+    console.warn("VideoGrabber 3D enhancement disabled", error);
+    canvas.hidden = true;
+    return;
+  }
+
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+    gl.STATIC_DRAW
+  );
+
+  const position = gl.getAttribLocation(program, "aPosition");
+  const resolution = gl.getUniformLocation(program, "uResolution");
+  const pointerUniform = gl.getUniformLocation(program, "uPointer");
+  const timeUniform = gl.getUniformLocation(program, "uTime");
+
+  gl.useProgram(program);
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.clearColor(0, 0, 0, 0);
+
+  const pointer = { x: .5, y: .5 };
+  visual.addEventListener("pointermove", (event) => {
+    const rect = visual.getBoundingClientRect();
+    pointer.x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    pointer.y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+  });
+  visual.addEventListener("pointerleave", () => {
+    pointer.x = .5;
+    pointer.y = .5;
+  });
+
+  const resize = () => {
+    const rect = canvas.getBoundingClientRect();
+    const scale = Math.min(window.devicePixelRatio || 1, 1.5);
+    const width = Math.max(1, Math.round(rect.width * scale));
+    const height = Math.max(1, Math.round(rect.height * scale));
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+      gl.viewport(0, 0, width, height);
+    }
+  };
+
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const narrowViewport = matchMedia("(max-width: 720px)").matches;
+  const startedAt = performance.now();
+  let animationFrame = 0;
+
+  const render = (now = startedAt) => {
+    resize();
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(program);
+    gl.uniform2f(resolution, canvas.width, canvas.height);
+    gl.uniform2f(pointerUniform, pointer.x, pointer.y);
+    gl.uniform1f(timeUniform, (now - startedAt) / 1000);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    if (!reducedMotion && !narrowViewport && !document.hidden)
+      animationFrame = requestAnimationFrame(render);
+  };
+
+  if ("ResizeObserver" in window) {
+    const observer = new ResizeObserver(() => render(performance.now()));
+    observer.observe(canvas);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      return;
+    }
+    if (!reducedMotion && !narrowViewport && !animationFrame)
+      animationFrame = requestAnimationFrame(render);
+  });
+
+  render();
+}
+
 function setupHeroScene() {
   const visual = $("#hero-visual");
-  if (!visual || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (!visual) return;
+
+  setupHeroWebGL(visual);
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
   const update = (event) => {
     const rect = visual.getBoundingClientRect();

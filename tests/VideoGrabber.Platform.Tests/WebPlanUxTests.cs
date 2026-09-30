@@ -52,6 +52,7 @@ public sealed class WebPlanUxTests
         Assert.Contains("Portable ZIP", html);
         Assert.Contains("/assets/videograbber-hero.webp", html);
         Assert.Contains("hero-art-shell", html);
+        Assert.Contains("id=\"hero-webgl\"", html);
         Assert.Contains("hero-hotspot", html);
         Assert.Contains("hero-visual", html);
         Assert.True(heroAsset.Exists);
@@ -85,6 +86,9 @@ public sealed class WebPlanUxTests
         Assert.Contains("href=\"/miniapp/\"", html);
         Assert.Contains("openPlanDialog", js);
         Assert.Contains("setupHeroScene", js);
+        Assert.Contains("setupHeroWebGL", js);
+        Assert.Contains("getContext(\"webgl\"", js);
+        Assert.Contains("prefers-reduced-motion", js);
         Assert.Contains("Не удалось загрузить данные аккаунта", js);
         Assert.Contains("Скачивайте видео проще", publicSmoke);
         Assert.Contains("Вход и синхронизация", publicSmoke);

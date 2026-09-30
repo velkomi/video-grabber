@@ -9,13 +9,13 @@
 
 ## Rendered implementation
 
-- Local final implementation: `D:\CODEX\Temp\vg-final-local-84f5bf0.png`
-- Browser: Microsoft Edge / Chromium, headless
+- Local final implementation: `D:\CODEX\Temp\vg-final-webgl-1122x1402.png`
+- Browser: Microsoft Edge / Chromium, headless with WebGL/SwiftShader enabled
 - Requested browser window: **1122 × 1402**
 - Captured content viewport: **1098 × 1263 CSS px**
 - Implementation screenshot pixels: **1098 × 1263**
-- Local route: `http://127.0.0.1:8878/web/`
-- Commit baseline before final density polish: `84f5bf0`
+- Local route: `http://127.0.0.1:8879/web/`
+- Final WebGL working tree is based on commit `75c3689` and was verified before the WebGL commit was created.
 
 ## Primary interactions tested
 
@@ -26,6 +26,8 @@
 - Native e-mail validation blocks malformed e-mail before network activity.
 - Application-side e-mail validation returns human-readable copy.
 - Hero parallax reacts to pointer movement.
+- Realtime WebGL enhancement initializes successfully on desktop; tested canvas size **697 × 537**, WebGL context present, **0 SEVERE console errors**.
+- WebGL is progressive: the approved 3D raster remains the fallback; reduced-motion and narrow viewports do not run an endless animation loop.
 - Main anchors and destinations exist: How it works, Download, Pricing, Account, Windows installer, Portable ZIP, Telegram.
 - Mobile width smoke test passed without horizontal document overflow.
 - Browser console check: **0 SEVERE errors**.
@@ -55,7 +57,7 @@ The approved concept and browser-rendered implementation were inspected together
 
 Focused comparison was necessary for:
 
-- **Hero imagery:** now uses a real raster asset derived from the approved concept, rather than a CSS reconstruction.
+- **Hero imagery:** uses a real raster asset derived from the approved concept plus a transparent realtime WebGL lighting/orbit layer, rather than a flat SVG/CSS reconstruction.
 - **Synchronization artwork:** now uses a real raster asset derived from the approved concept.
 - **Pricing:** retains the approved four-card hierarchy, with Unlimited Video marked `Популярный` and Full Course marked `Для курсов`.
 - **Account block:** rewritten to “Вход и синхронизация” and no longer exposes Supabase/Magic Link implementation wording or raw JavaScript errors.
@@ -83,7 +85,8 @@ Focused comparison was necessary for:
 ### Image quality and asset fidelity
 
 - Hero and sync illustrations are derived directly from the approved source image and exported as optimized WebP assets.
-- Hero uses a smooth raster 3D render with parallax interaction rather than a flat SVG/CSS planet.
+- Hero keeps the approved smooth 3D render as visual truth and adds a true WebGL layer for moving volumetric lighting and orbit glow, plus pointer parallax.
+- The WebGL layer is non-blocking: unsupported browsers retain the approved image without losing content or controls.
 - No visible source-text contamination remains after final recrop.
 
 ### Copy and product content
