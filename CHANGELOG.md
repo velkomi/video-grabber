@@ -6,20 +6,26 @@
 
 ### Улучшение публичного сайта
 
-- 3D-сцена стала смысловой: шесть зон (URL, видео, MP3, курс, Windows, Telegram) подсвечиваются отдельно, меняют акцент WebGL и показывают короткое человеческое пояснение;
-- добавлены мягкие scroll-reveal переходы и локальный световой sheen для карточек без переноса основных действий в canvas;
-- фоновые glow-слои получили медленное атмосферное движение с учётом `prefers-reduced-motion`;
-- WebGL-рендер автоматически ставится на паузу, когда hero уходит за пределы экрана или вкладка скрыта, и возобновляется при возвращении;
-- сохранён статичный утверждённый 3D-арт как fallback на случай отсутствия WebGL;
-- исправлен мобильный горизонтальный overflow от анимированных фоновых glow-слоёв.
+- hero переведён на самостоятельную геометрическую Three.js-сцену без переписывания остального сайта на React: центральная PBR-сфера, три настоящих torus-orbit и шесть объёмных extruded rounded-карточек;
+- для планеты добавлены self-hosted diffuse/bump/emissive-текстуры, холодный физический свет, тонкая additive-атмосфера и отдельный VG-бейдж;
+- утверждённый WebP сохранён как мгновенный fallback и мягкий фон загрузки; после первого успешного Three.js-кадра сцена плавно перехватывает hero;
+- Three.js зафиксирован локально на `0.186.1` вместе с MIT-лицензией; production использует tree-shaken bundle, собираемый `scripts/Build-Web3D.ps1` через pinned esbuild `0.28.2`;
+- production-bundle хранит SHA-256 исходника `hero-three.js`, а regression-тест проверяет свежесть bundle без сетевого rebuild в CI;
+- bundle подгружается лениво после hero-image через `requestIdleCallback`, чтобы 3D не конкурировал с LCP; ориентировочный размер — ~596 КБ raw / ~152 КБ gzip;
+- API получил стандартное Brotli/Gzip response compression для JS/CSS/JSON по HTTPS;
+- шесть зон (URL, видео, MP3, курс, Windows, Telegram) остаются обычными HTML-ссылками, но меняют акцент сцены и человеческое пояснение;
+- Three.js-рендер ставится на паузу вне viewport и при скрытой вкладке; при `prefers-reduced-motion` 3D-runtime вообще не загружается и остаётся утверждённый статичный hero, а mobile без этого системного ограничения продолжает плавную сцену примерно до 30 FPS со сниженным DPR;
+- добавлены мягкие scroll-reveal, pointer sheen и атмосферное движение glow-слоёв; исправлен мобильный horizontal overflow от фоновых эффектов.
 
 ### Проверено
 
 - WebPlanUx/Deployment regression: 14/14 PASS;
-- JavaScript syntax check: PASS;
-- Edge WebGL smoke: контекст активен, canvas 697×537, console SEVERE = 0;
+- JavaScript source + production bundle syntax: PASS;
+- `Build-Web3D.ps1`: PASS, bundle source hash совпадает;
+- Edge Three.js smoke: `data-engine="three.js r186"`, console SEVERE = 0;
 - desktop interaction smoke: feature-caption, hotspot focus, scroll reveal и pointer sheen работают;
-- mobile layout smoke: horizontal overflow отсутствует.
+- mobile layout smoke: horizontal overflow отсутствует;
+- reduced-motion smoke: motion-классы не включаются, контент остаётся видимым.
 
 ## [0.1.10-preview.60-rc.1] - 2026-09-29
 

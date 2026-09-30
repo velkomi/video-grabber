@@ -24,6 +24,43 @@ public sealed class WebPlanUxTests
         var syncAsset = new FileInfo(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
             "videograbber-sync.webp"));
+        var heroThreePath = Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "hero-three.js");
+        var heroThree = File.ReadAllText(heroThreePath);
+        var heroSourceHash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    File.ReadAllBytes(heroThreePath)))
+            .ToLowerInvariant();
+        var heroBundlePath = Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "hero-three.bundle.js");
+        var heroBundle = new FileInfo(heroBundlePath);
+        var heroBundleText = File.ReadAllText(heroBundlePath);
+        var web3dBuilder = File.ReadAllText(Path.Combine(
+            root, "scripts", "Build-Web3D.ps1"));
+        var threeModule = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "vendor", "three.module.js"));
+        var threeCore = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "vendor", "three.core.js"));
+        var threeLicense = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "vendor", "three.LICENSE.txt"));
+        var threeVersionPath = Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "vendor", "three.version.txt");
+        var threeVersion = File.ReadAllText(threeVersionPath).Trim();
+        var planetMap = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
+            "videograbber-planet-map.webp"));
+        var planetBump = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
+            "videograbber-planet-bump.png"));
+        var planetEmissive = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
+            "videograbber-planet-emissive.webp"));
 
         var htmlIds = System.Text.RegularExpressions.Regex.Matches(
                 html, "id=\\\"([^\\\"]+)\\\"")
@@ -54,7 +91,13 @@ public sealed class WebPlanUxTests
         Assert.Contains("Portable ZIP", html);
         Assert.Contains("/assets/videograbber-hero.webp", html);
         Assert.Contains("hero-art-shell", html);
-        Assert.Contains("id=\"hero-webgl\"", html);
+        Assert.Contains("id=\"hero-three\"", html);
+        Assert.DoesNotContain("src=\"/web/hero-three.js\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("src=\"/web/hero-three.bundle.js\"", html, StringComparison.Ordinal);
+        Assert.Contains("import(\"/web/hero-three.bundle.js\")", js);
+        Assert.Contains("requestIdleCallback", js);
+        Assert.Contains("matchMedia(\"(prefers-reduced-motion: reduce)\")", js);
+        Assert.Contains("canvas.hidden = true", js);
         Assert.Contains("hero-hotspot", html);
         Assert.Contains("data-feature=\"video\"", html);
         Assert.Contains("id=\"hero-feature-caption\"", html);
@@ -64,6 +107,35 @@ public sealed class WebPlanUxTests
         Assert.Contains("/assets/videograbber-sync.webp", html);
         Assert.True(syncAsset.Exists);
         Assert.True(syncAsset.Length > 10_000);
+        Assert.True(heroBundle.Exists);
+        Assert.InRange(heroBundle.Length, 300_000, 1_000_000);
+        Assert.Contains("three.js r", heroBundleText, StringComparison.Ordinal);
+        Assert.Contains(
+            $"source-sha256:{heroSourceHash}",
+            heroBundleText,
+            StringComparison.Ordinal);
+        Assert.Contains("videograbber-planet-map.webp", heroBundleText, StringComparison.Ordinal);
+        Assert.Contains("videograbber:hero-accent", heroBundleText, StringComparison.Ordinal);
+        Assert.Contains("'0.28.2'", web3dBuilder, StringComparison.Ordinal);
+        Assert.Contains("'0.186.1'", web3dBuilder, StringComparison.Ordinal);
+        Assert.Contains("esbuild@$EsbuildVersion", web3dBuilder, StringComparison.Ordinal);
+        Assert.Contains("three.version.txt", web3dBuilder, StringComparison.Ordinal);
+        Assert.Contains("--bundle", web3dBuilder, StringComparison.Ordinal);
+        Assert.Contains("hero-three.bundle.js", web3dBuilder, StringComparison.Ordinal);
+        Assert.Contains("three.LICENSE.txt", web3dBuilder, StringComparison.Ordinal);
+        Assert.True(threeModule.Exists);
+        Assert.True(threeModule.Length > 500_000);
+        Assert.True(threeCore.Exists);
+        Assert.True(threeCore.Length > 1_000_000);
+        Assert.True(threeLicense.Exists);
+        Assert.True(threeLicense.Length > 500);
+        Assert.Equal("0.186.1", threeVersion);
+        Assert.True(planetMap.Exists);
+        Assert.True(planetMap.Length > 50_000);
+        Assert.True(planetBump.Exists);
+        Assert.True(planetBump.Length > 50_000);
+        Assert.True(planetEmissive.Exists);
+        Assert.True(planetEmissive.Length > 5_000);
         Assert.DoesNotContain("Тарифы без скрытых", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Отправить на мой компьютер", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Supabase", html, StringComparison.OrdinalIgnoreCase);
@@ -82,6 +154,11 @@ public sealed class WebPlanUxTests
         Assert.DoesNotContain("Whisper", js, StringComparison.Ordinal);
         Assert.Contains("Оплата открывается на отдельной защищённой странице", html, StringComparison.Ordinal);
         Assert.Contains("Сейчас не удалось открыть оплату", js, StringComparison.Ordinal);
+        Assert.Contains("AddResponseCompression", program);
+        Assert.Contains("UseResponseCompression", program);
+        Assert.Contains("EnableForHttps = true", program);
+        Assert.Contains("BrotliCompressionProvider", program);
+        Assert.Contains("GzipCompressionProvider", program);
         Assert.Contains("VG_WINDOWS_SETUP_PATH", program);
         Assert.Contains("VideoGrabber-Setup.exe", program);
         Assert.Contains("VG_WINDOWS_DOWNLOAD_PATH", program);
@@ -90,22 +167,43 @@ public sealed class WebPlanUxTests
         Assert.Contains("href=\"/miniapp/\"", html);
         Assert.Contains("openPlanDialog", js);
         Assert.Contains("setupHeroScene", js);
-        Assert.Contains("setupHeroWebGL", js);
+        Assert.DoesNotContain("setupHeroWebGL", js, StringComparison.Ordinal);
         Assert.Contains("setupHeroFeatureFocus", js);
+        Assert.Contains("new THREE.SphereGeometry", heroThree);
+        Assert.Contains("new THREE.TorusGeometry", heroThree);
+        Assert.Contains("new THREE.ExtrudeGeometry", heroThree);
+        Assert.Contains("new THREE.MeshPhysicalMaterial", heroThree);
+        Assert.Contains("canvas.dataset.engine", heroThree);
+        Assert.Contains("THREE.REVISION", heroThree);
+        Assert.Contains("renderer.setAnimationLoop", heroThree);
+        Assert.Contains("./vendor/three.module.js", heroThree);
+        Assert.DoesNotContain("https://", heroThree, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("videograbber-planet-map.webp", heroThree);
+        Assert.Contains("videograbber-planet-bump.png", heroThree);
+        Assert.Contains("videograbber-planet-emissive.webp", heroThree);
+        Assert.Contains("videograbber:hero-accent", heroThree);
+        Assert.Contains("time - lastPaintTime < 32", heroThree);
+        Assert.Contains("narrowViewport ? 1.1 : 1.5", heroThree);
+        Assert.DoesNotContain(
+            "reducedMotion || narrowViewport || !heroVisible",
+            heroThree,
+            StringComparison.Ordinal);
+        Assert.Contains(@"split(/\s+/)", heroThree, StringComparison.Ordinal);
         Assert.Contains("setupPointerShine", js);
         Assert.Contains("setupScrollReveal", js);
         Assert.Contains("videograbber:hero-accent", js);
         Assert.Contains("IntersectionObserver", js);
-        Assert.Contains("getContext(\"webgl\"", js);
         Assert.Contains("prefers-reduced-motion", js);
-        Assert.Contains("heroVisible", js);
-        Assert.Contains("IntersectionObserver", js);
+        Assert.Contains("prefers-reduced-motion", heroThree);
+        Assert.Contains("heroVisible", heroThree);
+        Assert.Contains("IntersectionObserver", heroThree);
         Assert.Contains("overflow-x: hidden", styles);
         Assert.Contains("motion-ready .reveal-item", styles);
         Assert.Contains("Не удалось загрузить данные аккаунта", js);
         Assert.Contains("Скачивайте видео проще", publicSmoke);
         Assert.Contains("Вход и синхронизация", publicSmoke);
         Assert.Contains("Тарифы без скрытых", publicSmoke);
+        Assert.Contains("content-encoding: (br|gzip)", publicSmoke, StringComparison.Ordinal);
         Assert.Contains("PUBLIC_SURFACE_OK", publicSmoke);
         Assert.Contains("recommendedPlanForOperation", js);
         Assert.DoesNotContain("courseOption.disabled", js, StringComparison.Ordinal);

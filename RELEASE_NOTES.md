@@ -1,12 +1,17 @@
 # Журнал подготовки релизов
 
-## Web polish after preview.60 - 2026-09-30
+## Three.js geometric hero after preview.60 - 2026-09-30
 
-- The approved 3D hero now has semantic interactive hotspots for URL, video, MP3, full course, Windows and Telegram; each focus state updates a human-facing caption and WebGL accent.
-- Added progressive scroll reveal, subtle pointer sheen and slow ambient glow motion without moving primary controls into canvas.
-- WebGL rendering pauses when the hero leaves the viewport or the page is hidden; the approved static artwork remains the fallback.
-- Mobile overflow caused by animated background glows was detected in browser QA and fixed.
-- Targeted regression 14/14 PASS, JS syntax PASS, WebGL Edge smoke PASS, desktop/mobile browser smoke PASS with zero severe console errors.
+- Replaced the former custom WebGL enhancement with a standalone geometric Three.js hero while keeping the rest of the public site as ordinary HTML/CSS/JS.
+- Scene geometry: PBR planet sphere, three torus orbits, six extruded rounded feature cards, central VG badge and subtle particle accents.
+- Added self-hosted planet diffuse/bump/emissive maps and physically lit cold-blue materials; approved raster artwork remains the instant fallback.
+- Pinned self-hosted Three.js `0.186.1` with MIT license; canonical `scripts/Build-Web3D.ps1` bundles the scene through esbuild `0.28.2`.
+- Production bundle is tree-shaken (~596 KB raw / ~152 KB gzip estimate) and carries the SHA-256 of `hero-three.js`; regression verifies the bundle matches current source.
+- Three.js loads lazily after the approved hero art using idle scheduling, so the first visual is not blocked by the 3D runtime.
+- Added ASP.NET Core Brotli/Gzip response compression for JS/CSS/JSON over HTTPS.
+- Semantic hotspots remain real HTML links and update the scene accent/caption; rendering pauses offscreen and on hidden tabs.
+- With reduced-motion enabled the Three.js runtime is not loaded at all and the approved static hero remains visible. Normal mobile keeps the geometric scene animated with a ~30 FPS cap and lower DPR instead of disabling 3D entirely.
+- Targeted regression 14/14 PASS, source/bundle syntax PASS, Three.js Edge smoke PASS, desktop/mobile/reduced-motion browser smoke PASS with zero severe console errors.
 
 ## [0.1.10-preview.60-rc.1] - 2026-09-29
 

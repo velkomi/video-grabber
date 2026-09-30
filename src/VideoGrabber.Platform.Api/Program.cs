@@ -1,6 +1,8 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.CookiePolicy;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
@@ -117,6 +119,24 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 builder.Services.AddAuthorization();
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+    [
+        "application/javascript",
+        "text/javascript",
+        "text/css",
+        "application/json",
+        "application/problem+json"
+    ]);
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+    options.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+    options.Level = CompressionLevel.Fastest);
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -284,6 +304,7 @@ var allowedOrigins = builder.Configuration.GetSection("Security:AllowedOrigins")
 
 var app = builder.Build();
 
+app.UseResponseCompression();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapGet("/", () => Results.Redirect("/web/", permanent: false));

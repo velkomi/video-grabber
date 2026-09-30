@@ -9,13 +9,13 @@
 
 ## Rendered implementation
 
-- Local final implementation: `D:\CODEX\Temp\vg-final-webgl-1122x1402.png`
+- Local final implementation: `D:\CODEX\Temp\vg-three-final-default.png`
 - Browser: Microsoft Edge / Chromium, headless with WebGL/SwiftShader enabled
 - Requested browser window: **1122 × 1402**
 - Captured content viewport: **1098 × 1263 CSS px**
 - Implementation screenshot pixels: **1098 × 1263**
-- Local route: `http://127.0.0.1:8879/web/`
-- Final WebGL working tree is based on commit `75c3689` and was verified before the WebGL commit was created.
+- Local route: `http://127.0.0.1:8881/web/`
+- Scene runtime: self-hosted Three.js **0.186.1**, production tree-shaken bundle built through esbuild **0.28.2**.
 
 ## Primary interactions tested
 
@@ -26,8 +26,9 @@
 - Native e-mail validation blocks malformed e-mail before network activity.
 - Application-side e-mail validation returns human-readable copy.
 - Hero parallax reacts to pointer movement.
-- Realtime WebGL enhancement initializes successfully on desktop; tested canvas size **697 × 537**, WebGL context present, **0 SEVERE console errors**.
-- WebGL is progressive: the approved 3D raster remains the fallback; reduced-motion and narrow viewports do not run an endless animation loop.
+- Realtime Three.js geometry initializes successfully on desktop; renderer reports `data-engine="three.js r186"`, canvas is populated and browser console has **0 SEVERE errors**.
+- Geometry is real, not a flat SVG/shader illusion: PBR sphere, torus orbits and extruded rounded feature cards are rendered by Three.js.
+- The approved 3D raster remains the instant fallback while Three.js and textures load; with reduced-motion the Three.js runtime is not loaded, while normal narrow/mobile viewports keep animation at a reduced ~30 FPS and lower DPR.
 - Feature hotspots are semantic: URL, Video, MP3, Course, Windows and Telegram update the caption and WebGL accent without moving the real action out of HTML.
 - WebGL animation pauses automatically when the hero leaves the viewport or the page is hidden.
 - Hover/focus on URL, Video, MP3, Course, Windows and Telegram changes the explanatory caption and WebGL accent while the real links remain normal HTML controls.
@@ -62,7 +63,7 @@ The approved concept and browser-rendered implementation were inspected together
 
 Focused comparison was necessary for:
 
-- **Hero imagery:** uses a real raster asset derived from the approved concept plus a transparent realtime WebGL lighting/orbit layer, rather than a flat SVG/CSS reconstruction.
+- **Hero imagery:** uses the approved raster as fallback/visual continuity, then crossfades to a true standalone Three.js scene with physical materials and real geometry.
 - **Synchronization artwork:** now uses a real raster asset derived from the approved concept.
 - **Pricing:** retains the approved four-card hierarchy, with Unlimited Video marked `Популярный` and Full Course marked `Для курсов`.
 - **Account block:** rewritten to “Вход и синхронизация” and no longer exposes Supabase/Magic Link implementation wording or raw JavaScript errors.
@@ -90,8 +91,9 @@ Focused comparison was necessary for:
 ### Image quality and asset fidelity
 
 - Hero and sync illustrations are derived directly from the approved source image and exported as optimized WebP assets.
-- Hero keeps the approved smooth 3D render as visual truth and adds a true WebGL layer for moving volumetric lighting and orbit glow, plus pointer parallax.
-- The WebGL layer is non-blocking: unsupported browsers retain the approved image without losing content or controls.
+- Hero uses self-hosted procedural planet diffuse/bump/emissive maps, MeshPhysicalMaterial, three actual torus meshes, extruded rounded cards and a central VG badge.
+- Three.js is non-blocking: it is dynamically imported after the approved hero image and idle scheduling; unsupported browsers retain the approved image without losing content or controls.
+- Runtime bundle is tree-shaken and source-hash protected so stale 3D bundles are caught by regression tests.
 - No visible source-text contamination remains after final recrop.
 
 ### Copy and product content
@@ -105,7 +107,8 @@ Focused comparison was necessary for:
 ## Remaining P3 polish
 
 - Exact source display font could be matched more closely in a later branding pass.
-- Background cosmic decoration can be made richer with an additional dedicated texture layer if desired, without changing layout or UX.
+- Current hero objects are high-quality procedural Three.js geometry. A later art pass can replace selected cards/planet details with bespoke Blender-authored GLB meshes without changing the public UI contract.
+- Background cosmic decoration can be made richer with an additional dedicated texture/HDRI layer if desired, without changing layout or UX.
 - Final page is intentionally taller than the generated concept sheet on some desktop viewports to preserve readable copy and responsive behavior.
 
 ## Final result
