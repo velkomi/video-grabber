@@ -342,43 +342,44 @@ const planCatalog = {
   free: {
     name: "Free",
     price: "0 ₽",
-    description: "Попробуйте основные загрузки VideoGrabber без оплаты.",
+    description: "Для знакомства с VideoGrabber без оплаты.",
     features: [
-      "10 обычных загрузок видео за всё время аккаунта",
+      "10 обычных видео навсегда",
       "Один аккаунт для сайта, Windows и Telegram",
-      "Без MP3, редактора, транскрибации и полного курса"
+      "Полные курсы не входят"
     ]
   },
   start: {
     name: "Start",
     price: "1 500 ₽ / 30 дней",
-    description: "Для регулярных небольших загрузок и расширенных локальных инструментов.",
+    description: "Для обычных регулярных загрузок.",
     features: [
       "До 10 загрузок в сутки",
-      "MP3, редактор и локальная транскрибация",
-      "Полный курс не включён"
+      "MP3 и редактор",
+      "Локальная транскрибация",
+      "Полные курсы не входят"
     ]
   },
   unlimited_video: {
     name: "Unlimited Video",
     price: "2 500 ₽ / 30 дней",
-    description: "Для частых загрузок отдельных видео без дневного лимита.",
+    description: "Для тех, кто часто скачивает отдельные видео.",
     features: [
       "Отдельные видео без лимита",
-      "MP3, редактор и локальная транскрибация",
-      "Полный курс не включён"
+      "MP3 и редактор",
+      "Локальная транскрибация",
+      "Полные курсы не входят"
     ]
   },
   full_course: {
     name: "Full Course",
     price: "5 000 ₽ / 30 дней",
-    description: "Максимальный режим VideoGrabber для отдельных видео и полного курса.",
+    description: "Для курсов, закрытых страниц и максимальных возможностей.",
     features: [
-      "Отдельные видео без лимита",
-      "MP3, редактор и локальная транскрибация",
-      "Выбор модели транскрибации: Быстро / Оптимально / Максимальное качество",
-      "Дополнительная модель скачивается один раз и сохраняется на компьютере",
-      "Полный курс: структура + TXT рядом с каждым видео по желанию"
+      "Всё из Unlimited Video",
+      "Полные курсы и закрытые страницы",
+      "Сохранение структуры уроков и материалов",
+      "TXT рядом с видео по желанию"
     ]
   }
 };
@@ -414,7 +415,7 @@ function openPlanDialog(planId, reason = "") {
   const action = $("#plan-dialog-action");
   action.textContent = requestedPlan === "free"
     ? "Начать бесплатно"
-    : "Перейти к оформлению";
+    : "Выбрать этот тариф";
   $("#plan-dialog").showModal();
 }
 
@@ -492,7 +493,7 @@ function renderAccount() {
   if (!access || !profile) return;
 
   $("#account-title").textContent =
-    profile.role === "owner_admin" ? "Owner account" : "VideoGrabber account";
+    profile.role === "owner_admin" ? "Ваш аккаунт · Администратор" : "Ваш аккаунт";
   const adminLink = $("#admin-link");
   if (adminLink) adminLink.hidden = profile.role !== "owner_admin";
   $("#plan-value").textContent = planName(access.planId);
@@ -586,12 +587,12 @@ function renderDevices() {
       name.textContent = device.name;
       const meta = document.createElement("small");
       meta.textContent = device.lastSeenAt
-        ? "Последний сигнал: " + new Date(device.lastSeenAt).toLocaleString()
-        : "Ещё не подтверждал online-состояние";
+        ? "Последняя связь: " + new Date(device.lastSeenAt).toLocaleString()
+        : "Компьютер ещё не выходил на связь";
       main.append(name, meta);
       const pill = document.createElement("span");
       pill.className = "pill " + (isOnline(device) ? "online" : "offline");
-      pill.textContent = isOnline(device) ? "online" : "offline";
+      pill.textContent = isOnline(device) ? "в сети" : "не в сети";
       row.append(main, pill);
       list.append(row);
     }
@@ -697,7 +698,7 @@ function renderBilling() {
   host.replaceChildren();
   const catalog = state.paymentProducts;
   if (!catalog) {
-    host.textContent = "Платёжный каталог не настроен.";
+    host.textContent = "Оформление тарифов сейчас недоступно. Попробуйте позже.";
     return;
   }
   const labels = {
@@ -1121,7 +1122,27 @@ async function refreshDevicesQuietly() {
   } catch {}
 }
 
+function setupHeroScene() {
+  const visual = $("#hero-visual");
+  if (!visual || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  const update = (event) => {
+    const rect = visual.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+    visual.style.setProperty("--tilt-y", ((x - .5) * 8).toFixed(2) + "deg");
+    visual.style.setProperty("--tilt-x", ((.5 - y) * 6).toFixed(2) + "deg");
+  };
+
+  visual.addEventListener("pointermove", update);
+  visual.addEventListener("pointerleave", () => {
+    visual.style.setProperty("--tilt-x", "0deg");
+    visual.style.setProperty("--tilt-y", "0deg");
+  });
+}
+
 async function start() {
+  setupHeroScene();
   captureTelegramAccountLink();
   captureDesktopFlow();
 
@@ -1157,7 +1178,8 @@ async function start() {
     try {
       await beginGoogleSignIn();
     } catch (error) {
-      setStatus("#auth-status", "Вход не начат: " + error.message, "error");
+      console.error("Google sign-in failed", error);
+      setStatus("#auth-status", "Не удалось начать вход. Попробуйте ещё раз.", "error");
     }
   });
 
@@ -1178,10 +1200,10 @@ async function start() {
       const message = String(error.message || error);
       const translated = ({
         "Email address not authorized":
-          "Для этого адреса пока недоступна отправка Magic Link.",
+          "Для этого адреса пока недоступен вход по почте.",
         "email rate limit exceeded":
           "Слишком много писем. Подождите немного и попробуйте снова."
-      })[message] || message;
+      })[message] || "Не удалось отправить ссылку для входа. Попробуйте ещё раз позже.";
       setStatus("#auth-status", translated, "error");
     } finally {
       button.disabled = false;
@@ -1205,8 +1227,9 @@ async function start() {
     const completed = await completeSupabaseCallback();
     if (completed) setStatus("#job-status", "Вход подтверждён.", "success");
   } catch (error) {
+    console.error("Auth callback failed", error);
     clearSession();
-    signedOut("Ошибка входа: " + error.message);
+    signedOut("Не удалось завершить вход. Попробуйте войти ещё раз.");
     return;
   }
 
@@ -1228,7 +1251,7 @@ async function start() {
       "#auth-status",
       error.message === "telegram_link_reconciliation_required"
         ? "Telegram-аккаунт содержит данные, требующие ручной проверки перед объединением."
-        : "Не удалось привязать Telegram: " + error.message,
+        : "Не удалось привязать Telegram. Попробуйте ещё раз позже.",
       "error"
     );
   }
@@ -1239,7 +1262,7 @@ async function start() {
     localStorage.removeItem(keys.desktop);
     setStatus(
       "#auth-status",
-      "Не удалось передать вход в Windows VideoGrabber: " + error.message,
+      "Не удалось передать вход в Windows VideoGrabber. Повторите попытку.",
       "error"
     );
   }
@@ -1252,7 +1275,8 @@ async function start() {
       signedOut("Сессия истекла. Войдите снова.");
       return;
     }
-    signedOut("Не удалось загрузить кабинет: " + error.message);
+    console.error("Dashboard loading failed", error);
+    signedOut("Не удалось загрузить данные аккаунта. Обновите страницу или войдите снова.");
     return;
   }
 

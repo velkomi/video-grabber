@@ -15,6 +15,16 @@ public sealed class WebPlanUxTests
         var program = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "Program.cs"));
 
+        var htmlIds = System.Text.RegularExpressions.Regex.Matches(
+                html, "id=\\\"([^\\\"]+)\\\"")
+            .Select(match => match.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var referencedIds = System.Text.RegularExpressions.Regex.Matches(
+                js, @"\$\(\""\#([A-Za-z0-9_-]+)\""\)")
+            .Select(match => match.Groups[1].Value)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.DoesNotContain(referencedIds, id => !htmlIds.Contains(id));
+
         Assert.Contains("data-plan=\"free\"", html);
         Assert.Contains("data-plan=\"start\"", html);
         Assert.Contains("data-plan=\"unlimited_video\"", html);
@@ -22,19 +32,22 @@ public sealed class WebPlanUxTests
         Assert.Contains("id=\"plan-dialog\"", html);
         Assert.Contains("href=\"/download/windows\"", html);
         Assert.Contains("href=\"/download/windows/portable\"", html);
-        Assert.Contains("Скачивание видео", html);
-        Assert.Contains("YouTube и Shorts", html);
-        Assert.Contains("Instagram Reels", html);
-        Assert.Contains("TikTok", html);
-        Assert.Contains("Pinterest", html);
-        Assert.Contains("Транскрибация", html);
-        Assert.Contains("Base, Small или Medium", html);
-        Assert.Contains("Видео-уроки и курсы", html);
-        Assert.Contains("DRM-защита не обходится", html);
-        Assert.Contains("Редактирование видео", html);
-        Assert.Contains("Скачать установщик (.exe)", html);
-        Assert.Contains("после установки VideoGrabber готов к работе", html);
+        Assert.Contains("Скачивайте видео проще", html);
+        Assert.Contains("Как это работает", html);
+        Assert.Contains("Вход и синхронизация", html);
+        Assert.Contains(">Тарифы</h2>", html);
+        Assert.Contains("10 обычных видео навсегда", html);
+        Assert.Contains("Популярный", html);
+        Assert.Contains("Для курсов", html);
+        Assert.Contains("Всё из Unlimited Video", html);
+        Assert.Contains("Скачать установщик", html);
         Assert.Contains("Portable ZIP", html);
+        Assert.Contains("planet-scene", html);
+        Assert.Contains("hero-visual", html);
+        Assert.DoesNotContain("Тарифы без скрытых", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Отправить на мой компьютер", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Supabase", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Cannot set properties", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("id=\"admin-link\"", html);
         Assert.Contains("/assets/videograbber-icon.png", html);
         Assert.DoesNotContain("/download/windows/checksum", html, StringComparison.OrdinalIgnoreCase);
@@ -54,8 +67,10 @@ public sealed class WebPlanUxTests
         Assert.Contains("VG_WINDOWS_DOWNLOAD_PATH", program);
         Assert.Contains("VideoGrabber-Windows.zip", program);
         Assert.Contains("MapGet(\"/download/windows/portable\"", program);
-        Assert.Contains("https://t.me/Velkoshkin", html);
+        Assert.Contains("href=\"/miniapp/\"", html);
         Assert.Contains("openPlanDialog", js);
+        Assert.Contains("setupHeroScene", js);
+        Assert.Contains("Не удалось загрузить данные аккаунта", js);
         Assert.Contains("recommendedPlanForOperation", js);
         Assert.DoesNotContain("courseOption.disabled", js, StringComparison.Ordinal);
         Assert.DoesNotContain("mp3Option.disabled", js, StringComparison.Ordinal);
