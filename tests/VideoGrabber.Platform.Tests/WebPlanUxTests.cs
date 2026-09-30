@@ -16,6 +16,9 @@ public sealed class WebPlanUxTests
             root, "src", "VideoGrabber.Platform.Api", "Program.cs"));
         var publicSmoke = File.ReadAllText(Path.Combine(
             root, "deploy", "platform", "verify_public_surface.sh"));
+        var heroAsset = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
+            "videograbber-hero.webp"));
 
         var htmlIds = System.Text.RegularExpressions.Regex.Matches(
                 html, "id=\\\"([^\\\"]+)\\\"")
@@ -44,8 +47,12 @@ public sealed class WebPlanUxTests
         Assert.Contains("Всё из Unlimited Video", html);
         Assert.Contains("Скачать установщик", html);
         Assert.Contains("Portable ZIP", html);
-        Assert.Contains("planet-scene", html);
+        Assert.Contains("/assets/videograbber-hero.webp", html);
+        Assert.Contains("hero-art-shell", html);
+        Assert.Contains("hero-hotspot", html);
         Assert.Contains("hero-visual", html);
+        Assert.True(heroAsset.Exists);
+        Assert.True(heroAsset.Length > 50_000);
         Assert.DoesNotContain("Тарифы без скрытых", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Отправить на мой компьютер", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Supabase", html, StringComparison.OrdinalIgnoreCase);

@@ -118,7 +118,7 @@ button { color: inherit; }
 }
 .button:hover { transform: translateY(-2px); }
 .button:active { transform: translateY(0); }
-.button:focus-visible, .price-card:focus-visible, .orb-card:focus-visible {
+.button:focus-visible, .price-card:focus-visible, .hero-hotspot:focus-visible {
   outline: 3px solid rgba(101, 173, 255, .48);
   outline-offset: 3px;
 }
@@ -198,137 +198,65 @@ main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
 .hero-visual {
   min-height: 540px;
   position: relative;
-  perspective: 1100px;
+  perspective: 1200px;
   transform-style: preserve-3d;
   --tilt-x: 0deg;
   --tilt-y: 0deg;
 }
 .space-haze {
   position: absolute;
-  inset: 4% -8% -3% 2%;
+  inset: 3% -5% -4% 0;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 52% 48%, rgba(62, 111, 255, .3), rgba(83, 53, 255, .12) 32%, transparent 62%),
-    radial-gradient(circle at 72% 36%, rgba(252, 137, 236, .13), transparent 31%);
-  filter: blur(24px);
+    radial-gradient(circle at 52% 48%, rgba(62, 111, 255, .28), rgba(83, 53, 255, .10) 34%, transparent 65%),
+    radial-gradient(circle at 72% 36%, rgba(252, 137, 236, .10), transparent 32%);
+  filter: blur(28px);
+  pointer-events: none;
 }
-.planet-scene {
+.hero-art-shell {
   position: absolute;
-  inset: 0;
+  inset: -5% -6% -7% -4%;
   transform-style: preserve-3d;
-  transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+  transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateZ(24px);
   transition: transform .16s ease-out;
 }
-.planet {
-  position: absolute;
-  width: 248px;
-  height: 248px;
-  left: 50%;
-  top: 49%;
-  transform: translate(-50%, -50%) translateZ(55px);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 36% 28%, rgba(255,255,255,.34) 0 3%, transparent 9%),
-    radial-gradient(circle at 34% 31%, #4865af 0, #17376b 19%, #0d214c 45%, #07132e 71%, #050918 100%);
-  box-shadow:
-    inset -34px -30px 48px rgba(0,0,0,.58),
-    inset 22px 16px 35px rgba(79, 140, 255, .28),
-    0 0 32px rgba(75, 121, 255, .7),
-    0 0 110px rgba(72, 69, 255, .5);
-}
-.planet::before {
-  content: "";
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  border: 2px solid rgba(102, 167, 255, .33);
-  box-shadow: 0 0 24px rgba(78, 136, 255, .58);
-}
-.planet::after {
-  content: "";
-  position: absolute;
-  inset: 18% 12% 50% 19%;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(121, 180, 255, .2), transparent 68%);
-  filter: blur(5px);
-}
-.planet-grid {
-  position: absolute;
-  inset: 10%;
-  border-radius: 50%;
-  opacity: .28;
-  background:
-    repeating-radial-gradient(ellipse at center, transparent 0 19px, rgba(103,154,255,.36) 20px 21px, transparent 22px 38px),
-    repeating-linear-gradient(90deg, transparent 0 34px, rgba(99,151,255,.23) 35px 36px, transparent 37px 68px);
-  mask-image: radial-gradient(circle, #000 35%, transparent 77%);
-}
-.planet-logo {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 48px;
-  font-weight: 900;
-  letter-spacing: -.05em;
-  color: #73c5ff;
-  text-shadow: 0 0 16px #418aff, 0 0 34px #574aff;
-}
-.planet-orbit {
-  position: absolute;
-  left: 50%;
-  top: 49%;
-  border: 2px solid rgba(121, 132, 255, .48);
-  border-radius: 50%;
-  transform-style: preserve-3d;
+.hero-art {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
   pointer-events: none;
-  filter: drop-shadow(0 0 14px rgba(120, 74, 255, .6));
+  user-select: none;
+  filter:
+    drop-shadow(0 24px 42px rgba(0, 0, 0, .34))
+    drop-shadow(0 0 28px rgba(81, 102, 255, .17));
 }
-.orbit-one {
-  width: 385px; height: 108px;
-  transform: translate(-50%, -50%) rotateZ(-8deg) rotateX(72deg) translateZ(35px);
-}
-.orbit-two {
-  width: 330px; height: 92px;
-  transform: translate(-50%, -50%) rotateZ(28deg) rotateX(73deg) translateZ(25px);
-  border-color: rgba(255, 145, 219, .42);
-}
-.orbit-three {
-  width: 280px; height: 74px;
-  transform: translate(-50%, -50%) rotateZ(54deg) rotateX(74deg) translateZ(18px);
-  border-color: rgba(75, 173, 255, .42);
-}
-.orb-card {
+.hero-hotspot {
   position: absolute;
-  width: 168px;
-  min-height: 82px;
-  padding: 15px 16px 13px 51px;
-  border: 1px solid rgba(122, 165, 255, .3);
-  border-radius: 17px;
-  background:
-    linear-gradient(145deg, rgba(33, 57, 105, .88), rgba(13, 24, 49, .94)),
-    rgba(10, 22, 47, .9);
-  box-shadow: inset 0 0 26px rgba(99, 137, 255, .08), 0 14px 40px rgba(0,0,0,.3), 0 0 22px rgba(73, 117, 255, .12);
-  backdrop-filter: blur(15px);
-  transform-style: preserve-3d;
-  transition: transform .24s ease, border-color .24s ease, box-shadow .24s ease;
+  display: block;
+  border-radius: 22px;
+  border: 1px solid transparent;
+  background: rgba(89, 127, 255, 0);
+  transition:
+    background .2s ease,
+    border-color .2s ease,
+    box-shadow .2s ease,
+    transform .2s ease;
 }
-.orb-card:hover { border-color: rgba(139, 194, 255, .72); box-shadow: 0 18px 46px rgba(0,0,0,.36), 0 0 30px rgba(76, 126, 255, .28); }
-.orb-card b { display: block; font-size: 15px; }
-.orb-card small { display: block; color: #9fb0cd; font-size: 11px; line-height: 1.35; margin-top: 3px; }
-.orb-icon {
-  position: absolute; left: 14px; top: 18px;
-  width: 28px; height: 28px; display: grid; place-items: center;
-  border-radius: 9px;
-  background: linear-gradient(140deg, #56afff, #785fff);
-  box-shadow: 0 0 20px rgba(89, 124, 255, .52);
-  font-size: 17px; font-weight: 900;
+.hero-hotspot:hover,
+.hero-hotspot:focus-visible {
+  background: rgba(83, 124, 255, .08);
+  border-color: rgba(133, 184, 255, .44);
+  box-shadow: 0 0 28px rgba(77, 98, 255, .25);
+  transform: translateZ(10px) scale(1.02);
 }
-.card-url { left: 13%; top: 12%; transform: rotate(-7deg) translateZ(70px); }
-.card-video { right: 3%; top: 14%; transform: rotate(7deg) translateZ(75px); }
-.card-mp3 { left: 2%; top: 51%; transform: rotate(4deg) translateZ(65px); }
-.card-course { right: -2%; top: 49%; transform: rotate(-4deg) translateZ(68px); }
-.card-windows { left: 21%; bottom: 4%; transform: rotate(6deg) translateZ(72px); }
-.card-telegram { right: 8%; bottom: 6%; transform: rotate(-7deg) translateZ(70px); }
+.hotspot-url { left: 16%; top: 8%; width: 25%; height: 18%; }
+.hotspot-video { right: 8%; top: 8%; width: 27%; height: 20%; }
+.hotspot-mp3 { left: 5%; top: 39%; width: 26%; height: 19%; }
+.hotspot-course { right: 1%; top: 37%; width: 32%; height: 22%; }
+.hotspot-windows { left: 20%; bottom: 5%; width: 29%; height: 22%; }
+.hotspot-telegram { right: 8%; bottom: 5%; width: 27%; height: 21%; }
 
 .section { padding: 54px 0; position: relative; }
 .section-card, .sync-card, .download-card, .panel {
@@ -558,22 +486,12 @@ footer {
 .dialog-reason { padding: 12px; border-radius: 12px; background: rgba(255, 183, 89, .08); border: 1px solid rgba(255, 196, 107, .2); color: #ffd395; }
 .dialog-actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
 
-@keyframes planetFloat {
-  0%,100% { transform: translate(-50%, -50%) translateZ(55px) translateY(0); }
-  50% { transform: translate(-50%, -50%) translateZ(55px) translateY(-8px); }
-}
-@keyframes cardFloatA {
-  0%,100% { margin-top: 0; }
-  50% { margin-top: -8px; }
-}
-@keyframes cardFloatB {
-  0%,100% { margin-top: 0; }
-  50% { margin-top: 7px; }
+@keyframes heroArtFloat {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -8px; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .planet { animation: planetFloat 6s ease-in-out infinite; }
-  .card-url, .card-course, .card-windows { animation: cardFloatA 5.8s ease-in-out infinite; }
-  .card-video, .card-mp3, .card-telegram { animation: cardFloatB 6.6s ease-in-out infinite; }
+  .hero-art-shell { animation: heroArtFloat 7s ease-in-out infinite; }
 }
 
 @media (max-width: 1050px) {
@@ -599,14 +517,7 @@ footer {
   .button-hero { width: 100%; }
   .trust-line { display: grid; gap: 7px; }
   .hero-visual { min-height: 430px; transform: scale(.86); transform-origin: center top; margin-bottom: -55px; }
-  .planet { width: 210px; height: 210px; }
-  .orb-card { width: 145px; min-height: 75px; padding-left: 46px; }
-  .card-url { left: 1%; }
-  .card-video { right: -7%; }
-  .card-mp3 { left: -8%; }
-  .card-course { right: -10%; }
-  .card-windows { left: 10%; }
-  .card-telegram { right: 0; }
+  .hero-art-shell { inset: -2% -9% -4% -9%; }
   .section { padding: 38px 0; }
   .section-card, .sync-card, .download-card, .panel { padding: 20px; }
   .steps { grid-template-columns: 1fr; }
