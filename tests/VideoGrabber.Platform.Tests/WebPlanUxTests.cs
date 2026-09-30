@@ -19,6 +19,9 @@ public sealed class WebPlanUxTests
         var heroAsset = new FileInfo(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
             "videograbber-hero.webp"));
+        var syncAsset = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
+            "videograbber-sync.webp"));
 
         var htmlIds = System.Text.RegularExpressions.Regex.Matches(
                 html, "id=\\\"([^\\\"]+)\\\"")
@@ -53,6 +56,9 @@ public sealed class WebPlanUxTests
         Assert.Contains("hero-visual", html);
         Assert.True(heroAsset.Exists);
         Assert.True(heroAsset.Length > 50_000);
+        Assert.Contains("/assets/videograbber-sync.webp", html);
+        Assert.True(syncAsset.Exists);
+        Assert.True(syncAsset.Length > 10_000);
         Assert.DoesNotContain("Тарифы без скрытых", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Отправить на мой компьютер", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Supabase", html, StringComparison.OrdinalIgnoreCase);
