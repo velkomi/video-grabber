@@ -73,6 +73,17 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     public NpgsqlDataSource Database { get; }
+    public string TestDatabaseConnectionString
+    {
+        get
+        {
+            var builder = new NpgsqlConnectionStringBuilder(_clusterConnectionString)
+            {
+                Database = _databaseName
+            };
+            return builder.ConnectionString;
+        }
+    }
     public AdjustableTimeProvider Clock { get; }
     public BrokerEmulator Broker { get; }
     public TelegramApiEmulator TelegramApi { get; } = new();

@@ -23,7 +23,7 @@ public sealed class OwnerAdminAccessTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:PlatformAdmin"] = fixture.Database.ConnectionString,
+                ["ConnectionStrings:PlatformAdmin"] = fixture.TestDatabaseConnectionString,
                 ["VG_OWNER_ADMIN_SUBJECT"] = ownerSubject
             })
             .Build();
