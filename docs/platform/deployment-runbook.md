@@ -24,10 +24,10 @@ The public API serves the installer and portable archive from the host-mounted d
 On the production VPS, run:
 
 ```bash
-bash deploy/platform/update_windows_downloads.sh 0.1.10-preview.56-rc.1 /home/assistant/apps/videograbber-downloads
+bash deploy/platform/update_windows_downloads.sh "$(tr -d '\\r\\n' < VERSION)" /home/assistant/apps/videograbber-downloads
 ```
 
-The helper downloads the setup EXE and Managed portable ZIP from the public release, verifies both against the published manifest, stages them with `.new` suffixes, and only then atomically replaces `VideoGrabber-Setup.exe` and `VideoGrabber-Windows.zip`. It never replaces a live artifact before verification succeeds.
+The command reads the intended version from the repository `VERSION` file so the runbook cannot silently pin an older preview. The helper downloads the setup EXE and Managed portable ZIP from the public release, verifies both against the published manifest, stages them with `.new` suffixes, and only then atomically replaces `VideoGrabber-Setup.exe` and `VideoGrabber-Windows.zip`. It never replaces a live artifact before verification succeeds.
 
 After the API/static-site deployment and download refresh, verify the public surface:
 
