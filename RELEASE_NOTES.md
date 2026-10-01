@@ -1,5 +1,13 @@
 # Журнал подготовки релизов
 
+## Post-preview.60 3D finalization - 2026-10-01
+
+- Finalization work is isolated in `codex/vg-3d-finalization-20261001` and does not change the plain HTML/CSS/JS public architecture or introduce React.
+- Adds release-level requirements for adaptive Three.js rendering quality, browser-only performance diagnostics and a richer self-hosted visual environment.
+- Keeps one Three.js renderer and the existing GSAP story states; ordinary HTML controls remain authoritative.
+- Adds explicit release-preflight documentation so green CI cannot be confused with physical-device, production Web Vitals, official Windows release assets or live deployment evidence.
+- GitHub `release/latest` must not be advanced to preview.60 without Setup EXE + Managed ZIP + SHA-256 manifest for the same source/version.
+
 ## Three.js geometric hero after preview.60 - 2026-09-30
 
 - Replaced the former custom WebGL enhancement with a standalone geometric Three.js hero while keeping the rest of the public site as ordinary HTML/CSS/JS.

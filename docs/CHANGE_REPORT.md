@@ -9,3 +9,8 @@
 | 0.1.9 / 2026-09-09 | Публичный выпуск с авторским блоком и Telegram-контактом | WinUI shell, version, documentation, release ZIP | Oleg | Codex | Release build; 21/21 tests; packaged EXE UI Automation; GitHub Actions | релиз | без цифровой подписи; без DRM-обхода |
 
 Человеческая приёмка изменений `0.1.8-docs.1`: ожидается.
+
+| 0.1.10-preview.56-rc.1 / 2026-09-29 | Консолидация сайта, установщика, owner TOTP и транскрибации курса | Web, installer, Admin, course ASR | Oleg | Codex | Targeted suites + Release builds | RELEASE_NOTES.md | preview |
+| 0.1.10-preview.60-rc.1 / 2026-09-29 | Эксклюзивный owner-admin, очистка пользовательской терминологии, release anti-rollback | API/Admin, Windows UI, Web, deploy | Oleg | Codex | API/App builds, PostgreSQL owner integration test | RELEASE_NOTES.md | preview |
+| post-preview.60 / 2026-10-01 | Настоящий Three.js hero, Raycaster, единый GSAP story-stage, deterministic visual QA | Public Web, Three.js, GSAP, deployment smoke | Oleg | Codex | GitHub Actions + browser/design QA recorded in design-qa.md | design-qa.md | physical-device/field-vitals evidence отдельно |
+

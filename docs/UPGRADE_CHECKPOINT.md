@@ -1,3 +1,37 @@
+# VideoGrabber: актуальная контрольная точка
+
+Дата: 2026-10-01. Ветка разработки: `codex/vg-3d-finalization-20261001`. База: `main@5da0f56b1b0e0c308d1cdf03ae27593ae2336e22`. Версия продукта: `0.1.10-preview.60-rc.1`.
+
+## Состояние на 2026-10-01
+
+- Preview.52–60 объединены в `main`: hardened Whisper retry, TXT-only фоновая транскрибация курса, очистка workspace, установщик, owner-admin/TOTP, упрощённый публичный интерфейс и release anti-rollback.
+- Публичный сайт остаётся обычным HTML/CSS/JS; React не вводился.
+- Hero — настоящая self-hosted Three.js 0.186.1 сцена с PBR-планетой, физически освещёнными орбитами, объёмными карточками, Raycaster и одним renderer.
+- GSAP 3.15.0 + ScrollTrigger управляют единым story-stage `hero → workflow → sync → pricing → windows`.
+- `?visualTest=1` фиксирует детерминированное состояние для визуального QA; reduced-motion оставляет утверждённый статичный fallback без запуска realtime 3D.
+- Последний подтверждённый GitHub Actions build для базы `5da0f56` — success.
+- GitHub `release/latest` всё ещё указывает на старый `v0.1.10-preview.31`; это **не** повод публиковать пустой preview.60 release. Публичный release должен содержать официальный Setup EXE, Managed portable ZIP и SHA-256 manifest, которые проверяет `deploy/platform/update_windows_downloads.sh`.
+
+## Текущая финализация
+
+В ветке `codex/vg-3d-finalization-20261001` выполняется post-preview.60 pass:
+- адаптивное качество Three.js по фактическому frame time;
+- более богатое self-hosted окружение/отражения без CDN;
+- opt-in `?perfDebug=1` для локального LCP/CLS/INP + GPU QA без отправки телеметрии;
+- обновление release/deployment evidence.
+
+## Что нельзя считать подтверждённым без отдельного evidence
+
+- реальный iPhone/Android/Retina GPU pass;
+- production field Web Vitals;
+- Stage/production release-acceptance manual evidence;
+- официальный preview.60 GitHub Release с полным Windows runtime;
+- live payment enablement/deployment.
+
+Ни один из этих пунктов не должен автоматически превращаться в PASS только потому, что CI зелёный.
+
+---
+
 # VideoGrabber: контрольная точка обновления
 
 Дата: 2026-09-12. Ветка: feature/media-workflows-20260912.

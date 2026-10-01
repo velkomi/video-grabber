@@ -32,6 +32,10 @@ async function initThreeHero(visual, canvas) {
   renderer.setClearColor(0x000000, 0);
 
   const scene = new THREE.Scene();
+  const proceduralEnvironment = createProceduralEnvironment(renderer);
+  scene.environment = proceduralEnvironment.texture;
+  scene.environmentIntensity = 0.72;
+
   const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 60);
   camera.position.set(0, 0.05, 10.45);
 
@@ -328,6 +332,160 @@ async function initThreeHero(visual, canvas) {
   const depthStars = createDepthStarField(narrowViewport ? 48 : 96);
   scene.add(depthStars);
 
+  const nebulaField = createNebulaField();
+  scene.add(nebulaField);
+
+  const qualityProfiles = Object.freeze({
+    high: {
+      desktopDpr: 1.5,
+      mobileDpr: 1.1,
+      stars: true,
+      particles: true,
+      nebula: true,
+      decorationOpacity: 1,
+      environmentIntensity: 0.72
+    },
+    balanced: {
+      desktopDpr: 1.25,
+      mobileDpr: 0.95,
+      stars: true,
+      particles: true,
+      nebula: true,
+      decorationOpacity: 0.68,
+      environmentIntensity: 0.58
+    },
+    economy: {
+      desktopDpr: 1.0,
+      mobileDpr: 0.8,
+      stars: false,
+      particles: false,
+      nebula: false,
+      decorationOpacity: 0.42,
+      environmentIntensity: 0.44
+    }
+  });
+  const qualityOrder = ["economy", "balanced", "high"];
+  const frameSampleWindow = 45;
+  const slowWindowsBeforeDowngrade = 2;
+  const fastWindowsBeforeUpgrade = 5;
+  const deviceMemory = Number(navigator.deviceMemory || 0);
+  const hardwareConcurrency = Number(navigator.hardwareConcurrency || 0);
+  let qualityName =
+    narrowViewport ||
+    (deviceMemory > 0 && deviceMemory <= 4) ||
+    (hardwareConcurrency > 0 && hardwareConcurrency <= 4)
+      ? "balanced"
+      : "high";
+  let effectiveDpr = 1;
+  const frameSamples = [];
+  let slowFrameWindows = 0;
+  let fastFrameWindows = 0;
+
+  const applyQualityDecorations = () => {
+    const profile = qualityProfiles[qualityName];
+    depthStars.visible = profile.stars;
+    particleGroup.visible = profile.particles;
+    nebulaField.visible = profile.nebula;
+    scene.environmentIntensity = profile.environmentIntensity;
+    atmosphereMaterial.opacity = 0.075 * profile.decorationOpacity;
+    rimShellMaterial.opacity = 0.16 * profile.decorationOpacity;
+    halo.material.opacity = 0.42 * profile.decorationOpacity;
+    wire.material.opacity = 0.08 * profile.decorationOpacity;
+    nebulaField.traverse((object) => {
+      if (!object.material || !Number.isFinite(object.userData.baseOpacity))
+        return;
+      object.material.opacity =
+        object.userData.baseOpacity * profile.decorationOpacity;
+    });
+    canvas.dataset.quality = qualityName;
+  };
+
+  const updatePixelRatio = () => {
+    const profile = qualityProfiles[qualityName];
+    const cap = narrowViewport ? profile.mobileDpr : profile.desktopDpr;
+    effectiveDpr = Math.min(devicePixelRatio || 1, cap);
+    renderer.setPixelRatio(effectiveDpr);
+    canvas.dataset.dpr = effectiveDpr.toFixed(2);
+  };
+
+  const setQuality = (nextQuality) => {
+    if (
+      staticScene ||
+      !Object.prototype.hasOwnProperty.call(qualityProfiles, nextQuality) ||
+      qualityName === nextQuality
+    ) return;
+
+    qualityName = nextQuality;
+    applyQualityDecorations();
+    updatePixelRatio();
+
+    const rect = visual.getBoundingClientRect();
+    renderer.setSize(
+      Math.max(1, Math.round(rect.width)),
+      Math.max(1, Math.round(rect.height)),
+      false
+    );
+
+    visual.dispatchEvent(new CustomEvent("videograbber:3d-quality", {
+      detail: {
+        quality: qualityName,
+        dpr: effectiveDpr
+      }
+    }));
+  };
+
+  const sampleFrameTime = (frameMs) => {
+    if (
+      staticScene ||
+      document.hidden ||
+      frameMs <= 0 ||
+      frameMs > 150
+    ) return;
+
+    frameSamples.push(frameMs);
+    if (frameSamples.length < frameSampleWindow) return;
+
+    const average =
+      frameSamples.reduce((sum, value) => sum + value, 0) /
+      frameSamples.length;
+    frameSamples.length = 0;
+    canvas.dataset.frameMs = average.toFixed(1);
+
+    const slowThreshold = narrowViewport ? 41 : 24;
+    const fastThreshold = narrowViewport ? 30 : 17.5;
+
+    if (average > slowThreshold) {
+      slowFrameWindows += 1;
+      fastFrameWindows = 0;
+    } else if (average < fastThreshold) {
+      fastFrameWindows += 1;
+      slowFrameWindows = 0;
+    } else {
+      slowFrameWindows = 0;
+      fastFrameWindows = 0;
+    }
+
+    const currentIndex = qualityOrder.indexOf(qualityName);
+    if (
+      slowFrameWindows >= slowWindowsBeforeDowngrade &&
+      currentIndex > 0
+    ) {
+      slowFrameWindows = 0;
+      fastFrameWindows = 0;
+      setQuality(qualityOrder[currentIndex - 1]);
+    } else if (
+      fastFrameWindows >= fastWindowsBeforeUpgrade &&
+      currentIndex < qualityOrder.length - 1
+    ) {
+      slowFrameWindows = 0;
+      fastFrameWindows = 0;
+      setQuality(qualityOrder[currentIndex + 1]);
+    }
+  };
+
+  applyQualityDecorations();
+  canvas.dataset.frameMs = "0";
+
   let targetFeature = null;
   const pointer = new THREE.Vector2(0, 0);
   const targetPointer = new THREE.Vector2(0, 0);
@@ -377,7 +535,7 @@ async function initThreeHero(visual, canvas) {
     const height = Math.max(1, Math.round(rect.height));
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, narrowViewport ? 1.1 : 1.5));
+    updatePixelRatio();
     renderer.setSize(width, height, false);
   };
 
@@ -390,9 +548,11 @@ async function initThreeHero(visual, canvas) {
   };
 
   const tick = (time) => {
-    const dt = Math.min((time - previousTime) / 1000, 0.05);
+    const frameMs = Math.max(0, time - previousTime);
+    const dt = Math.min(frameMs / 1000, 0.05);
     previousTime = time;
     elapsed += dt;
+    sampleFrameTime(frameMs);
 
     pointer.lerp(targetPointer, reducedMotion ? 1 : 0.075);
     scrollProgress = THREE.MathUtils.lerp(scrollProgress, scrollTarget, 0.055);
@@ -593,6 +753,11 @@ async function initThreeHero(visual, canvas) {
       depthStars.position.x = -pointer.x * 0.10;
       depthStars.position.y = pointer.y * 0.055 + scrollProgress * 0.07;
 
+      nebulaField.rotation.z =
+        Math.sin(elapsed * 0.045) * 0.025 + pointer.x * 0.010;
+      nebulaField.position.x = -pointer.x * 0.08;
+      nebulaField.position.y = pointer.y * 0.045 + scrollProgress * 0.04;
+
       if (storyArtifacts.workflow.group.visible)
         storyArtifacts.workflow.group.rotation.y =
           THREE.MathUtils.lerp(
@@ -637,6 +802,7 @@ async function initThreeHero(visual, canvas) {
     animationRunning = true;
     previousTime = performance.now();
     lastPaintTime = 0;
+    frameSamples.length = 0;
     renderer.setAnimationLoop((time) => {
       if (narrowViewport && lastPaintTime && time - lastPaintTime < 32) return;
       lastPaintTime = time;
@@ -647,6 +813,7 @@ async function initThreeHero(visual, canvas) {
   const stopLoop = () => {
     if (!animationRunning) return;
     animationRunning = false;
+    frameSamples.length = 0;
     renderer.setAnimationLoop(null);
   };
 
@@ -840,6 +1007,7 @@ async function initThreeHero(visual, canvas) {
       window.removeEventListener("scroll", updateScrollTarget);
       disposeScene(scene);
       coreTexture.dispose();
+      proceduralEnvironment.dispose();
       renderer.dispose();
     },
     { once: true }
@@ -1249,6 +1417,115 @@ async function loadTextureSafe(loader, url) {
     console.warn("VideoGrabber 3D texture fallback", url, error);
     return null;
   }
+}
+
+function createProceduralEnvironment(renderer) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 768;
+  canvas.height = 384;
+  const context = canvas.getContext("2d");
+
+  const base = context.createLinearGradient(0, 0, 768, 384);
+  base.addColorStop(0, "#050b18");
+  base.addColorStop(0.35, "#102451");
+  base.addColorStop(0.64, "#24184f");
+  base.addColorStop(1, "#07162e");
+  context.fillStyle = base;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const glow = context.createRadialGradient(560, 120, 8, 560, 120, 250);
+  glow.addColorStop(0, "rgba(126,178,255,.92)");
+  glow.addColorStop(0.22, "rgba(81,110,255,.48)");
+  glow.addColorStop(0.56, "rgba(91,55,190,.20)");
+  glow.addColorStop(1, "rgba(7,14,35,0)");
+  context.fillStyle = glow;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const warmGlow = context.createRadialGradient(130, 290, 6, 130, 290, 170);
+  warmGlow.addColorStop(0, "rgba(255,177,112,.52)");
+  warmGlow.addColorStop(0.34, "rgba(255,111,174,.20)");
+  warmGlow.addColorStop(1, "rgba(20,16,48,0)");
+  context.fillStyle = warmGlow;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  let seed = 0x4d56474c;
+  const random = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let index = 0; index < 96; index += 1) {
+    const x = random() * canvas.width;
+    const y = random() * canvas.height;
+    const alpha = 0.16 + random() * 0.54;
+    const radius = 0.45 + random() * 1.15;
+    context.fillStyle = `rgba(205,226,255,${alpha.toFixed(3)})`;
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  const source = new THREE.CanvasTexture(canvas);
+  source.colorSpace = THREE.SRGBColorSpace;
+  source.mapping = THREE.EquirectangularReflectionMapping;
+  source.needsUpdate = true;
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  const target = pmrem.fromEquirectangular(source);
+  source.dispose();
+  pmrem.dispose();
+
+  return {
+    texture: target.texture,
+    dispose: () => target.dispose()
+  };
+}
+
+function createNebulaField() {
+  const group = new THREE.Group();
+  const texture = new THREE.CanvasTexture(makeNebulaTexture());
+  texture.colorSpace = THREE.SRGBColorSpace;
+
+  const specs = [
+    [-3.9, 1.65, -2.9, 5.6, 3.4, 0x447dff, 0.18],
+    [4.1, -0.25, -3.3, 6.2, 4.0, 0x8b52ff, 0.14],
+    [0.35, -3.1, -3.7, 5.2, 3.0, 0xff6fb8, 0.09]
+  ];
+
+  for (const [x, y, z, width, height, color, opacity] of specs) {
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      color,
+      transparent: true,
+      opacity,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.position.set(x, y, z);
+    sprite.scale.set(width, height, 1);
+    sprite.userData.baseOpacity = opacity;
+    group.add(sprite);
+  }
+
+  return group;
+}
+
+function makeNebulaTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const context = canvas.getContext("2d");
+  const gradient = context.createRadialGradient(256, 256, 18, 256, 256, 250);
+  gradient.addColorStop(0, "rgba(255,255,255,.92)");
+  gradient.addColorStop(0.16, "rgba(205,224,255,.52)");
+  gradient.addColorStop(0.42, "rgba(152,175,255,.20)");
+  gradient.addColorStop(0.72, "rgba(98,87,190,.07)");
+  gradient.addColorStop(1, "rgba(20,25,70,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 512, 512);
+  return canvas;
 }
 
 function createDepthStarField(count) {
