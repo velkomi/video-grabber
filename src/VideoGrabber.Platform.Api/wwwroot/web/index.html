@@ -39,7 +39,13 @@
             height="770"
             decoding="async"
             fetchpriority="high">
-          <canvas id="hero-three" class="hero-three-canvas" aria-hidden="true"></canvas>
+          <canvas
+            id="hero-three"
+            class="hero-three-canvas"
+            aria-hidden="true"
+            data-quality="pending"
+            data-dpr="0"
+            data-frame-ms="0"></canvas>
           <a class="hero-hotspot hotspot-url" data-feature="url" href="#app" aria-label="Вставить ссылку"></a>
           <a class="hero-hotspot hotspot-video" data-feature="video" href="#app" aria-label="Скачать видео"></a>
           <a class="hero-hotspot hotspot-mp3" data-feature="mp3" href="#app" aria-label="Скачать MP3"></a>
@@ -312,6 +318,16 @@
       <button id="plan-dialog-close" class="button button-quiet" type="button">Закрыть</button>
     </div>
   </dialog>
+
+  <aside id="perf-debug" class="perf-debug" hidden aria-label="Диагностика производительности">
+    <strong>VideoGrabber QA</strong>
+    <span>3D: <output id="perf-quality">pending</output></span>
+    <span>DPR: <output id="perf-dpr">—</output></span>
+    <span>Frame: <output id="perf-frame">—</output></span>
+    <span>LCP: <output id="perf-lcp">—</output></span>
+    <span>CLS: <output id="perf-cls">0.000</output></span>
+    <span>INP: <output id="perf-inp">—</output></span>
+  </aside>
 
   <script src="/web/vendor/gsap-3.15.0.min.js" defer></script>
   <script src="/web/vendor/ScrollTrigger-3.15.0.min.js" defer></script>
