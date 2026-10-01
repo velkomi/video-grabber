@@ -612,7 +612,7 @@ footer {
 
 @media (prefers-reduced-motion: reduce) and (min-width: 721px) {
   .hero-art-shell {
-    inset: -10% -3% 2% -12%;
+    inset: -10% 0 2% -12%;
     transition: none;
   }
 }
