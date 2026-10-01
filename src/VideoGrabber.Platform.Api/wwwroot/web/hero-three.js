@@ -283,6 +283,19 @@ async function initThreeHero(visual, canvas) {
   let hoveredFeature = null;
   let pointerDown = null;
 
+  const storyArtifacts = createStoryArtifacts(renderer);
+  for (const artifact of Object.values(storyArtifacts)) {
+    root.add(artifact.group);
+    prepareStoryArtifact(artifact.group);
+  }
+  const storyOpacity = {
+    workflow: 0,
+    sync: 0,
+    pricing: 0,
+    windows: 0
+  };
+  let pricingFocusPlan = null;
+
   const particleGroup = new THREE.Group();
   root.add(particleGroup);
   const particleMaterial = new THREE.MeshBasicMaterial({
@@ -320,10 +333,17 @@ async function initThreeHero(visual, canvas) {
 
   const storyTargets = {
     hero: { rootScale: 1.0, rootY: 0.0, cameraZ: 10.45, orbitScale: 1.0 },
-    workflow: { rootScale: 0.86, rootY: 0.10, cameraZ: 10.85, orbitScale: 0.82 },
-    sync: { rootScale: 0.80, rootY: 0.03, cameraZ: 11.05, orbitScale: 0.66 },
-    pricing: { rootScale: 0.74, rootY: -0.02, cameraZ: 11.18, orbitScale: 0.52 },
-    windows: { rootScale: 0.88, rootY: 0.04, cameraZ: 10.78, orbitScale: 0.36 }
+    workflow: { rootScale: 0.92, rootY: 0.03, cameraZ: 10.85, orbitScale: 0.58 },
+    sync: { rootScale: 0.88, rootY: 0.03, cameraZ: 10.95, orbitScale: 0.46 },
+    pricing: { rootScale: 0.90, rootY: -0.02, cameraZ: 11.10, orbitScale: 0.34 },
+    windows: { rootScale: 0.96, rootY: 0.02, cameraZ: 10.72, orbitScale: 0.22 }
+  };
+  const storyAccentHex = {
+    hero: 0x4fa3ff,
+    workflow: 0x55b8ff,
+    sync: 0x55d0ff,
+    pricing: 0x9a68ff,
+    windows: 0x5bbcff
   };
   let storyState = "hero";
   let storySectionProgress = 0;
@@ -428,6 +448,36 @@ async function initThreeHero(visual, canvas) {
       orbit.scale.setScalar(storyOrbitScale);
 
     accent.lerp(accentTarget, 0.065);
+
+    for (const [name, artifact] of Object.entries(storyArtifacts)) {
+      const targetOpacity = storyState === name ? 1 : 0;
+      storyOpacity[name] = THREE.MathUtils.lerp(
+        storyOpacity[name],
+        targetOpacity,
+        0.075
+      );
+      const opacity = storyOpacity[name];
+      artifact.group.visible = opacity > 0.015;
+      artifact.group.scale.setScalar(0.94 + opacity * 0.06);
+      setStoryArtifactOpacity(artifact.group, opacity);
+    }
+
+    const pricingArtifact = storyArtifacts.pricing;
+    if (pricingArtifact?.cards) {
+      for (const [plan, card] of pricingArtifact.cards) {
+        const selected = storyState === "pricing" && pricingFocusPlan === plan;
+        const scale = selected ? 1.10 : 1;
+        card.group.scale.x = THREE.MathUtils.lerp(card.group.scale.x, scale, 0.12);
+        card.group.scale.y = THREE.MathUtils.lerp(card.group.scale.y, scale, 0.12);
+        card.group.scale.z = THREE.MathUtils.lerp(card.group.scale.z, scale, 0.12);
+        card.bodyMaterial.emissiveIntensity = THREE.MathUtils.lerp(
+          card.bodyMaterial.emissiveIntensity,
+          selected ? 0.78 : 0.20,
+          0.10
+        );
+      }
+    }
+
     sphereMaterial.emissive.copy(accent).multiplyScalar(
       planetEmissive ? 0.58 : 0.22
     );
@@ -455,7 +505,23 @@ async function initThreeHero(visual, canvas) {
 
       let index = 0;
       for (const [feature, card] of cards) {
-        const selected = targetFeature === feature;
+        const heroCardOpacity = storyState === "hero" ? 1 : 0;
+        card.bodyMaterial.opacity = THREE.MathUtils.lerp(
+          card.bodyMaterial.opacity,
+          heroCardOpacity * 0.94,
+          0.11
+        );
+        card.label.material.opacity = THREE.MathUtils.lerp(
+          card.label.material.opacity,
+          heroCardOpacity,
+          0.11
+        );
+        card.group.visible =
+          heroCardOpacity > 0 ||
+          card.bodyMaterial.opacity > 0.02 ||
+          card.label.material.opacity > 0.02;
+
+        const selected = storyState === "hero" && targetFeature === feature;
         const baseScale = selected ? 1.13 : 1;
         const depthFactor = 1 + Math.max(card.basePosition.z, 0) * 0.24;
         const floatY =
@@ -522,6 +588,30 @@ async function initThreeHero(visual, canvas) {
       depthStars.rotation.x = pointer.y * 0.018;
       depthStars.position.x = -pointer.x * 0.10;
       depthStars.position.y = pointer.y * 0.055 + scrollProgress * 0.07;
+
+      if (storyArtifacts.workflow.group.visible)
+        storyArtifacts.workflow.group.rotation.y =
+          THREE.MathUtils.lerp(
+            storyArtifacts.workflow.group.rotation.y,
+            pointer.x * 0.025,
+            0.05
+          );
+
+      if (storyArtifacts.sync.group.visible)
+        storyArtifacts.sync.group.rotation.y =
+          THREE.MathUtils.lerp(
+            storyArtifacts.sync.group.rotation.y,
+            pointer.x * 0.035,
+            0.05
+          );
+
+      if (storyArtifacts.windows.group.visible)
+        storyArtifacts.windows.group.rotation.y =
+          THREE.MathUtils.lerp(
+            storyArtifacts.windows.group.rotation.y,
+            pointer.x * 0.045,
+            0.05
+          );
     }
 
     render();
@@ -640,12 +730,22 @@ async function initThreeHero(visual, canvas) {
     storyState = next;
     storySectionProgress = clamp01(event.detail?.progress || 0);
     setRaycastFeature(null);
+
+    const storyAccent = new THREE.Color(
+      storyAccentHex[next] || storyAccentHex.hero
+    );
+    accentTarget.copy(storyAccent);
+
     if (!animationRunning) render();
   });
 
   visual.addEventListener("videograbber:story-progress", (event) => {
     if (String(event.detail?.state || "") !== storyState) return;
     storySectionProgress = clamp01(event.detail?.progress || 0);
+  });
+
+  visual.addEventListener("videograbber:pricing-focus", (event) => {
+    pricingFocusPlan = event.detail?.plan || null;
   });
 
   visual.addEventListener("videograbber:hero-accent", (event) => {
@@ -778,6 +878,255 @@ function createFeatureCard(spec, renderer) {
     basePosition: new THREE.Vector3(...spec.position),
     baseRotation: new THREE.Euler(...spec.rotation)
   };
+}
+
+function createStoryArtifacts(renderer) {
+  return {
+    workflow: createWorkflowArtifact(renderer),
+    sync: createSyncArtifact(renderer),
+    pricing: createPricingArtifact(renderer),
+    windows: createWindowsArtifact(renderer)
+  };
+}
+
+function createStoryCard(renderer, spec, scale = 0.72) {
+  const card = createFeatureCard(
+    {
+      feature: spec.feature,
+      icon: spec.icon,
+      title: spec.title,
+      subtitle: spec.subtitle,
+      position: spec.position,
+      rotation: spec.rotation || [0, 0, 0],
+      accent: spec.accent
+    },
+    renderer
+  );
+  card.group.scale.setScalar(scale);
+  return card;
+}
+
+function createWorkflowArtifact(renderer) {
+  const group = new THREE.Group();
+  group.position.set(0, -0.05, 0.35);
+  const specs = [
+    {
+      feature: "workflow-url",
+      icon: "↗",
+      title: "Ссылка",
+      subtitle: "1. Вставьте",
+      position: [-2.25, 0.25, 0.55],
+      accent: 0x57aaff
+    },
+    {
+      feature: "workflow-format",
+      icon: "▤",
+      title: "Формат",
+      subtitle: "2. Выберите",
+      position: [0, 0.25, 0.85],
+      accent: 0x8b72ff
+    },
+    {
+      feature: "workflow-download",
+      icon: "↓",
+      title: "Скачать",
+      subtitle: "3. Получите файл",
+      position: [2.25, 0.25, 0.55],
+      accent: 0x55dfc1
+    }
+  ];
+
+  for (const spec of specs)
+    group.add(createStoryCard(renderer, spec, 0.72).group);
+
+  group.add(
+    makeStoryLine(
+      [
+        new THREE.Vector3(-1.45, 0.25, 0.1),
+        new THREE.Vector3(-0.75, 0.25, 0.18),
+        new THREE.Vector3(-0.45, 0.25, 0.26)
+      ],
+      0x6caaff
+    ),
+    makeStoryLine(
+      [
+        new THREE.Vector3(0.45, 0.25, 0.26),
+        new THREE.Vector3(0.75, 0.25, 0.18),
+        new THREE.Vector3(1.45, 0.25, 0.1)
+      ],
+      0x77d8ff
+    )
+  );
+
+  return { group };
+}
+
+function createSyncArtifact(renderer) {
+  const group = new THREE.Group();
+  group.position.set(0, 0.02, 0.30);
+
+  const specs = [
+    {
+      feature: "sync-web",
+      icon: "◎",
+      title: "Web",
+      subtitle: "Сайт",
+      position: [0, 1.55, 0.55],
+      accent: 0x58aaff
+    },
+    {
+      feature: "sync-windows",
+      icon: "▦",
+      title: "Windows",
+      subtitle: "Приложение",
+      position: [-2.0, -0.25, 0.65],
+      accent: 0x4bc8ff
+    },
+    {
+      feature: "sync-telegram",
+      icon: "➤",
+      title: "Telegram",
+      subtitle: "Один аккаунт",
+      position: [2.0, -0.25, 0.65],
+      accent: 0x55b6ff
+    }
+  ];
+
+  for (const spec of specs)
+    group.add(createStoryCard(renderer, spec, 0.68).group);
+
+  const hub = new THREE.Vector3(0, 0.20, 0.05);
+  for (const point of [
+    new THREE.Vector3(0, 1.05, 0.15),
+    new THREE.Vector3(-1.35, -0.12, 0.18),
+    new THREE.Vector3(1.35, -0.12, 0.18)
+  ]) {
+    group.add(makeStoryLine([hub, point], 0x5cbcff));
+  }
+
+  return { group };
+}
+
+function createPricingArtifact(renderer) {
+  const group = new THREE.Group();
+  group.position.set(0, 0.08, 0.40);
+  const cards = new Map();
+
+  const specs = [
+    ["free", "✦", "Free", "Знакомство", -2.55, 0x5f96ff],
+    ["start", "⚡", "Start", "Регулярно", -0.85, 0x7a91ff],
+    ["unlimited_video", "♛", "Unlimited", "Без лимита", 0.85, 0x9b68ff],
+    ["full_course", "◇", "Full Course", "Для курсов", 2.55, 0xb25dcb]
+  ];
+
+  for (const [plan, icon, title, subtitle, x, accent] of specs) {
+    const card = createStoryCard(
+      renderer,
+      {
+        feature: "pricing-" + plan,
+        icon,
+        title,
+        subtitle,
+        position: [x, 0.05, 0.55],
+        accent
+      },
+      0.56
+    );
+    group.add(card.group);
+    cards.set(plan, card);
+  }
+
+  return { group, cards };
+}
+
+function createWindowsArtifact(renderer) {
+  const group = new THREE.Group();
+  group.position.set(0, 0.10, 0.55);
+
+  const capsule = createStoryCard(
+    renderer,
+    {
+      feature: "windows-app",
+      icon: "VG",
+      title: "VideoGrabber",
+      subtitle: "Приложение для Windows",
+      position: [0, 0.45, 0.85],
+      accent: 0x58b7ff
+    },
+    1.05
+  );
+  group.add(capsule.group);
+
+  const arrowMaterial = new THREE.MeshStandardMaterial({
+    color: 0x79c5ff,
+    emissive: 0x3f8cff,
+    emissiveIntensity: 0.7,
+    metalness: 0.2,
+    roughness: 0.28
+  });
+  const shaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 0.75, 20),
+    arrowMaterial
+  );
+  shaft.position.set(0, -1.05, 0.55);
+  const head = new THREE.Mesh(
+    new THREE.ConeGeometry(0.24, 0.44, 24),
+    arrowMaterial
+  );
+  head.position.set(0, -1.55, 0.55);
+  head.rotation.z = Math.PI;
+  group.add(shaft, head);
+
+  return { group };
+}
+
+function makeStoryLine(points, color) {
+  const curve = new THREE.CatmullRomCurve3(points);
+  const geometry = new THREE.TubeGeometry(curve, 24, 0.018, 8, false);
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    emissive: new THREE.Color(color),
+    emissiveIntensity: 1.0,
+    metalness: 0.18,
+    roughness: 0.30,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false
+  });
+  return new THREE.Mesh(geometry, material);
+}
+
+function prepareStoryArtifact(group) {
+  group.visible = false;
+  group.traverse((object) => {
+    const materials = Array.isArray(object.material)
+      ? object.material
+      : object.material
+        ? [object.material]
+        : [];
+
+    for (const material of materials) {
+      material.transparent = true;
+      material.userData.storyBaseOpacity =
+        Number.isFinite(material.opacity) ? material.opacity : 1;
+      material.opacity = 0;
+    }
+  });
+}
+
+function setStoryArtifactOpacity(group, opacity) {
+  group.traverse((object) => {
+    const materials = Array.isArray(object.material)
+      ? object.material
+      : object.material
+        ? [object.material]
+        : [];
+
+    for (const material of materials) {
+      const base = material.userData.storyBaseOpacity ?? 1;
+      material.opacity = base * opacity;
+    }
+  });
 }
 
 function makeOrbitMaterial(color, opacity) {

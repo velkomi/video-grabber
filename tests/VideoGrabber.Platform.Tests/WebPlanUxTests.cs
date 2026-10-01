@@ -225,6 +225,14 @@ public sealed class WebPlanUxTests
         Assert.Contains("const storyTargets", heroThree);
         Assert.Contains("videograbber:story-state", heroThree);
         Assert.Contains("videograbber:story-progress", heroThree);
+        Assert.Contains("createWorkflowArtifact", heroThree);
+        Assert.Contains("createSyncArtifact", heroThree);
+        Assert.Contains("createPricingArtifact", heroThree);
+        Assert.Contains("createWindowsArtifact", heroThree);
+        Assert.Contains("new THREE.CatmullRomCurve3", heroThree);
+        Assert.Contains("new THREE.TubeGeometry", heroThree);
+        Assert.Contains("videograbber:pricing-focus", heroThree);
+        Assert.Contains("videograbber:pricing-focus", js);
         Assert.Contains("storyRootScale", heroThree);
         Assert.Contains("storyOrbitScale", heroThree);
         Assert.Contains("time - lastPaintTime < 32", heroThree);

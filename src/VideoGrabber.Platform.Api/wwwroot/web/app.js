@@ -1427,6 +1427,22 @@ async function start() {
 
   for (const card of $$(".price-card[data-plan]")) {
     const activate = () => openPlanDialog(card.dataset.plan);
+    const setPricingFocus = (plan) =>
+      $("#hero-visual")?.dispatchEvent(
+        new CustomEvent("videograbber:pricing-focus", {
+          detail: { plan }
+        })
+      );
+
+    card.addEventListener("pointerenter", () =>
+      setPricingFocus(card.dataset.plan)
+    );
+    card.addEventListener("pointerleave", () => setPricingFocus(null));
+    card.addEventListener("focus", () =>
+      setPricingFocus(card.dataset.plan)
+    );
+    card.addEventListener("blur", () => setPricingFocus(null));
+
     card.addEventListener("click", (event) => {
       if (event.target.closest("a")) return;
       activate();
