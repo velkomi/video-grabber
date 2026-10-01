@@ -1337,11 +1337,11 @@ function setupStoryStage() {
   stage.style.right = "auto";
 
   const definitions = [
-    { state: "hero", trigger: "#top", slot: ".story-slot-hero" },
-    { state: "workflow", trigger: "#how", slot: ".story-slot-workflow" },
-    { state: "sync", trigger: "#app", slot: ".story-slot-sync" },
-    { state: "pricing", trigger: "#pricing", slot: ".story-slot-pricing" },
-    { state: "windows", trigger: "#download", slot: ".story-slot-windows" }
+    { state: "hero", trigger: "#top", slot: ".story-slot-hero", startPercent: 0 },
+    { state: "workflow", trigger: "#how", slot: ".story-slot-workflow", startPercent: 42 },
+    { state: "sync", trigger: "#app", slot: ".story-slot-sync", startPercent: 42 },
+    { state: "pricing", trigger: "#pricing", slot: ".story-slot-pricing", startPercent: 42 },
+    { state: "windows", trigger: "#download", slot: ".story-slot-windows", startPercent: 72 }
   ];
 
   const previousState = {
@@ -1394,7 +1394,7 @@ function setupStoryStage() {
 
     scrollTriggerApi.create({
       trigger: triggerNode,
-      start: "top 58%",
+      start: "top " + definition.startPercent + "%",
       end: "bottom 42%",
       onEnter: () => activate(definition.state),
       onEnterBack: () => activate(definition.state),
@@ -1447,7 +1447,10 @@ function setupStoryStage() {
     for (const definition of definitions.slice(1)) {
       const node = document.querySelector(definition.trigger);
       if (!node) continue;
-      if (node.getBoundingClientRect().top <= innerHeight * 0.58)
+      if (
+        node.getBoundingClientRect().top <=
+        innerHeight * (definition.startPercent / 100)
+      )
         state = definition.state;
     }
     return state;
