@@ -214,6 +214,13 @@ public sealed class WebPlanUxTests
         Assert.Contains("Segoe UI Variable Display", styles, StringComparison.Ordinal);
         Assert.Contains("videograbber:story-visibility", js);
         Assert.Contains("start: \"top 96%\"", js);
+        Assert.Contains("startPercent: 42", js, StringComparison.Ordinal);
+        Assert.Contains("startPercent: 72", js, StringComparison.Ordinal);
+        Assert.Contains("start: \"top \" + definition.startPercent", js, StringComparison.Ordinal);
+        Assert.Contains("innerHeight * (definition.startPercent / 100)", js, StringComparison.Ordinal);
+        Assert.Contains("@media (prefers-reduced-motion: reduce) and (min-width: 721px)", styles, StringComparison.Ordinal);
+        Assert.Contains("inset: -10% 0 2% -12%", styles, StringComparison.Ordinal);
+        Assert.Contains("inset: 3% 0 -4% 0", styles, StringComparison.Ordinal);
         Assert.DoesNotContain("setupHeroWebGL", js, StringComparison.Ordinal);
         Assert.Contains("setupHeroFeatureFocus", js);
         Assert.Contains("new THREE.SphereGeometry", heroThree);
