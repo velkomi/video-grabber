@@ -9,12 +9,15 @@
 - Production bundle is tree-shaken (~596 KB raw / ~152 KB gzip estimate) and carries the SHA-256 of `hero-three.js`; regression verifies the bundle matches current source. Source hashing is canonical UTF-8/LF so Windows and Linux CI calculate the same marker.
 - Three.js loads lazily after the approved hero art using idle scheduling, so the first visual is not blocked by the 3D runtime.
 - Added ASP.NET Core Brotli/Gzip response compression for JS/CSS/JSON over HTTPS.
-- Semantic hotspots remain real HTML links and update the scene accent/caption; rendering pauses offscreen and on hidden tabs.
+- Hero interaction now uses actual Three.js raycasting against card meshes. Invisible HTML links remain only as keyboard/touch fallbacks; visible rectangular hover/focus overlays were removed.
 - With reduced-motion enabled the Three.js runtime is not loaded at all and the approved static hero remains visible. Normal mobile keeps the geometric scene animated with a ~30 FPS cap and lower DPR instead of disabling 3D entirely.
 - Strengthened visual depth after live review: faster planet/orbit motion, physically lit thicker orbit tubes, varied card Z-depth, hover pop-out, stronger pointer camera parallax, subtle scroll camera move, extra back-rim lighting and deterministic depth stars.
 - After Three.js is ready, the approved raster fallback fades to 3.5% opacity so the geometric scene is visually unmistakable while still preserving continuity.
 - Obvious-3D browser measurement: temporal motion changes roughly half the canvas, pointer parallax ~80% and focused-card pop/emissive ~78%; mobile remains animated and overflow-free.
-- Targeted regression 14/14 PASS, source/bundle syntax PASS, Three.js Edge smoke PASS, desktop/mobile/reduced-motion browser smoke PASS with zero severe console errors.
+- Removed the generated synchronization screenshot, duplicate in-dashboard subscription cards, Windows grid icon, 3D instruction caption and rectangular pointer-sheen effect; the account now links to the single public pricing section.
+- Added one self-hosted GSAP 3.15.0 + ScrollTrigger stage for `hero → workflow → sync → pricing → windows` storytelling while keeping a single Three.js renderer.
+- Added deterministic `?visualTest=1` for visual regression and explicit story visibility shutdown before the footer.
+- Targeted regression 14/14 PASS, source/bundle syntax PASS, raycast finds all six hero cards, desktop story transitions PASS, deterministic visual diff PASS, mobile/reduced-motion browser smoke PASS with zero severe console errors.
 
 ## [0.1.10-preview.60-rc.1] - 2026-09-29
 

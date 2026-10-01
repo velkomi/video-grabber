@@ -88,6 +88,8 @@ public sealed class WebPlanUxTests
         Assert.Contains("data-plan=\"start\"", html);
         Assert.Contains("data-plan=\"unlimited_video\"", html);
         Assert.Contains("data-plan=\"full_course\"", html);
+        Assert.DoesNotContain("role=\"button\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("tabindex=\"0\"", html, StringComparison.Ordinal);
         Assert.Contains("id=\"plan-dialog\"", html);
         Assert.Contains("href=\"/download/windows\"", html);
         Assert.Contains("href=\"/download/windows/portable\"", html);
@@ -198,6 +200,10 @@ public sealed class WebPlanUxTests
         Assert.Contains("scrollTriggerApi.create", js);
         Assert.Contains("videograbber:story-state", js);
         Assert.Contains("videograbber:story-progress", js);
+        Assert.Contains("visualTestMode", js);
+        Assert.Contains("__VG_VISUAL_TEST", js);
+        Assert.Contains("videograbber:story-visibility", js);
+        Assert.Contains("start: \"top 96%\"", js);
         Assert.DoesNotContain("setupHeroWebGL", js, StringComparison.Ordinal);
         Assert.Contains("setupHeroFeatureFocus", js);
         Assert.Contains("new THREE.SphereGeometry", heroThree);
@@ -235,6 +241,10 @@ public sealed class WebPlanUxTests
         Assert.Contains("videograbber:pricing-focus", js);
         Assert.Contains("storyRootScale", heroThree);
         Assert.Contains("storyOrbitScale", heroThree);
+        Assert.Contains("visualTestMode", heroThree);
+        Assert.Contains("canvas.dataset.visualTest", heroThree);
+        Assert.Contains("staticScene", heroThree);
+        Assert.Contains("storyStageVisible", heroThree);
         Assert.Contains("time - lastPaintTime < 32", heroThree);
         Assert.Contains("narrowViewport ? 1.1 : 1.5", heroThree);
         Assert.Contains("createDepthStarField", heroThree);

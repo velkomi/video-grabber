@@ -2,6 +2,11 @@
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+const visualTestMode =
+  new URLSearchParams(location.search).get("visualTest") === "1";
+window.__VG_VISUAL_TEST = visualTestMode;
+if (visualTestMode)
+  document.documentElement.classList.add("visual-test");
 
 const keys = {
   access: "vg_web_access",
@@ -1160,6 +1165,7 @@ function setupHeroFeatureFocus(visual) {
 }
 
 function setupScrollReveal() {
+  if (visualTestMode) return;
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   if (!("IntersectionObserver" in window)) return;
 
@@ -1226,6 +1232,7 @@ function setupStoryStage() {
   };
 
   if (
+    visualTestMode ||
     reducedMotion ||
     compactViewport ||
     !gsapApi ||
@@ -1320,21 +1327,29 @@ function setupStoryStage() {
   if (footer) {
     scrollTriggerApi.create({
       trigger: footer,
-      start: "top 86%",
-      onEnter: () =>
+      start: "top 96%",
+      onEnter: () => {
+        visual.dispatchEvent(new CustomEvent("videograbber:story-visibility", {
+          detail: { visible: false }
+        }));
         gsapApi.to(stage, {
           opacity: 0,
           duration: 0.35,
           ease: "power2.out",
           overwrite: true
-        }),
-      onLeaveBack: () =>
+        });
+      },
+      onLeaveBack: () => {
+        visual.dispatchEvent(new CustomEvent("videograbber:story-visibility", {
+          detail: { visible: true }
+        }));
         gsapApi.to(stage, {
           opacity: 1,
           duration: 0.35,
           ease: "power2.out",
           overwrite: true
-        })
+        });
+      }
     });
   }
 
@@ -1367,7 +1382,10 @@ function scheduleThreeHero() {
   const art = document.querySelector(".hero-art");
   if (!canvas || !art) return;
 
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  if (
+    matchMedia("(prefers-reduced-motion: reduce)").matches &&
+    !visualTestMode
+  ) {
     canvas.hidden = true;
     return;
   }
@@ -1438,20 +1456,16 @@ async function start() {
       setPricingFocus(card.dataset.plan)
     );
     card.addEventListener("pointerleave", () => setPricingFocus(null));
-    card.addEventListener("focus", () =>
+
+    const actionButton = card.querySelector(".plan-action");
+    actionButton?.addEventListener("focus", () =>
       setPricingFocus(card.dataset.plan)
     );
-    card.addEventListener("blur", () => setPricingFocus(null));
+    actionButton?.addEventListener("blur", () => setPricingFocus(null));
 
     card.addEventListener("click", (event) => {
       if (event.target.closest("a")) return;
       activate();
-    });
-    card.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        activate();
-      }
     });
   }
 

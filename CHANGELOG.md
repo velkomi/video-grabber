@@ -13,11 +13,15 @@
 - production-bundle хранит SHA-256 исходника `hero-three.js`, а regression-тест проверяет свежесть bundle без сетевого rebuild в CI; hash теперь считается по каноническому UTF-8/LF содержимому одинаково на Windows и Linux;
 - bundle подгружается лениво после hero-image через `requestIdleCallback`, чтобы 3D не конкурировал с LCP; ориентировочный размер — ~596 КБ raw / ~152 КБ gzip;
 - API получил стандартное Brotli/Gzip response compression для JS/CSS/JSON по HTTPS;
-- шесть зон (URL, видео, MP3, курс, Windows, Telegram) остаются обычными HTML-ссылками, но меняют акцент сцены и человеческое пояснение;
+- шесть hero-функций (URL, видео, MP3, курс, Windows, Telegram) теперь определяются реальным Three.js `Raycaster`; невидимые HTML-ссылки сохранены только как keyboard/touch fallback и не рисуют отдельные прямоугольные hover-рамки;
 - Three.js-рендер ставится на паузу вне viewport и при скрытой вкладке; при `prefers-reduced-motion` 3D-runtime вообще не загружается и остаётся утверждённый статичный hero, а mobile без этого системного ограничения продолжает плавную сцену примерно до 30 FPS со сниженным DPR;
-- добавлены мягкие scroll-reveal, pointer sheen и атмосферное движение glow-слоёв; исправлен мобильный horizontal overflow от фоновых эффектов;
+- сохранён мягкий scroll-reveal и атмосферное движение фоновых glow-слоёв; прямоугольный pointer-sheen у секций и карточек полностью удалён; мобильный horizontal overflow отсутствует;
 - 3D-сцена усилена для очевидной глубины: планета вращается заметнее, орбиты стали толще и физически освещёнными, карточки разведены по Z-слоям и при hover выезжают к камере, добавлены отдельный back-rim свет, атмосферный rim-shell, глубинное звёздное поле и более сильный camera parallax;
-- добавлено лёгкое cinematic-движение камеры при скролле первого экрана; статичный approved hero после готовности Three.js почти полностью уходит, чтобы геометрия читалась как настоящий 3D.
+- добавлено лёгкое cinematic-движение камеры при скролле первого экрана; статичный approved hero после готовности Three.js почти полностью уходит, чтобы геометрия читалась как настоящий 3D;
+- публичный UI очищен по последним скриншотам: удалены поясняющая плашка «Интерактивная 3D-сцена», старый sync-raster со встроенными mockup-кнопками, дублирующий блок «Подписка / Сменить тариф» и случайная Windows-иконка-решётка; в аккаунте остаётся компактная ссылка «Изменить тариф» на единый `#pricing`;
+- добавлен единый self-hosted GSAP ScrollTrigger story-stage: один WebGLRenderer плавно переходит через состояния `hero → workflow → sync → pricing → windows`, а перед footer сцена скрывается и renderer останавливается;
+- состояния story используют одну Three.js-сцену: workflow показывает три шага, sync — Web/Windows/Telegram hub, pricing — четыре тарифных модуля с реакцией на реальные HTML-тарифы, Windows — отдельный app/install state;
+- добавлен deterministic `?visualTest=1`: фиксируются hero-state, время/камера/seed, отключаются scroll-reveal и story timeline; визуальная стабильность проверяется допустимым GPU visual-diff threshold, а не byte-identical hash.
 
 ### Проверено
 
@@ -25,9 +29,9 @@
 - JavaScript source + production bundle syntax: PASS;
 - `Build-Web3D.ps1`: PASS, bundle source hash совпадает;
 - Edge Three.js smoke: `data-engine="three.js r186"`, console SEVERE = 0;
-- desktop interaction smoke: feature-caption, hotspot focus, scroll reveal и pointer sheen работают;
+- desktop browser smoke: raycast находит все 6 hero-mesh, story-state проходит `workflow → sync → pricing → windows`, сцена скрывается у footer, console SEVERE = 0;
 - mobile layout smoke: horizontal overflow отсутствует;
-- reduced-motion smoke: motion-классы не включаются, контент остаётся видимым;
+- reduced-motion smoke: Three.js runtime не запускается, approved fallback остаётся видимым, story-stage не становится управляемым;
 - obvious-3D browser smoke: временное движение меняет около половины canvas, pointer parallax — ~80%, hover-card pop/emissive — ~78%; mobile 3D также остаётся анимированным без горизонтального overflow.
 
 ## [0.1.10-preview.60-rc.1] - 2026-09-29

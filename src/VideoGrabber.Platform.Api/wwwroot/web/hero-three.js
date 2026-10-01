@@ -12,7 +12,9 @@ if (visual && canvas) {
 }
 
 async function initThreeHero(visual, canvas) {
+  const visualTestMode = Boolean(window.__VG_VISUAL_TEST);
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const staticScene = reducedMotion || visualTestMode;
   const narrowViewport = matchMedia("(max-width: 720px)").matches;
 
   const renderer = new THREE.WebGLRenderer({
@@ -23,6 +25,7 @@ async function initThreeHero(visual, canvas) {
     premultipliedAlpha: false
   });
   canvas.dataset.engine = `three.js r${THREE.REVISION}`;
+  if (visualTestMode) canvas.dataset.visualTest = "true";
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.2;
@@ -355,6 +358,7 @@ async function initThreeHero(visual, canvas) {
   let scrollTarget = 0;
   let scrollProgress = 0;
   let heroVisible = true;
+  let storyStageVisible = true;
   let animationRunning = false;
   let elapsed = 0;
   let previousTime = performance.now();
@@ -620,7 +624,13 @@ async function initThreeHero(visual, canvas) {
   let lastPaintTime = 0;
 
   const startLoop = () => {
-    if (animationRunning || reducedMotion || !heroVisible || document.hidden) {
+    if (
+      animationRunning ||
+      staticScene ||
+      !heroVisible ||
+      !storyStageVisible ||
+      document.hidden
+    ) {
       render();
       return;
     }
@@ -648,6 +658,7 @@ async function initThreeHero(visual, canvas) {
     if (hoveredFeature === feature) return;
     hoveredFeature = feature || null;
     targetFeature = hoveredFeature;
+    visual.dataset.raycastFeature = hoveredFeature || "";
 
     if (hoveredFeature && featureAccent.has(hoveredFeature))
       accentTarget.copy(featureAccent.get(hoveredFeature));
@@ -724,6 +735,12 @@ async function initThreeHero(visual, canvas) {
     setRaycastFeature(null);
   });
 
+  visual.addEventListener("videograbber:story-visibility", (event) => {
+    storyStageVisible = event.detail?.visible !== false;
+    if (storyStageVisible && heroVisible && !document.hidden) startLoop();
+    else stopLoop();
+  });
+
   visual.addEventListener("videograbber:story-state", (event) => {
     const next = String(event.detail?.state || "hero");
     if (!Object.prototype.hasOwnProperty.call(storyTargets, next)) return;
@@ -795,6 +812,22 @@ async function initThreeHero(visual, canvas) {
   );
 
   resize();
+
+  if (visualTestMode) {
+    storyState = "hero";
+    storySectionProgress = 0;
+    elapsed = 2.75;
+    pointer.set(0, 0);
+    targetPointer.set(0, 0);
+    root.rotation.set(-0.04, 0.08, 0);
+    sphere.rotation.y = 0.72;
+    atmosphere.rotation.y = -0.18;
+    wire.rotation.y = 0.12;
+    orbits[0].rotation.z += 0.34;
+    orbits[1].rotation.z -= 0.24;
+    orbits[2].rotation.z += 0.18;
+  }
+
   render();
   startLoop();
 

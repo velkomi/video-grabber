@@ -23,6 +23,13 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; overflow-x: hidden; }
+html.visual-test *,
+html.visual-test *::before,
+html.visual-test *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
 body {
   margin: 0;
   min-width: 320px;

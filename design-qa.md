@@ -31,11 +31,14 @@
 - Obvious-depth pass: card Z positions are intentionally staggered, focused cards move ~0.62 world units toward the camera, camera parallax is stronger, and scroll adds a subtle cinematic camera move.
 - Planet/orbit motion is deliberately readable: planet ~0.14 rad/s; three orbits rotate at independent stronger rates; back-rim light, rim shell and deterministic depth stars reinforce foreground/background separation.
 - The approved 3D raster remains the instant fallback while Three.js and textures load; with reduced-motion the Three.js runtime is not loaded, while normal narrow/mobile viewports keep animation at a reduced ~30 FPS and lower DPR.
-- Feature hotspots are semantic: URL, Video, MP3, Course, Windows and Telegram update the caption and WebGL accent without moving the real action out of HTML.
+- Hero feature interaction is driven by real Three.js raycasting over the six card meshes (URL, Video, MP3, Course, Windows, Telegram). Invisible HTML anchors remain only as keyboard/touch activation fallbacks; no visible rectangular hotspot overlay remains.
 - WebGL animation pauses automatically when the hero leaves the viewport or the page is hidden.
-- Hover/focus on URL, Video, MP3, Course, Windows and Telegram changes the explanatory caption and WebGL accent while the real links remain normal HTML controls.
-- Scroll reveal and pointer sheen are progressive decorations; the content and controls remain available without them.
+- Pointer raycast changes the actual 3D card material/position/accent; keyboard focus on the invisible fallback links drives the same 3D state without drawing a fake focus rectangle around the scene.
+- Scroll reveal remains progressive; the old rectangular pointer-sheen layer was removed from sections/cards because its box edges were visible on the approved dark background.
 - Reduced-motion was verified in Edge: motion classes stay disabled and the content remains visible.
+- Single-stage scroll storytelling was browser-verified through `hero → workflow → sync → pricing → windows`; the stage fades out before the footer and sends a visibility event so rendering can stop.
+- Geometric raycast browser test found all six hero cards inside canvas bounds: URL, Video, MP3, Course, Windows and Telegram.
+- `?visualTest=1` fixes the story at the hero state and yields a stable GPU visual diff (mean delta well below the acceptance threshold) without relying on byte-identical WebGL screenshots.
 - Main anchors and destinations exist: How it works, Download, Pricing, Account, Windows installer, Portable ZIP, Telegram.
 - Mobile width smoke test passed without horizontal document overflow; a temporary overflow caused by animated background glows was detected and fixed by clipping the root x-axis.
 - Browser console check: **0 SEVERE errors**.
@@ -52,10 +55,10 @@ The approved concept and browser-rendered implementation were inspected together
    - Fix: recropped the approved hero artwork farther right and regenerated `videograbber-hero.webp` with a feathered edge.
    - Post-fix evidence: the final local screenshot no longer shows the stray source headline fragment.
 
-2. **[P1] Sync illustration was a CSS approximation instead of the approved artwork**
-   - Earlier implementation used code-drawn laptop/phone/cloud shapes.
-   - Fix: extracted the approved synchronization artwork into `videograbber-sync.webp` and replaced the approximation.
-   - Post-fix evidence: the sign-in/synchronization block now uses the actual approved visual language.
+2. **[P1] Sync illustration contained stale mockup UI**
+   - A generated synchronization raster showed embedded Google/e-mail controls that looked like real interface buttons.
+   - Fix: removed the raster from the production layout entirely. The real Google/e-mail controls remain HTML, while the shared Three.js story scene supplies the sync Web/Windows/Telegram visual state.
+   - Post-fix evidence: no `/assets/videograbber-sync.webp` element is present in the public page.
 
 3. **[P2] Vertical rhythm was much looser than the approved concept**
    - Earlier implementation pushed pricing far below the first long desktop view.
@@ -67,7 +70,7 @@ The approved concept and browser-rendered implementation were inspected together
 Focused comparison was necessary for:
 
 - **Hero imagery:** uses the approved raster as fallback/visual continuity, then crossfades to a true standalone Three.js scene with physical materials and real geometry.
-- **Synchronization artwork:** now uses a real raster asset derived from the approved concept.
+- **Synchronization:** no screenshot/mockup is used. The single Three.js renderer transitions into a dedicated Web/Windows/Telegram synchronization state beside the real HTML sign-in controls.
 - **Pricing:** retains the approved four-card hierarchy, with Unlimited Video marked `Популярный` and Full Course marked `Для курсов`.
 - **Account block:** rewritten to “Вход и синхронизация” and no longer exposes Supabase/Magic Link implementation wording or raw JavaScript errors.
 
@@ -93,7 +96,7 @@ Focused comparison was necessary for:
 
 ### Image quality and asset fidelity
 
-- Hero and sync illustrations are derived directly from the approved source image and exported as optimized WebP assets.
+- The approved hero WebP remains only as an instant fallback/visual continuity asset. Sync, workflow, pricing and Windows visuals are rendered as semantic states of the same Three.js scene rather than separate screenshots.
 - Hero uses self-hosted procedural planet diffuse/bump/emissive maps, MeshPhysicalMaterial, three actual torus meshes, extruded rounded cards and a central VG badge.
 - Three.js is non-blocking: it is dynamically imported after the approved hero image and idle scheduling; unsupported browsers retain the approved image without losing content or controls.
 - Runtime bundle is tree-shaken and source-hash protected so stale 3D bundles are caught by regression tests.

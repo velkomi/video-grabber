@@ -14,7 +14,7 @@ do
   grep -F "$needle" "$tmp/web.html" >/dev/null
 done
 
-for obsolete in   "Тарифы без скрытых"   "Отправить на мой компьютер"   "Supabase отправит"   "Cannot set properties"
+for obsolete in   "Тарифы без скрытых"   "Отправить на мой компьютер"   "Supabase отправит"   "Cannot set properties"   "Сменить тариф"   "/assets/videograbber-sync.webp"   "windows-orb"   "Интерактивная 3D-сцена"
 do
   if grep -F "$obsolete" "$tmp/web.html" >/dev/null; then
     echo "Obsolete public UI marker found: $obsolete" >&2
@@ -36,6 +36,14 @@ test "$(wc -c < "$tmp/planet-emissive.webp")" -gt 5000
 grep -F "setupHeroScene" "$tmp/app.js" >/dev/null
 grep -F 'import("/web/hero-three.bundle.js")' "$tmp/app.js" >/dev/null
 grep -F "requestIdleCallback" "$tmp/app.js" >/dev/null
+grep -F "setupStoryStage" "$tmp/app.js" >/dev/null
+grep -F "scrollTriggerApi.create" "$tmp/app.js" >/dev/null
+grep -F "videograbber:story-state" "$tmp/app.js" >/dev/null
+grep -F "visualTestMode" "$tmp/app.js" >/dev/null
+if grep -F "setupPointerShine" "$tmp/app.js" >/dev/null; then
+  echo "Obsolete pointer sheen code is still exposed." >&2
+  exit 6
+fi
 test "$(wc -c < "$tmp/hero-three.bundle.js")" -gt 300000
 grep -F "three.js r" "$tmp/hero-three.bundle.js" >/dev/null
 grep -F "videograbber-planet-map.webp" "$tmp/hero-three.bundle.js" >/dev/null
