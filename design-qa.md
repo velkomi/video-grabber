@@ -9,7 +9,7 @@
 
 ## Rendered implementation
 
-- Local final implementation: `D:\CODEX\Temp\vg-three-final-default.png`
+- Local final implementation: `D:\CODEX\Temp\vg-obvious3d-final.png`
 - Browser: Microsoft Edge / Chromium, headless with WebGL/SwiftShader enabled
 - Requested browser window: **1122 × 1402**
 - Captured content viewport: **1098 × 1263 CSS px**
@@ -27,7 +27,9 @@
 - Application-side e-mail validation returns human-readable copy.
 - Hero parallax reacts to pointer movement.
 - Realtime Three.js geometry initializes successfully on desktop; renderer reports `data-engine="three.js r186"`, canvas is populated and browser console has **0 SEVERE errors**.
-- Geometry is real, not a flat SVG/shader illusion: PBR sphere, torus orbits and extruded rounded feature cards are rendered by Three.js.
+- Geometry is real, not a flat SVG/shader illusion: PBR sphere, physically lit torus orbits and extruded rounded feature cards are rendered by Three.js.
+- Obvious-depth pass: card Z positions are intentionally staggered, focused cards move ~0.62 world units toward the camera, camera parallax is stronger, and scroll adds a subtle cinematic camera move.
+- Planet/orbit motion is deliberately readable: planet ~0.14 rad/s; three orbits rotate at independent stronger rates; back-rim light, rim shell and deterministic depth stars reinforce foreground/background separation.
 - The approved 3D raster remains the instant fallback while Three.js and textures load; with reduced-motion the Three.js runtime is not loaded, while normal narrow/mobile viewports keep animation at a reduced ~30 FPS and lower DPR.
 - Feature hotspots are semantic: URL, Video, MP3, Course, Windows and Telegram update the caption and WebGL accent without moving the real action out of HTML.
 - WebGL animation pauses automatically when the hero leaves the viewport or the page is hidden.
@@ -37,6 +39,7 @@
 - Main anchors and destinations exist: How it works, Download, Pricing, Account, Windows installer, Portable ZIP, Telegram.
 - Mobile width smoke test passed without horizontal document overflow; a temporary overflow caused by animated background glows was detected and fixed by clipping the root x-axis.
 - Browser console check: **0 SEVERE errors**.
+- Quantified obvious-3D check (latest release gate): temporal motion changed ~50% of canvas pixels, pointer parallax ~80%, feature-card focus ~78%; mobile animation remained active and overflow-free.
 
 ## Full-view comparison evidence
 

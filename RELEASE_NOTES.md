@@ -11,6 +11,9 @@
 - Added ASP.NET Core Brotli/Gzip response compression for JS/CSS/JSON over HTTPS.
 - Semantic hotspots remain real HTML links and update the scene accent/caption; rendering pauses offscreen and on hidden tabs.
 - With reduced-motion enabled the Three.js runtime is not loaded at all and the approved static hero remains visible. Normal mobile keeps the geometric scene animated with a ~30 FPS cap and lower DPR instead of disabling 3D entirely.
+- Strengthened visual depth after live review: faster planet/orbit motion, physically lit thicker orbit tubes, varied card Z-depth, hover pop-out, stronger pointer camera parallax, subtle scroll camera move, extra back-rim lighting and deterministic depth stars.
+- After Three.js is ready, the approved raster fallback fades to 3.5% opacity so the geometric scene is visually unmistakable while still preserving continuity.
+- Obvious-3D browser measurement: temporal motion changes roughly half the canvas, pointer parallax ~80% and focused-card pop/emissive ~78%; mobile remains animated and overflow-free.
 - Targeted regression 14/14 PASS, source/bundle syntax PASS, Three.js Edge smoke PASS, desktop/mobile/reduced-motion browser smoke PASS with zero severe console errors.
 
 ## [0.1.10-preview.60-rc.1] - 2026-09-29

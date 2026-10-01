@@ -245,15 +245,19 @@ main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
   pointer-events: none;
   opacity: 0;
   transition: opacity .6s ease;
+  filter:
+    saturate(1.14)
+    contrast(1.04)
+    drop-shadow(0 22px 42px rgba(31, 58, 151, .24));
 }
 .hero-visual.three-ready .hero-art {
-  opacity: .10;
+  opacity: .035;
   filter:
-    saturate(.9)
-    brightness(.72)
-    blur(1.4px)
-    drop-shadow(0 18px 36px rgba(0, 0, 0, .24));
-  transform: scale(1.015);
+    saturate(.82)
+    brightness(.54)
+    blur(2.2px)
+    drop-shadow(0 14px 30px rgba(0, 0, 0, .18));
+  transform: scale(1.025);
 }
 .hero-visual.three-ready .hero-three-canvas {
   opacity: 1;

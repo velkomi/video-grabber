@@ -15,7 +15,9 @@
 - API получил стандартное Brotli/Gzip response compression для JS/CSS/JSON по HTTPS;
 - шесть зон (URL, видео, MP3, курс, Windows, Telegram) остаются обычными HTML-ссылками, но меняют акцент сцены и человеческое пояснение;
 - Three.js-рендер ставится на паузу вне viewport и при скрытой вкладке; при `prefers-reduced-motion` 3D-runtime вообще не загружается и остаётся утверждённый статичный hero, а mobile без этого системного ограничения продолжает плавную сцену примерно до 30 FPS со сниженным DPR;
-- добавлены мягкие scroll-reveal, pointer sheen и атмосферное движение glow-слоёв; исправлен мобильный horizontal overflow от фоновых эффектов.
+- добавлены мягкие scroll-reveal, pointer sheen и атмосферное движение glow-слоёв; исправлен мобильный horizontal overflow от фоновых эффектов;
+- 3D-сцена усилена для очевидной глубины: планета вращается заметнее, орбиты стали толще и физически освещёнными, карточки разведены по Z-слоям и при hover выезжают к камере, добавлены отдельный back-rim свет, атмосферный rim-shell, глубинное звёздное поле и более сильный camera parallax;
+- добавлено лёгкое cinematic-движение камеры при скролле первого экрана; статичный approved hero после готовности Three.js почти полностью уходит, чтобы геометрия читалась как настоящий 3D.
 
 ### Проверено
 
@@ -25,7 +27,8 @@
 - Edge Three.js smoke: `data-engine="three.js r186"`, console SEVERE = 0;
 - desktop interaction smoke: feature-caption, hotspot focus, scroll reveal и pointer sheen работают;
 - mobile layout smoke: horizontal overflow отсутствует;
-- reduced-motion smoke: motion-классы не включаются, контент остаётся видимым.
+- reduced-motion smoke: motion-классы не включаются, контент остаётся видимым;
+- obvious-3D browser smoke: временное движение меняет около половины canvas, pointer parallax — ~80%, hover-card pop/emissive — ~78%; mobile 3D также остаётся анимированным без горизонтального overflow.
 
 ## [0.1.10-preview.60-rc.1] - 2026-09-29
 

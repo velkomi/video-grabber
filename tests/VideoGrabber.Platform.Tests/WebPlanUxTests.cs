@@ -184,6 +184,15 @@ public sealed class WebPlanUxTests
         Assert.Contains("videograbber:hero-accent", heroThree);
         Assert.Contains("time - lastPaintTime < 32", heroThree);
         Assert.Contains("narrowViewport ? 1.1 : 1.5", heroThree);
+        Assert.Contains("createDepthStarField", heroThree);
+        Assert.Contains("new THREE.PointsMaterial", heroThree);
+        Assert.Contains("selected ? 0.62 : 0", heroThree);
+        Assert.Contains("pointer.x * 0.18", heroThree);
+        Assert.Contains("scrollProgress * 0.52", heroThree);
+        Assert.Contains("new THREE.MeshStandardMaterial", heroThree);
+        Assert.Contains("new THREE.PointLight(0x9b65ff", heroThree);
+        Assert.Contains("opacity: .035", styles);
+        Assert.Contains("Интерактивная 3D-сцена", html);
         Assert.DoesNotContain(
             "reducedMotion || narrowViewport || !heroVisible",
             heroThree,

@@ -1165,10 +1165,11 @@ function setupHeroFeatureFocus(visual) {
     for (const hotspot of hotspots)
       hotspot.classList.remove("is-active");
     caption.classList.remove("is-active");
-    caption.querySelector("span").textContent = "Возможности";
-    caption.querySelector("strong").textContent = "Наведите на карточку";
+    caption.querySelector("span").textContent = "Интерактивная 3D-сцена";
+    caption.querySelector("strong").textContent =
+      "Двигайте мышью и наведите на карточку";
     caption.querySelector("small").textContent =
-      "Посмотрите, что именно умеет VideoGrabber.";
+      "Планета, орбиты и карточки реагируют в реальном времени.";
     visual.dispatchEvent(new CustomEvent("videograbber:hero-accent", {
       detail: { accent: defaultAccent, feature: null }
     }));
