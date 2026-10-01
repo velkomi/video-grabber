@@ -40,6 +40,9 @@ grep -F "setupStoryStage" "$tmp/app.js" >/dev/null
 grep -F "scrollTriggerApi.create" "$tmp/app.js" >/dev/null
 grep -F "videograbber:story-state" "$tmp/app.js" >/dev/null
 grep -F "visualTestMode" "$tmp/app.js" >/dev/null
+grep -F "perfDebugMode" "$tmp/app.js" >/dev/null
+grep -F "canvas.dataset.quality" "$tmp/hero-three.js" >/dev/null
+grep -F "createProceduralEnvironment" "$tmp/hero-three.js" >/dev/null
 if grep -F "setupPointerShine" "$tmp/app.js" >/dev/null; then
   echo "Obsolete pointer sheen code is still exposed." >&2
   exit 6
