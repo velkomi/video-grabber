@@ -615,6 +615,7 @@ footer {
     inset: -10% 0 2% -12%;
     transition: none;
   }
+  .space-haze { inset: 3% 0 -4% 0; }
 }
 
 @media (max-width: 1050px) {
