@@ -216,7 +216,7 @@ public sealed class WebPlanUxTests
         Assert.Contains("start: \"top 96%\"", js);
         Assert.Contains("startPercent: 42", js, StringComparison.Ordinal);
         Assert.Contains("startPercent: 72", js, StringComparison.Ordinal);
-        Assert.Contains(""top " + definition.startPercent + "%"", js, StringComparison.Ordinal);
+        Assert.Contains("start: \"top \" + definition.startPercent", js, StringComparison.Ordinal);
         Assert.Contains("innerHeight * (definition.startPercent / 100)", js, StringComparison.Ordinal);
         Assert.Contains("@media (prefers-reduced-motion: reduce) and (min-width: 721px)", styles, StringComparison.Ordinal);
         Assert.Contains("inset: -10% 0 2% -12%", styles, StringComparison.Ordinal);
