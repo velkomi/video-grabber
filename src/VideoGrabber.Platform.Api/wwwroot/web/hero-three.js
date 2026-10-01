@@ -270,11 +270,18 @@ async function initThreeHero(visual, canvas) {
   ];
 
   const cards = new Map();
+  const pickTargets = [];
   for (const spec of cardSpecs) {
     const card = createFeatureCard(spec, renderer);
     root.add(card.group);
     cards.set(spec.feature, card);
+    pickTargets.push(card.body, card.label);
   }
+
+  const raycaster = new THREE.Raycaster();
+  const rayPointer = new THREE.Vector2();
+  let hoveredFeature = null;
+  let pointerDown = null;
 
   const particleGroup = new THREE.Group();
   root.add(particleGroup);
@@ -431,9 +438,12 @@ async function initThreeHero(visual, canvas) {
           .copy(selected ? accent : card.baseAccent)
           .multiplyScalar(selected ? 0.48 : 0.30);
 
+            const inwardPop = selected
+          ? -Math.sign(card.basePosition.x || 1) * 0.16
+          : 0;
         card.group.position.x = THREE.MathUtils.lerp(
           card.group.position.x,
-          card.basePosition.x + pointer.x * 0.045 * depthFactor,
+          card.basePosition.x + inwardPop + pointer.x * 0.045 * depthFactor,
           0.10
         );
         card.group.position.y = THREE.MathUtils.lerp(
@@ -443,7 +453,7 @@ async function initThreeHero(visual, canvas) {
         );
         card.group.position.z = THREE.MathUtils.lerp(
           card.group.position.z,
-          card.basePosition.z + (selected ? 0.62 : 0) + floatZ,
+          card.basePosition.z + (selected ? 0.50 : 0) + floatZ,
           0.12
         );
 
@@ -504,14 +514,83 @@ async function initThreeHero(visual, canvas) {
     renderer.setAnimationLoop(null);
   };
 
+  const featureAccent = new Map(
+    cardSpecs.map((spec) => [spec.feature, new THREE.Color(spec.accent)])
+  );
+
+  const setRaycastFeature = (feature) => {
+    if (hoveredFeature === feature) return;
+    hoveredFeature = feature || null;
+    targetFeature = hoveredFeature;
+
+    if (hoveredFeature && featureAccent.has(hoveredFeature))
+      accentTarget.copy(featureAccent.get(hoveredFeature));
+    else
+      accentTarget.setRGB(0.28, 0.62, 1.0, THREE.SRGBColorSpace);
+
+    visual.classList.toggle("three-card-hover", Boolean(hoveredFeature));
+    if (!animationRunning) render();
+  };
+
+  const raycastAt = (clientX, clientY) => {
+    const rect = canvas.getBoundingClientRect();
+    if (
+      clientX < rect.left ||
+      clientX > rect.right ||
+      clientY < rect.top ||
+      clientY > rect.bottom
+    ) {
+      setRaycastFeature(null);
+      return null;
+    }
+
+    rayPointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    rayPointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(rayPointer, camera);
+    const hit = raycaster.intersectObjects(pickTargets, false)[0];
+    const feature = hit?.object?.userData?.feature || null;
+    setRaycastFeature(feature);
+    return feature;
+  };
+
   visual.addEventListener("pointermove", (event) => {
     const rect = visual.getBoundingClientRect();
     targetPointer.x = ((event.clientX - rect.left) / rect.width - 0.5) * 2;
     targetPointer.y = ((event.clientY - rect.top) / rect.height - 0.5) * 2;
+    raycastAt(event.clientX, event.clientY);
+
+    if (pointerDown) {
+      pointerDown.moved = Math.max(
+        pointerDown.moved,
+        Math.hypot(
+          event.clientX - pointerDown.x,
+          event.clientY - pointerDown.y
+        )
+      );
+    }
+  });
+
+  visual.addEventListener("pointerdown", (event) => {
+    pointerDown = { x: event.clientX, y: event.clientY, moved: 0 };
+    raycastAt(event.clientX, event.clientY);
+  });
+
+  visual.addEventListener("pointerup", (event) => {
+    const feature = raycastAt(event.clientX, event.clientY);
+    const moved = pointerDown?.moved || 0;
+    pointerDown = null;
+    if (!feature || moved > 10) return;
+
+    const link = document.querySelector(
+      '.hero-hotspot[data-feature="' + CSS.escape(feature) + '"]'
+    );
+    link?.click();
   });
 
   visual.addEventListener("pointerleave", () => {
     targetPointer.set(0, 0);
+    pointerDown = null;
+    setRaycastFeature(null);
   });
 
   visual.addEventListener("videograbber:hero-accent", (event) => {
@@ -610,13 +689,16 @@ function createFeatureCard(spec, renderer) {
   });
 
   const body = new THREE.Mesh(geometry, bodyMaterial);
+  body.userData.feature = spec.feature;
   group.add(body);
 
   const labelCanvas = makeCardTexture(spec);
   const texture = new THREE.CanvasTexture(labelCanvas);
   texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+  texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 16);
   texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
 
   const label = new THREE.Mesh(
     new THREE.PlaneGeometry(1.94, 0.92),
@@ -628,10 +710,13 @@ function createFeatureCard(spec, renderer) {
     })
   );
   label.position.z = 0.115;
+  label.userData.feature = spec.feature;
   group.add(label);
 
   return {
     group,
+    body,
+    label,
     bodyMaterial,
     texture,
     baseAccent: accent,
@@ -675,15 +760,16 @@ function roundedRectShape(width, height, radius) {
 
 function makeCardTexture(spec) {
   const canvas = document.createElement("canvas");
-  canvas.width = 900;
-  canvas.height = 420;
+  canvas.width = 1350;
+  canvas.height = 630;
   const context = canvas.getContext("2d");
+  context.scale(1.5, 1.5);
 
-  const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+  const gradient = context.createLinearGradient(0, 0, 900, 420);
   gradient.addColorStop(0, "rgba(24,47,91,.97)");
   gradient.addColorStop(0.55, "rgba(13,27,58,.98)");
   gradient.addColorStop(1, "rgba(8,18,39,.99)");
-  roundedRect(context, 6, 6, canvas.width - 12, canvas.height - 12, 62);
+  roundedRect(context, 6, 6, 888, 408, 62);
   context.fillStyle = gradient;
   context.fill();
 

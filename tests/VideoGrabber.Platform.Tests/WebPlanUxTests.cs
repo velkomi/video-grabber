@@ -173,6 +173,15 @@ public sealed class WebPlanUxTests
         Assert.Contains("new THREE.TorusGeometry", heroThree);
         Assert.Contains("new THREE.ExtrudeGeometry", heroThree);
         Assert.Contains("new THREE.MeshPhysicalMaterial", heroThree);
+        Assert.Contains("new THREE.Raycaster", heroThree);
+        Assert.Contains("intersectObjects(pickTargets, false)", heroThree);
+        Assert.Contains("body.userData.feature", heroThree);
+        Assert.Contains("label.userData.feature", heroThree);
+        Assert.Contains("canvas.width = 1350", heroThree);
+        Assert.Contains("context.scale(1.5, 1.5)", heroThree);
+        Assert.Contains("texture.anisotropy", heroThree);
+        Assert.Contains("pointer-events: none", styles);
+        Assert.Contains("inset: -10% -15% 2% -12%", styles);
         Assert.Contains("canvas.dataset.engine", heroThree);
         Assert.Contains("THREE.REVISION", heroThree);
         Assert.Contains("renderer.setAnimationLoop", heroThree);
@@ -186,7 +195,9 @@ public sealed class WebPlanUxTests
         Assert.Contains("narrowViewport ? 1.1 : 1.5", heroThree);
         Assert.Contains("createDepthStarField", heroThree);
         Assert.Contains("new THREE.PointsMaterial", heroThree);
-        Assert.Contains("selected ? 0.62 : 0", heroThree);
+        Assert.Contains("selected ? 0.50 : 0", heroThree);
+        Assert.Contains("inwardPop", heroThree);
+        Assert.Contains("Math.sign(card.basePosition.x", heroThree);
         Assert.Contains("pointer.x * 0.18", heroThree);
         Assert.Contains("scrollProgress * 0.52", heroThree);
         Assert.Contains("new THREE.MeshStandardMaterial", heroThree);

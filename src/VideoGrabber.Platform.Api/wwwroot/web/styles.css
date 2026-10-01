@@ -215,7 +215,7 @@ main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
 }
 .hero-art-shell {
   position: absolute;
-  inset: -5% -6% 6% -4%;
+  inset: -10% -15% 2% -12%;
   transform-style: preserve-3d;
   transform: rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateZ(24px);
   transition: transform .16s ease-out;
@@ -262,6 +262,9 @@ main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
 .hero-visual.three-ready .hero-three-canvas {
   opacity: 1;
 }
+.hero-visual.three-card-hover {
+  cursor: pointer;
+}
 .hero-hotspot {
   z-index: 3;
   position: absolute;
@@ -271,6 +274,7 @@ main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
   background: transparent;
   box-shadow: none;
   outline: none;
+  pointer-events: none;
 }
 .hero-hotspot:hover,
 .hero-hotspot:focus-visible,
