@@ -6,7 +6,7 @@
 - Scene geometry: PBR planet sphere, three torus orbits, six extruded rounded feature cards, central VG badge and subtle particle accents.
 - Added self-hosted planet diffuse/bump/emissive maps and physically lit cold-blue materials; approved raster artwork remains the instant fallback.
 - Pinned self-hosted Three.js `0.186.1` with MIT license; canonical `scripts/Build-Web3D.ps1` bundles the scene through esbuild `0.28.2`.
-- Production bundle is tree-shaken (~596 KB raw / ~152 KB gzip estimate) and carries the SHA-256 of `hero-three.js`; regression verifies the bundle matches current source.
+- Production bundle is tree-shaken (~596 KB raw / ~152 KB gzip estimate) and carries the SHA-256 of `hero-three.js`; regression verifies the bundle matches current source. Source hashing is canonical UTF-8/LF so Windows and Linux CI calculate the same marker.
 - Three.js loads lazily after the approved hero art using idle scheduling, so the first visual is not blocked by the 3D runtime.
 - Added ASP.NET Core Brotli/Gzip response compression for JS/CSS/JSON over HTTPS.
 - Semantic hotspots remain real HTML links and update the scene accent/caption; rendering pauses offscreen and on hidden tabs.

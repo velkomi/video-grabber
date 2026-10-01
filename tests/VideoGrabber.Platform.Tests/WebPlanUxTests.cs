@@ -28,9 +28,12 @@ public sealed class WebPlanUxTests
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
             "hero-three.js");
         var heroThree = File.ReadAllText(heroThreePath);
+        var canonicalHeroSource = heroThree
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal);
         var heroSourceHash = Convert.ToHexString(
                 System.Security.Cryptography.SHA256.HashData(
-                    File.ReadAllBytes(heroThreePath)))
+                    System.Text.Encoding.UTF8.GetBytes(canonicalHeroSource)))
             .ToLowerInvariant();
         var heroBundlePath = Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",

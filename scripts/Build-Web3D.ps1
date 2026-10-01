@@ -44,7 +44,17 @@ if ($LASTEXITCODE -ne 0) {
     throw "esbuild failed with exit code $LASTEXITCODE."
 }
 
-$sourceHash = (Get-FileHash -LiteralPath $entry -Algorithm SHA256).Hash.ToLowerInvariant()
+$sourceText = [IO.File]::ReadAllText($entry)
+$canonicalSource = $sourceText.Replace("`r`n", "`n").Replace("`r", "`n")
+$canonicalBytes = [Text.UTF8Encoding]::new($false).GetBytes($canonicalSource)
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try {
+    $hashBytes = $sha256.ComputeHash($canonicalBytes)
+}
+finally {
+    $sha256.Dispose()
+}
+$sourceHash = ([BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
 $bundleContent = Get-Content -LiteralPath $output -Raw
 $marker = "// VideoGrabber 3D source-sha256:$sourceHash" + [Environment]::NewLine
 [IO.File]::WriteAllText(

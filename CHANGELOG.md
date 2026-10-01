@@ -10,7 +10,7 @@
 - для планеты добавлены self-hosted diffuse/bump/emissive-текстуры, холодный физический свет, тонкая additive-атмосфера и отдельный VG-бейдж;
 - утверждённый WebP сохранён как мгновенный fallback и мягкий фон загрузки; после первого успешного Three.js-кадра сцена плавно перехватывает hero;
 - Three.js зафиксирован локально на `0.186.1` вместе с MIT-лицензией; production использует tree-shaken bundle, собираемый `scripts/Build-Web3D.ps1` через pinned esbuild `0.28.2`;
-- production-bundle хранит SHA-256 исходника `hero-three.js`, а regression-тест проверяет свежесть bundle без сетевого rebuild в CI;
+- production-bundle хранит SHA-256 исходника `hero-three.js`, а regression-тест проверяет свежесть bundle без сетевого rebuild в CI; hash теперь считается по каноническому UTF-8/LF содержимому одинаково на Windows и Linux;
 - bundle подгружается лениво после hero-image через `requestIdleCallback`, чтобы 3D не конкурировал с LCP; ориентировочный размер — ~596 КБ raw / ~152 КБ gzip;
 - API получил стандартное Brotli/Gzip response compression для JS/CSS/JSON по HTTPS;
 - шесть зон (URL, видео, MP3, курс, Windows, Telegram) остаются обычными HTML-ссылками, но меняют акцент сцены и человеческое пояснение;
