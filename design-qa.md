@@ -17,6 +17,20 @@
 - Local route: `http://127.0.0.1:8881/web/`
 - Scene runtime: self-hosted Three.js **0.186.1**, production tree-shaken bundle built through esbuild **0.28.2**.
 
+## Post-preview.60 finalization implemented in code
+
+The 2026-10-01 finalization keeps the same public architecture and adds the following without replacing the earlier browser evidence below:
+
+- adaptive `high / balanced / economy` Three.js quality tiers with sustained-frame-time hysteresis instead of a fixed DPR-only policy;
+- canvas QA markers for current quality tier, effective DPR and smoothed frame time;
+- a deterministic self-hosted procedural PMREM environment plus soft nebula sprites so MeshPhysicalMaterial surfaces receive richer reflections/depth without a CDN;
+- economy mode can remove nonessential stars, particles and nebula while retaining the semantic planet/cards/story and every normal HTML action;
+- `?perfDebug=1` exposes browser-local 3D quality, DPR, frame time, LCP, CLS and INP diagnostics; the diagnostics code sends no performance telemetry;
+- display typography prefers local variable system faces (`Segoe UI Variable Display/Text`, `SF Pro Display/Text`) with robust fallbacks instead of adding a font CDN;
+- no approved `.glb/.gltf/.hdr/.exr` asset exists in the repository, so this pass does not invent a Blender model. The public contract remains ready for a later approved GLB art replacement.
+
+These additions are code/CI scope. They do **not** convert the earlier headless/SwiftShader evidence into a physical iPhone, Android, Retina-GPU or production field-Web-Vitals pass; those remain separate release evidence.
+
 ## Primary interactions tested
 
 - Signed-out state is visible; authenticated dashboard is hidden.
@@ -114,7 +128,7 @@ Focused comparison was necessary for:
 
 - Exact source display font could be matched more closely in a later branding pass.
 - Current hero objects are high-quality procedural Three.js geometry. A later art pass can replace selected cards/planet details with bespoke Blender-authored GLB meshes without changing the public UI contract.
-- Background cosmic decoration can be made richer with an additional dedicated texture/HDRI layer if desired, without changing layout or UX.
+- The post-preview.60 pass adds a procedural self-hosted environment and nebula layer. A bespoke approved HDR/EXR or Blender-authored GLB can still replace selected art later without changing layout or UX.
 - Final page is intentionally taller than the generated concept sheet on some desktop viewports to preserve readable copy and responsive behavior.
 
 ## Final result
