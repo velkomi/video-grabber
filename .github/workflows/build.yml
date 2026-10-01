@@ -95,3 +95,32 @@ jobs:
           path: .\artifacts\VideoGrabber-win-x64-ci-smoke.zip
           if-no-files-found: error
           retention-days: 7
+
+  web3d-regenerate:
+    if: github.event_name == 'pull_request' && github.head_ref == 'codex/vg-3d-finalization-20261001'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Rebuild deterministic Three.js bundle
+        shell: pwsh
+        run: .\scripts\Build-Web3D.ps1
+      - name: Commit regenerated bundle when needed
+        shell: pwsh
+        run: |
+          $bundle = 'src/VideoGrabber.Platform.Api/wwwroot/web/hero-three.bundle.js'
+          git diff --exit-code -- $bundle
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'WEB3D_BUNDLE_ALREADY_CURRENT'
+            exit 0
+          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- $bundle
+          git commit -m 'build: regenerate Three.js bundle'
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
+
