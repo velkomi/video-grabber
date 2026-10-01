@@ -423,19 +423,16 @@ function closePlanDialog() {
   if ($("#plan-dialog").open) $("#plan-dialog").close();
 }
 
-function selectBillingProduct(planId) {
-  if (!planId) return false;
-  const node = document.querySelector(
-    '.billing-product[data-plan="' + CSS.escape(planId) + '"]'
-  );
-  if (!node) return false;
-  $$(".billing-product").forEach((item) => item.classList.remove("selected"));
-  node.classList.add("selected");
-  node.scrollIntoView({ behavior: "smooth", block: "center" });
-  return true;
+function findPaymentProduct(planId) {
+  return state.paymentProducts?.products?.find(
+    (product) =>
+      product.planId === planId &&
+      product.sku &&
+      product.prices?.yookassa
+  ) || null;
 }
 
-function handlePlanAction(planId) {
+async function handlePlanAction(planId) {
   closePlanDialog();
 
   if (planId === "free") {
@@ -447,20 +444,30 @@ function handlePlanAction(planId) {
   if (!accessToken()) {
     setStatus(
       "#auth-status",
-      "Сначала войдите. После входа выбранный тариф можно оформить в кабинете."
+      "Сначала войдите. После входа выбранный тариф можно оформить здесь же."
     );
     $("#app").scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
 
-  if (!selectBillingProduct(planId)) {
+  if (state.access?.planId === planId) {
+    setStatus("#job-status", "Этот тариф уже активен.", "success");
+    $("#app").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+
+  const product = findPaymentProduct(planId);
+  if (!product) {
     setStatus(
       "#job-status",
-      "Тариф выбран. Онлайн-оплата появится здесь после подключения платёжного каталога. Ваш выбор сохранён на этой странице.",
+      "Сейчас этот тариф нельзя оформить онлайн. Попробуйте ещё раз позже.",
       "error"
     );
     $("#app").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
   }
+
+  await createCheckout(product);
 }
 
 function operationName(kind) {
@@ -693,47 +700,6 @@ function renderJobs() {
   }
 }
 
-function renderBilling() {
-  const host = $("#billing-products");
-  host.replaceChildren();
-  const catalog = state.paymentProducts;
-  if (!catalog) {
-    host.textContent = "Оформление тарифов сейчас недоступно. Попробуйте позже.";
-    return;
-  }
-  const labels = {
-    start: "Start",
-    unlimited_video: "Unlimited Video",
-    full_course: "Full Course"
-  };
-
-  for (const product of catalog.products || []) {
-    if (!product.planId || !product.prices?.yookassa) continue;
-    const price = product.prices.yookassa;
-    const card = document.createElement("div");
-    card.className = "billing-product";
-    card.dataset.plan = product.planId;
-    const name = document.createElement("b");
-    name.textContent = labels[product.planId] || product.sku;
-    const amount = document.createElement("span");
-    amount.textContent =
-      new Intl.NumberFormat("ru-RU").format(price.minorUnits / 100) +
-      " " + price.currency + " / 30 дней";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "button button-quiet";
-    button.textContent =
-      state.access?.planId === product.planId ? "Текущий тариф" : "Выбрать";
-    button.disabled = state.access?.planId === product.planId;
-    button.addEventListener("click", () => createCheckout(product));
-    card.append(name, amount, button);
-    host.append(card);
-  }
-
-  if (!host.children.length)
-    host.textContent = "Тарифы сейчас недоступны для оформления. Попробуйте позже.";
-}
-
 async function loadDashboard() {
   const [profile, access, identities, devices, jobs, subscriptions] =
     await Promise.all([
@@ -764,7 +730,6 @@ async function loadDashboard() {
   renderAccount();
   renderDevices();
   renderJobs();
-  renderBilling();
 }
 
 function signedOut(message = "") {
@@ -1156,20 +1121,13 @@ const heroFeatureCatalog = {
 };
 
 function setupHeroFeatureFocus(visual) {
-  const caption = $("#hero-feature-caption");
   const hotspots = $$(".hero-hotspot[data-feature]");
-  if (!caption || !hotspots.length) return;
+  if (!hotspots.length) return;
 
   const defaultAccent = [0.28, 0.62, 1.0];
-  const resetCaption = () => {
+  const resetFeature = () => {
     for (const hotspot of hotspots)
       hotspot.classList.remove("is-active");
-    caption.classList.remove("is-active");
-    caption.querySelector("span").textContent = "Интерактивная 3D-сцена";
-    caption.querySelector("strong").textContent =
-      "Двигайте мышью и наведите на карточку";
-    caption.querySelector("small").textContent =
-      "Планета, орбиты и карточки реагируют в реальном времени.";
     visual.dispatchEvent(new CustomEvent("videograbber:hero-accent", {
       detail: { accent: defaultAccent, feature: null }
     }));
@@ -1182,11 +1140,6 @@ function setupHeroFeatureFocus(visual) {
     for (const item of hotspots)
       item.classList.toggle("is-active", item === hotspot);
 
-    caption.classList.add("is-active");
-    caption.querySelector("span").textContent = "Возможность VideoGrabber";
-    caption.querySelector("strong").textContent = feature.title;
-    caption.querySelector("small").textContent = feature.copy;
-
     visual.dispatchEvent(new CustomEvent("videograbber:hero-accent", {
       detail: { accent: feature.accent, feature: hotspot.dataset.feature }
     }));
@@ -1196,36 +1149,11 @@ function setupHeroFeatureFocus(visual) {
     hotspot.addEventListener("pointerenter", () => activate(hotspot));
     hotspot.addEventListener("focus", () => activate(hotspot));
     hotspot.addEventListener("pointerleave", () => {
-      if (document.activeElement !== hotspot) resetCaption();
+      if (document.activeElement !== hotspot) resetFeature();
     });
     hotspot.addEventListener("blur", () => {
-      if (!hotspot.matches(":hover")) resetCaption();
+      if (!hotspot.matches(":hover")) resetFeature();
     });
-  }
-}
-
-function setupPointerShine() {
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-  const targets = $$(
-    ".section-card, .sync-card, .download-card, .price-card"
-  );
-  for (const target of targets) {
-    target.addEventListener("pointermove", (event) => {
-      const rect = target.getBoundingClientRect();
-      target.style.setProperty(
-        "--shine-x",
-        (((event.clientX - rect.left) / rect.width) * 100).toFixed(1) + "%"
-      );
-      target.style.setProperty(
-        "--shine-y",
-        (((event.clientY - rect.top) / rect.height) * 100).toFixed(1) + "%"
-      );
-      target.classList.add("has-pointer-shine");
-    });
-    target.addEventListener("pointerleave", () =>
-      target.classList.remove("has-pointer-shine")
-    );
   }
 }
 
@@ -1323,7 +1251,6 @@ function setupHeroScene() {
 async function start() {
   scheduleThreeHero();
   setupHeroScene();
-  setupPointerShine();
   setupScrollReveal();
   captureTelegramAccountLink();
   captureDesktopFlow();

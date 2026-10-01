@@ -21,9 +21,6 @@ public sealed class WebPlanUxTests
         var heroAsset = new FileInfo(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
             "videograbber-hero.webp"));
-        var syncAsset = new FileInfo(Path.Combine(
-            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
-            "videograbber-sync.webp"));
         var heroThreePath = Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
             "hero-three.js");
@@ -103,13 +100,11 @@ public sealed class WebPlanUxTests
         Assert.Contains("canvas.hidden = true", js);
         Assert.Contains("hero-hotspot", html);
         Assert.Contains("data-feature=\"video\"", html);
-        Assert.Contains("id=\"hero-feature-caption\"", html);
+        Assert.DoesNotContain("id=\"hero-feature-caption\"", html, StringComparison.Ordinal);
         Assert.Contains("hero-visual", html);
         Assert.True(heroAsset.Exists);
         Assert.True(heroAsset.Length > 50_000);
-        Assert.Contains("/assets/videograbber-sync.webp", html);
-        Assert.True(syncAsset.Exists);
-        Assert.True(syncAsset.Length > 10_000);
+        Assert.DoesNotContain("/assets/videograbber-sync.webp", html, StringComparison.Ordinal);
         Assert.True(heroBundle.Exists);
         Assert.InRange(heroBundle.Length, 300_000, 1_000_000);
         Assert.Contains("three.js r", heroBundleText, StringComparison.Ordinal);
@@ -155,7 +150,9 @@ public sealed class WebPlanUxTests
         Assert.DoesNotContain("YooKassa", html, StringComparison.Ordinal);
         Assert.DoesNotContain("YooKassa", js, StringComparison.Ordinal);
         Assert.DoesNotContain("Whisper", js, StringComparison.Ordinal);
-        Assert.Contains("Оплата открывается на отдельной защищённой странице", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("id=\"billing-products\"", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Сменить тариф", html, StringComparison.Ordinal);
+        Assert.Contains("id=\"change-plan-link\"", html, StringComparison.Ordinal);
         Assert.Contains("Сейчас не удалось открыть оплату", js, StringComparison.Ordinal);
         Assert.Contains("AddResponseCompression", program);
         Assert.Contains("UseResponseCompression", program);
@@ -195,13 +192,18 @@ public sealed class WebPlanUxTests
         Assert.Contains("new THREE.MeshStandardMaterial", heroThree);
         Assert.Contains("new THREE.PointLight(0x9b65ff", heroThree);
         Assert.Contains("opacity: .035", styles);
-        Assert.Contains("Интерактивная 3D-сцена", html);
+        Assert.DoesNotContain("Интерактивная 3D-сцена", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("windows-orb", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("sync-art", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("has-pointer-shine", styles, StringComparison.Ordinal);
+        Assert.Contains("background: transparent", styles, StringComparison.Ordinal);
+        Assert.Contains("box-shadow: none", styles, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "reducedMotion || narrowViewport || !heroVisible",
             heroThree,
             StringComparison.Ordinal);
         Assert.Contains(@"split(/\s+/)", heroThree, StringComparison.Ordinal);
-        Assert.Contains("setupPointerShine", js);
+        Assert.DoesNotContain("setupPointerShine", js, StringComparison.Ordinal);
         Assert.Contains("setupScrollReveal", js);
         Assert.Contains("videograbber:hero-accent", js);
         Assert.Contains("IntersectionObserver", js);
