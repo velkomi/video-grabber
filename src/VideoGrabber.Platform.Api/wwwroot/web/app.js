@@ -2,9 +2,15 @@
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const visualTestMode =
-  new URLSearchParams(location.search).get("visualTest") === "1";
+const queryParams = new URLSearchParams(location.search);
+const visualTestMode = queryParams.get("visualTest") === "1";
+const perfDebugMode = queryParams.get("perfDebug") === "1";
 window.__VG_VISUAL_TEST = visualTestMode;
+window.__VG_WEB_VITALS = {
+  lcp: null,
+  cls: 0,
+  inp: null
+};
 if (visualTestMode)
   document.documentElement.classList.add("visual-test");
 
@@ -1127,6 +1133,89 @@ const heroFeatureCatalog = {
   }
 };
 
+function setupPerformanceDiagnostics() {
+  const metrics = window.__VG_WEB_VITALS;
+  const observers = [];
+  const interactions = new Map();
+
+  const observe = (type, callback, options = {}) => {
+    if (
+      !("PerformanceObserver" in window) ||
+      !PerformanceObserver.supportedEntryTypes?.includes(type)
+    ) return;
+
+    try {
+      const observer = new PerformanceObserver((list) =>
+        callback(list.getEntries())
+      );
+      observer.observe({ type, buffered: true, ...options });
+      observers.push(observer);
+    } catch (error) {
+      console.debug("VideoGrabber performance observer unavailable", type, error);
+    }
+  };
+
+  observe("largest-contentful-paint", (entries) => {
+    const entry = entries.at(-1);
+    if (entry) metrics.lcp = entry.startTime;
+  });
+
+  observe("layout-shift", (entries) => {
+    for (const entry of entries) {
+      if (!entry.hadRecentInput)
+        metrics.cls += entry.value || 0;
+    }
+  });
+
+  observe("event", (entries) => {
+    for (const entry of entries) {
+      if (!entry.interactionId) continue;
+      const current = interactions.get(entry.interactionId) || 0;
+      interactions.set(
+        entry.interactionId,
+        Math.max(current, entry.duration || 0)
+      );
+    }
+
+    const values = [...interactions.values()].sort((a, b) => a - b);
+    if (!values.length) return;
+    const index = Math.max(0, Math.ceil(values.length * 0.98) - 1);
+    metrics.inp = values[index];
+  }, { durationThreshold: 40 });
+
+  const panel = $("#perf-debug");
+  let debugTimer = null;
+
+  const formatMs = (value) =>
+    Number.isFinite(value) ? Math.round(value) + " ms" : "—";
+
+  const renderDebug = () => {
+    if (!perfDebugMode || !panel) return;
+    const canvas = $("#hero-three");
+    $("#perf-quality").textContent = canvas?.dataset.quality || "pending";
+    $("#perf-dpr").textContent = canvas?.dataset.dpr || "—";
+    $("#perf-frame").textContent =
+      canvas?.dataset.frameMs && canvas.dataset.frameMs !== "0"
+        ? canvas.dataset.frameMs + " ms"
+        : "—";
+    $("#perf-lcp").textContent = formatMs(metrics.lcp);
+    $("#perf-cls").textContent = metrics.cls.toFixed(3);
+    $("#perf-inp").textContent = formatMs(metrics.inp);
+  };
+
+  if (perfDebugMode && panel) {
+    panel.hidden = false;
+    document.documentElement.classList.add("perf-debug-mode");
+    renderDebug();
+    debugTimer = setInterval(renderDebug, 500);
+  }
+
+  window.addEventListener("pagehide", () => {
+    observers.forEach((observer) => observer.disconnect());
+    if (debugTimer !== null) clearInterval(debugTimer);
+  }, { once: true });
+}
+
 function setupHeroFeatureFocus(visual) {
   const hotspots = $$(".hero-hotspot[data-feature]");
   if (!hotspots.length) return;
@@ -1436,6 +1525,7 @@ function setupHeroScene() {
 }
 
 async function start() {
+  setupPerformanceDiagnostics();
   setupStoryStage();
   scheduleThreeHero();
   setupHeroScene();
