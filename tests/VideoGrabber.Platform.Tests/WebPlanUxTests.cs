@@ -267,7 +267,10 @@ public sealed class WebPlanUxTests
         Assert.Contains("staticScene", heroThree);
         Assert.Contains("storyStageVisible", heroThree);
         Assert.Contains("time - lastPaintTime < 32", heroThree);
-        Assert.Contains("narrowViewport ? 1.1 : 1.5", heroThree);
+        Assert.Contains("desktopDpr: 1.5", heroThree, StringComparison.Ordinal);
+        Assert.Contains("mobileDpr: 1.1", heroThree, StringComparison.Ordinal);
+        Assert.Contains("desktopDpr: 1.0", heroThree, StringComparison.Ordinal);
+        Assert.Contains("mobileDpr: 0.8", heroThree, StringComparison.Ordinal);
         Assert.Contains("createDepthStarField", heroThree);
         Assert.Contains("new THREE.PointsMaterial", heroThree);
         Assert.Contains("selected ? 0.50 : 0", heroThree);
