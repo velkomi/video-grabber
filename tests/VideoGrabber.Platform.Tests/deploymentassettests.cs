@@ -269,6 +269,17 @@ public sealed class DeploymentAssetTests
         Assert.DoesNotContain("preview.56", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("curl -k", script, StringComparison.Ordinal);
 
+        var runbook = File.ReadAllText(Path.Combine(
+            root, "docs", "platform", "deployment-runbook.md"));
+        Assert.Contains(
+            """tr -d '\r\n' < VERSION""",
+            runbook,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            """tr -d '\\r\\n' < VERSION""",
+            runbook,
+            StringComparison.Ordinal);
+
         var verify = File.ReadAllText(Path.Combine(
             root, "deploy", "platform", "verify_public_surface.sh"));
         Assert.Contains("/download/windows", verify, StringComparison.Ordinal);
