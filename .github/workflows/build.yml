@@ -70,6 +70,14 @@ jobs:
         run: dotnet restore .\VideoGrabber.slnx
       - name: Build
         run: dotnet build .\VideoGrabber.slnx -c Release --no-restore
+      - name: Check public JavaScript syntax
+        shell: pwsh
+        run: |
+          node --check .\src\VideoGrabber.Platform.Api\wwwroot\web\app.js
+          Copy-Item .\src\VideoGrabber.Platform.Api\wwwroot\web\hero-three.js "$env:RUNNER_TEMP\hero-three.mjs"
+          Copy-Item .\src\VideoGrabber.Platform.Api\wwwroot\web\hero-three.bundle.js "$env:RUNNER_TEMP\hero-three.bundle.mjs"
+          node --check "$env:RUNNER_TEMP\hero-three.mjs"
+          node --check "$env:RUNNER_TEMP\hero-three.bundle.mjs"
       - name: Test Windows regression suites
         shell: pwsh
         run: |
