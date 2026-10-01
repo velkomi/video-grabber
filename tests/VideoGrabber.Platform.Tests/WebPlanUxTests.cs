@@ -52,6 +52,18 @@ public sealed class WebPlanUxTests
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
             "vendor", "three.version.txt");
         var threeVersion = File.ReadAllText(threeVersionPath).Trim();
+        var gsapBundle = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "vendor", "gsap-3.15.0.min.js"));
+        var scrollTriggerBundle = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "vendor", "ScrollTrigger-3.15.0.min.js"));
+        var gsapLicense = new FileInfo(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "vendor", "gsap.LICENSE.txt"));
+        var gsapVersion = File.ReadAllText(Path.Combine(
+            root, "src", "VideoGrabber.Platform.Api", "wwwroot", "web",
+            "vendor", "gsap.version.txt")).Trim();
         var planetMap = new FileInfo(Path.Combine(
             root, "src", "VideoGrabber.Platform.Api", "wwwroot", "assets",
             "videograbber-planet-map.webp"));
@@ -92,6 +104,13 @@ public sealed class WebPlanUxTests
         Assert.Contains("/assets/videograbber-hero.webp", html);
         Assert.Contains("hero-art-shell", html);
         Assert.Contains("id=\"hero-three\"", html);
+        Assert.Contains("id=\"story-stage\"", html);
+        Assert.Contains("story-slot-workflow", html);
+        Assert.Contains("story-slot-sync", html);
+        Assert.Contains("story-slot-pricing", html);
+        Assert.Contains("story-slot-windows", html);
+        Assert.Contains("/web/vendor/gsap-3.15.0.min.js", html);
+        Assert.Contains("/web/vendor/ScrollTrigger-3.15.0.min.js", html);
         Assert.DoesNotContain("src=\"/web/hero-three.js\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("src=\"/web/hero-three.bundle.js\"", html, StringComparison.Ordinal);
         Assert.Contains("import(\"/web/hero-three.bundle.js\")", js);
@@ -128,6 +147,13 @@ public sealed class WebPlanUxTests
         Assert.True(threeLicense.Exists);
         Assert.True(threeLicense.Length > 500);
         Assert.Equal("0.186.1", threeVersion);
+        Assert.True(gsapBundle.Exists);
+        Assert.True(gsapBundle.Length > 50_000);
+        Assert.True(scrollTriggerBundle.Exists);
+        Assert.True(scrollTriggerBundle.Length > 30_000);
+        Assert.True(gsapLicense.Exists);
+        Assert.True(gsapLicense.Length > 80);
+        Assert.Equal("3.15.0", gsapVersion);
         Assert.True(planetMap.Exists);
         Assert.True(planetMap.Length > 50_000);
         Assert.True(planetBump.Exists);
@@ -167,6 +193,11 @@ public sealed class WebPlanUxTests
         Assert.Contains("href=\"/miniapp/\"", html);
         Assert.Contains("openPlanDialog", js);
         Assert.Contains("setupHeroScene", js);
+        Assert.Contains("setupStoryStage", js);
+        Assert.Contains("registerPlugin(scrollTriggerApi)", js);
+        Assert.Contains("scrollTriggerApi.create", js);
+        Assert.Contains("videograbber:story-state", js);
+        Assert.Contains("videograbber:story-progress", js);
         Assert.DoesNotContain("setupHeroWebGL", js, StringComparison.Ordinal);
         Assert.Contains("setupHeroFeatureFocus", js);
         Assert.Contains("new THREE.SphereGeometry", heroThree);
@@ -191,6 +222,11 @@ public sealed class WebPlanUxTests
         Assert.Contains("videograbber-planet-bump.png", heroThree);
         Assert.Contains("videograbber-planet-emissive.webp", heroThree);
         Assert.Contains("videograbber:hero-accent", heroThree);
+        Assert.Contains("const storyTargets", heroThree);
+        Assert.Contains("videograbber:story-state", heroThree);
+        Assert.Contains("videograbber:story-progress", heroThree);
+        Assert.Contains("storyRootScale", heroThree);
+        Assert.Contains("storyOrbitScale", heroThree);
         Assert.Contains("time - lastPaintTime < 32", heroThree);
         Assert.Contains("narrowViewport ? 1.1 : 1.5", heroThree);
         Assert.Contains("createDepthStarField", heroThree);
@@ -199,7 +235,7 @@ public sealed class WebPlanUxTests
         Assert.Contains("inwardPop", heroThree);
         Assert.Contains("Math.sign(card.basePosition.x", heroThree);
         Assert.Contains("pointer.x * 0.18", heroThree);
-        Assert.Contains("scrollProgress * 0.52", heroThree);
+        Assert.Contains("scrollProgress * 0.20", heroThree);
         Assert.Contains("new THREE.MeshStandardMaterial", heroThree);
         Assert.Contains("new THREE.PointLight(0x9b65ff", heroThree);
         Assert.Contains("opacity: .035", styles);
@@ -223,6 +259,9 @@ public sealed class WebPlanUxTests
         Assert.Contains("heroVisible", heroThree);
         Assert.Contains("IntersectionObserver", heroThree);
         Assert.Contains("overflow-x: hidden", styles);
+        Assert.Contains(".story-stage", styles);
+        Assert.Contains(".story-stage.is-managed", styles);
+        Assert.Contains(".story-slot-hero", styles);
         Assert.Contains("motion-ready .reveal-item", styles);
         Assert.Contains("Не удалось загрузить данные аккаунта", js);
         Assert.Contains("Скачивайте видео проще", publicSmoke);

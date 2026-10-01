@@ -27,6 +27,29 @@
     <button id="header-login" class="button button-ghost" type="button">Войти</button>
   </header>
 
+  <div id="story-stage" class="story-stage" data-story-state="hero">
+<div class="hero-visual" id="hero-visual" aria-label="Возможности VideoGrabber">
+        <div class="space-haze" aria-hidden="true"></div>
+        <div class="hero-art-shell">
+          <img
+            class="hero-art"
+            src="/assets/videograbber-hero.webp"
+            alt="Объёмная 3D-сцена VideoGrabber: видео, MP3, Windows, Telegram и полные курсы"
+            width="782"
+            height="770"
+            decoding="async"
+            fetchpriority="high">
+          <canvas id="hero-three" class="hero-three-canvas" aria-hidden="true"></canvas>
+          <a class="hero-hotspot hotspot-url" data-feature="url" href="#app" aria-label="Вставить ссылку"></a>
+          <a class="hero-hotspot hotspot-video" data-feature="video" href="#app" aria-label="Скачать видео"></a>
+          <a class="hero-hotspot hotspot-mp3" data-feature="mp3" href="#app" aria-label="Скачать MP3"></a>
+          <a class="hero-hotspot hotspot-course" data-feature="course" href="#pricing" aria-label="Посмотреть тариф для полных курсов"></a>
+          <a class="hero-hotspot hotspot-windows" data-feature="windows" href="/download/windows" aria-label="Скачать VideoGrabber для Windows"></a>
+          <a class="hero-hotspot hotspot-telegram" data-feature="telegram" href="/miniapp/" aria-label="Открыть VideoGrabber в Telegram"></a>
+        </div>
+      </div>
+  </div>
+
   <main>
     <section class="hero" id="top">
       <div class="hero-copy">
@@ -47,33 +70,15 @@
         </div>
       </div>
 
-      <div class="hero-visual" id="hero-visual" aria-label="Возможности VideoGrabber">
-        <div class="space-haze" aria-hidden="true"></div>
-        <div class="hero-art-shell">
-          <img
-            class="hero-art"
-            src="/assets/videograbber-hero.webp"
-            alt="Объёмная 3D-сцена VideoGrabber: видео, MP3, Windows, Telegram и полные курсы"
-            width="782"
-            height="770"
-            decoding="async"
-            fetchpriority="high">
-          <canvas id="hero-three" class="hero-three-canvas" aria-hidden="true"></canvas>
-          <a class="hero-hotspot hotspot-url" data-feature="url" href="#app" aria-label="Вставить ссылку"></a>
-          <a class="hero-hotspot hotspot-video" data-feature="video" href="#app" aria-label="Скачать видео"></a>
-          <a class="hero-hotspot hotspot-mp3" data-feature="mp3" href="#app" aria-label="Скачать MP3"></a>
-          <a class="hero-hotspot hotspot-course" data-feature="course" href="#pricing" aria-label="Посмотреть тариф для полных курсов"></a>
-          <a class="hero-hotspot hotspot-windows" data-feature="windows" href="/download/windows" aria-label="Скачать VideoGrabber для Windows"></a>
-          <a class="hero-hotspot hotspot-telegram" data-feature="telegram" href="/miniapp/" aria-label="Открыть VideoGrabber в Telegram"></a>
-        </div>
-      </div>
+      <div class="hero-stage-origin story-slot story-slot-hero" data-story-state="hero" aria-hidden="true"></div>
     </section>
 
-    <section id="how" class="section section-card how-section">
+    <section id="how" class="section section-card how-section story-section" data-story-state="workflow">
       <div class="section-head compact">
         <h2>Как это работает</h2>
         <p>Всего 3 простых шага — и нужный файл у вас на устройстве.</p>
       </div>
+      <div class="story-slot story-slot-workflow" data-story-state="workflow" aria-hidden="true"></div>
       <div class="steps">
         <article class="step">
           <div class="step-icon">↗</div>
@@ -92,7 +97,7 @@
       </div>
     </section>
 
-    <section id="app" class="section sync-section">
+    <section id="app" class="section sync-section story-section" data-story-state="sync">
       <div class="sync-card">
         <div class="sync-copy">
           <p class="eyebrow">Один аккаунт везде</p>
@@ -111,6 +116,8 @@
           <p class="field-note">Без пароля: на почту придёт одноразовая ссылка для входа.</p>
           <p id="auth-status" class="status" role="status"></p>
         </div>
+
+        <div class="story-slot story-slot-sync" data-story-state="sync" aria-hidden="true"></div>
 
       </div>
 
@@ -199,11 +206,12 @@
       </div>
     </section>
 
-    <section id="pricing" class="section pricing-section">
+    <section id="pricing" class="section pricing-section story-section" data-story-state="pricing">
       <div class="section-head pricing-head">
         <div><p class="eyebrow">Выберите подходящий вариант</p><h2>Тарифы</h2></div>
         <p>Обычные видео — ролики по одной ссылке. Полные курсы — модули, уроки и закрытые страницы целиком.</p>
       </div>
+      <div class="story-slot story-slot-pricing" data-story-state="pricing" aria-hidden="true"></div>
 
       <div class="pricing-grid">
         <article class="price-card" data-plan="free" tabindex="0" role="button" aria-label="Подробнее о тарифе Free">
@@ -262,7 +270,7 @@
       <p class="pricing-note">Нажмите на тариф — покажем подробности. Списание не начинается простым нажатием на карточку.</p>
     </section>
 
-    <section id="download" class="section download-section">
+    <section id="download" class="section download-section story-section" data-story-state="windows">
       <div class="download-card">
         <div>
           <p class="eyebrow">Приложение для компьютера</p>
@@ -273,6 +281,7 @@
             <a class="button button-quiet" href="/download/windows/portable">Portable ZIP</a>
           </div>
         </div>
+        <div class="story-slot story-slot-windows" data-story-state="windows" aria-hidden="true"></div>
       </div>
     </section>
   </main>
@@ -304,6 +313,8 @@
     </div>
   </dialog>
 
+  <script src="/web/vendor/gsap-3.15.0.min.js" defer></script>
+  <script src="/web/vendor/ScrollTrigger-3.15.0.min.js" defer></script>
   <script src="/web/app.js" defer></script>
 </body>
 </html>

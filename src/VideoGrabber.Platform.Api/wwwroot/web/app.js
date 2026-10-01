@@ -730,6 +730,7 @@ async function loadDashboard() {
   renderAccount();
   renderDevices();
   renderJobs();
+  setTimeout(() => window.ScrollTrigger?.refresh?.(), 0);
 }
 
 function signedOut(message = "") {
@@ -737,6 +738,7 @@ function signedOut(message = "") {
   $("#dashboard").hidden = true;
   $("#header-login").textContent = "Войти";
   if (message) setStatus("#auth-status", message, "error");
+  setTimeout(() => window.ScrollTrigger?.refresh?.(), 0);
 }
 
 async function sha256Hex(text) {
@@ -1193,6 +1195,173 @@ function setupScrollReveal() {
     observer.observe(target);
 }
 
+function setupStoryStage() {
+  const stage = $("#story-stage");
+  const visual = $("#hero-visual");
+  const heroSlot = document.querySelector(".story-slot-hero");
+  if (!stage || !visual || !heroSlot) return;
+
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const compactViewport = matchMedia("(max-width: 1050px)").matches;
+  const gsapApi = window.gsap;
+  const scrollTriggerApi = window.ScrollTrigger;
+
+  const dispatchStoryState = (state, progress = 0) => {
+    stage.dataset.storyState = state;
+    visual.dispatchEvent(new CustomEvent("videograbber:story-state", {
+      detail: { state, progress }
+    }));
+  };
+
+  const placeAtHeroSlot = () => {
+    const rect = heroSlot.getBoundingClientRect();
+    stage.classList.remove("is-managed");
+    stage.style.right = "auto";
+    stage.style.left = rect.left + window.scrollX + "px";
+    stage.style.top = rect.top + window.scrollY + "px";
+    stage.style.width = rect.width + "px";
+    stage.style.height = rect.height + "px";
+    stage.style.opacity = "1";
+    dispatchStoryState("hero", 0);
+  };
+
+  if (
+    reducedMotion ||
+    compactViewport ||
+    !gsapApi ||
+    !scrollTriggerApi
+  ) {
+    placeAtHeroSlot();
+    window.addEventListener("resize", placeAtHeroSlot, { passive: true });
+    return;
+  }
+
+  gsapApi.registerPlugin(scrollTriggerApi);
+  stage.classList.add("is-managed");
+  stage.style.right = "auto";
+
+  const definitions = [
+    { state: "hero", trigger: "#top", slot: ".story-slot-hero" },
+    { state: "workflow", trigger: "#how", slot: ".story-slot-workflow" },
+    { state: "sync", trigger: "#app", slot: ".story-slot-sync" },
+    { state: "pricing", trigger: "#pricing", slot: ".story-slot-pricing" },
+    { state: "windows", trigger: "#download", slot: ".story-slot-windows" }
+  ];
+
+  const previousState = {
+    workflow: "hero",
+    sync: "workflow",
+    pricing: "sync",
+    windows: "pricing"
+  };
+
+  let currentState = "hero";
+
+  const targetFor = (definition) => {
+    const slot = document.querySelector(definition.slot);
+    if (!slot) return null;
+    const rect = slot.getBoundingClientRect();
+    const top = definition.state === "hero"
+      ? rect.top
+      : Math.max(88, Math.min(150, rect.top));
+    return {
+      left: rect.left,
+      top,
+      width: Math.max(rect.width, 1),
+      height: Math.max(rect.height, 1)
+    };
+  };
+
+  const activate = (state, immediate = false) => {
+    const definition = definitions.find((item) => item.state === state);
+    const target = definition ? targetFor(definition) : null;
+    if (!definition || !target) return;
+
+    currentState = state;
+    dispatchStoryState(state, 0);
+
+    gsapApi.to(stage, {
+      left: target.left,
+      top: target.top,
+      width: target.width,
+      height: target.height,
+      opacity: 1,
+      duration: immediate ? 0 : 0.78,
+      ease: immediate ? "none" : "power3.out",
+      overwrite: true
+    });
+  };
+
+  for (const definition of definitions.slice(1)) {
+    const triggerNode = document.querySelector(definition.trigger);
+    if (!triggerNode) continue;
+
+    scrollTriggerApi.create({
+      trigger: triggerNode,
+      start: "top 58%",
+      end: "bottom 42%",
+      onEnter: () => activate(definition.state),
+      onEnterBack: () => activate(definition.state),
+      onLeaveBack: () => activate(previousState[definition.state] || "hero"),
+      onUpdate: (self) => {
+        if (currentState !== definition.state) return;
+        visual.dispatchEvent(new CustomEvent("videograbber:story-progress", {
+          detail: {
+            state: definition.state,
+            progress: self.progress,
+            direction: self.direction
+          }
+        }));
+      }
+    });
+  }
+
+  const footer = document.querySelector("footer");
+  if (footer) {
+    scrollTriggerApi.create({
+      trigger: footer,
+      start: "top 86%",
+      onEnter: () =>
+        gsapApi.to(stage, {
+          opacity: 0,
+          duration: 0.35,
+          ease: "power2.out",
+          overwrite: true
+        }),
+      onLeaveBack: () =>
+        gsapApi.to(stage, {
+          opacity: 1,
+          duration: 0.35,
+          ease: "power2.out",
+          overwrite: true
+        })
+    });
+  }
+
+  const determineInitialState = () => {
+    let state = "hero";
+    for (const definition of definitions.slice(1)) {
+      const node = document.querySelector(definition.trigger);
+      if (!node) continue;
+      if (node.getBoundingClientRect().top <= innerHeight * 0.58)
+        state = definition.state;
+    }
+    return state;
+  };
+
+  activate(determineInitialState(), true);
+
+  scrollTriggerApi.addEventListener("refresh", () =>
+    activate(currentState, true)
+  );
+
+  window.addEventListener(
+    "resize",
+    () => scrollTriggerApi.refresh(),
+    { passive: true }
+  );
+}
+
 function scheduleThreeHero() {
   const canvas = $("#hero-three");
   const art = document.querySelector(".hero-art");
@@ -1249,6 +1418,7 @@ function setupHeroScene() {
 }
 
 async function start() {
+  setupStoryStage();
   scheduleThreeHero();
   setupHeroScene();
   setupScrollReveal();

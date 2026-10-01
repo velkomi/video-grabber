@@ -317,6 +317,21 @@ async function initThreeHero(visual, canvas) {
   const targetPointer = new THREE.Vector2(0, 0);
   const cameraBase = new THREE.Vector3(0, 0.05, 10.45);
   const cameraLookTarget = new THREE.Vector3();
+
+  const storyTargets = {
+    hero: { rootScale: 1.0, rootY: 0.0, cameraZ: 10.45, orbitScale: 1.0 },
+    workflow: { rootScale: 0.86, rootY: 0.10, cameraZ: 10.85, orbitScale: 0.82 },
+    sync: { rootScale: 0.80, rootY: 0.03, cameraZ: 11.05, orbitScale: 0.66 },
+    pricing: { rootScale: 0.74, rootY: -0.02, cameraZ: 11.18, orbitScale: 0.52 },
+    windows: { rootScale: 0.88, rootY: 0.04, cameraZ: 10.78, orbitScale: 0.36 }
+  };
+  let storyState = "hero";
+  let storySectionProgress = 0;
+  let storyRootScale = 1;
+  let storyRootY = 0;
+  let storyCameraZ = cameraBase.z;
+  let storyOrbitScale = 1;
+
   let scrollTarget = 0;
   let scrollProgress = 0;
   let heroVisible = true;
@@ -358,6 +373,24 @@ async function initThreeHero(visual, canvas) {
     pointer.lerp(targetPointer, reducedMotion ? 1 : 0.075);
     scrollProgress = THREE.MathUtils.lerp(scrollProgress, scrollTarget, 0.055);
 
+    const storyTarget = storyTargets[storyState] || storyTargets.hero;
+    storyRootScale = THREE.MathUtils.lerp(
+      storyRootScale,
+      storyTarget.rootScale,
+      0.055
+    );
+    storyRootY = THREE.MathUtils.lerp(storyRootY, storyTarget.rootY, 0.055);
+    storyCameraZ = THREE.MathUtils.lerp(
+      storyCameraZ,
+      storyTarget.cameraZ,
+      0.055
+    );
+    storyOrbitScale = THREE.MathUtils.lerp(
+      storyOrbitScale,
+      storyTarget.orbitScale,
+      0.055
+    );
+
     const mobileFactor = narrowViewport ? 0.48 : 1;
     const cameraTargetX = pointer.x * 0.38 * mobileFactor;
     const cameraTargetY =
@@ -365,8 +398,8 @@ async function initThreeHero(visual, canvas) {
       pointer.y * 0.24 * mobileFactor +
       scrollProgress * 0.16 * mobileFactor;
     const cameraTargetZ =
-      cameraBase.z -
-      scrollProgress * 0.52 * mobileFactor +
+      storyCameraZ -
+      scrollProgress * 0.20 * mobileFactor +
       Math.abs(pointer.x) * 0.035;
 
     camera.position.x = THREE.MathUtils.lerp(camera.position.x, cameraTargetX, 0.055);
@@ -387,9 +420,12 @@ async function initThreeHero(visual, canvas) {
     );
     root.position.y = THREE.MathUtils.lerp(
       root.position.y,
-      -scrollProgress * 0.13 * mobileFactor,
+      storyRootY - scrollProgress * 0.05 * mobileFactor,
       0.055
     );
+    root.scale.setScalar(storyRootScale);
+    for (const orbit of orbits)
+      orbit.scale.setScalar(storyOrbitScale);
 
     accent.lerp(accentTarget, 0.065);
     sphereMaterial.emissive.copy(accent).multiplyScalar(
@@ -533,6 +569,11 @@ async function initThreeHero(visual, canvas) {
   };
 
   const raycastAt = (clientX, clientY) => {
+    if (storyState !== "hero") {
+      setRaycastFeature(null);
+      return null;
+    }
+
     const rect = canvas.getBoundingClientRect();
     if (
       clientX < rect.left ||
@@ -591,6 +632,20 @@ async function initThreeHero(visual, canvas) {
     targetPointer.set(0, 0);
     pointerDown = null;
     setRaycastFeature(null);
+  });
+
+  visual.addEventListener("videograbber:story-state", (event) => {
+    const next = String(event.detail?.state || "hero");
+    if (!Object.prototype.hasOwnProperty.call(storyTargets, next)) return;
+    storyState = next;
+    storySectionProgress = clamp01(event.detail?.progress || 0);
+    setRaycastFeature(null);
+    if (!animationRunning) render();
+  });
+
+  visual.addEventListener("videograbber:story-progress", (event) => {
+    if (String(event.detail?.state || "") !== storyState) return;
+    storySectionProgress = clamp01(event.detail?.progress || 0);
   });
 
   visual.addEventListener("videograbber:hero-accent", (event) => {

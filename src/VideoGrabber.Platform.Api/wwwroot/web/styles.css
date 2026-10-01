@@ -137,6 +137,67 @@ button { color: inherit; }
 
 main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
 
+.story-stage {
+  position: absolute;
+  z-index: 8;
+  top: 108px;
+  right: max(20px, calc((100vw - var(--max)) / 2));
+  width: min(44vw, 560px);
+  height: 470px;
+  pointer-events: auto;
+  will-change: left, top, width, height, opacity, transform;
+}
+.story-stage.is-managed {
+  position: fixed;
+}
+.story-stage .hero-visual {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.story-slot {
+  pointer-events: none;
+}
+.story-slot-hero {
+  min-height: 470px;
+}
+.story-slot-workflow {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  width: 310px;
+  height: 175px;
+}
+.how-section .section-head {
+  padding-right: 330px;
+}
+.story-slot-sync {
+  min-height: 180px;
+}
+.story-slot-pricing {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  width: 300px;
+  height: 190px;
+}
+.pricing-head {
+  padding-right: 320px;
+}
+.story-slot-windows {
+  min-height: 220px;
+}
+.story-stage[data-story-state="workflow"],
+.story-stage[data-story-state="sync"] {
+  filter: saturate(1.02);
+}
+.story-stage[data-story-state="pricing"] {
+  filter: saturate(.96);
+}
+.story-stage[data-story-state="windows"] {
+  filter: saturate(1.05);
+}
+
 .hero {
   min-height: 560px;
   padding: 48px 0 34px;
@@ -330,7 +391,7 @@ main, footer { width: min(calc(100% - 40px), var(--max)); margin-inline: auto; }
   border-radius: var(--radius);
   padding: 24px;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr) 300px;
   gap: 22px;
   align-items: center;
   overflow: hidden;
@@ -437,7 +498,7 @@ label { display: grid; gap: 7px; color: #c9d4e8; font-size: 13px; }
   border-radius: var(--radius);
   padding: 32px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 34px;
   align-items: center;
 }
@@ -509,8 +570,21 @@ footer {
 @media (max-width: 1050px) {
   .topbar { grid-template-columns: 1fr auto; }
   .topbar nav { display: none; }
+  .story-stage,
+  .story-stage.is-managed {
+    position: absolute;
+    right: auto;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 470px;
+  }
+  .story-slot:not(.story-slot-hero) { display: none; }
+  .how-section .section-head,
+  .pricing-head { padding-right: 0; }
   .hero { grid-template-columns: 1fr; padding-top: 56px; }
   .hero-copy { max-width: 760px; }
+  .story-slot-hero { min-height: 520px; }
   .hero-visual { min-height: 520px; }
   .sync-card { grid-template-columns: 1fr 1fr; }
   .pricing-grid { grid-template-columns: repeat(2, 1fr); }
