@@ -434,13 +434,19 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
+      "videograbber.core": {
+        "type": "Project",
+        "dependencies": {
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.60-rc.1, )"
+        }
+      },
       "videograbber.platform.api": {
         "type": "Project",
         "dependencies": {
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.12, )",
-          "VideoGrabber.Platform.Core": "[0.1.10-preview.12, )",
-          "VideoGrabber.Platform.Persistence": "[0.1.10-preview.12, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.60-rc.1, )",
+          "VideoGrabber.Platform.Core": "[0.1.10-preview.60-rc.1, )",
+          "VideoGrabber.Platform.Persistence": "[0.1.10-preview.60-rc.1, )"
         }
       },
       "videograbber.platform.contracts": {
@@ -449,15 +455,15 @@
       "videograbber.platform.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.12, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.60-rc.1, )"
         }
       },
       "videograbber.platform.persistence": {
         "type": "Project",
         "dependencies": {
           "Npgsql": "[10.0.3, )",
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.12, )",
-          "VideoGrabber.Platform.Core": "[0.1.10-preview.12, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.60-rc.1, )",
+          "VideoGrabber.Platform.Core": "[0.1.10-preview.60-rc.1, )"
         }
       },
       "Microsoft.AspNetCore.Authentication.JwtBearer": {

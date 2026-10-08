@@ -84,6 +84,9 @@ var builder = WebApplication.CreateBuilder(args);
 // ASP.NET Hosting.Diagnostics logs the raw request target, including query strings.
 // Signed URLs/OAuth-like query values must never be copied into ordinary request logs.
 builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+// These HTTP paths contain bot credentials or signed source URLs.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.TelegramBotApi", LogLevel.None);
+builder.Logging.AddFilter("System.Net.Http.HttpClient.DirectMediaResolver", LogLevel.None);
 var sessionJwt = SessionJwtOptions.FromConfiguration(builder.Configuration);
 var telegramSecurity = TelegramSecurityOptions.FromConfiguration(builder.Configuration);
 
@@ -213,6 +216,9 @@ builder.Services.AddSingleton<StarsUpdateHandler>();
 builder.Services.AddHostedService<PaymentReconciliationWorker>();
 builder.Services.AddSingleton<EgressProxy>();
 builder.Services.AddSingleton<SourceAnalysisService>();
+builder.Services.AddHttpClient<DirectMediaResolver>(client => client.Timeout = TimeSpan.FromSeconds(12))
+    .ConfigurePrimaryHttpMessageHandler(sp => sp.GetRequiredService<EgressProxy>().CreatePinnedHandler());
+builder.Services.AddSingleton<DirectDownloadService>();
 builder.Services.AddSingleton<ArtifactUploadService>();
 builder.Services.AddSingleton(sp =>
 {
@@ -316,12 +322,7 @@ app.UseCookiePolicy(new CookiePolicyOptions
 });
 app.Use(async (context, next) =>
 {
-    var correlationId = context.Request.Headers["X-Correlation-Id"].ToString();
-    if (string.IsNullOrWhiteSpace(correlationId) || correlationId.Length > 64)
-        correlationId = Guid.NewGuid().ToString("N");
-    context.TraceIdentifier = correlationId;
-    context.Response.Headers["X-Correlation-Id"] = correlationId;
-    await next();
+    await RequestTelemetry.InvokeAsync(context, next, app.Logger);
 });
 app.Use(async (context, next) =>
 {
@@ -339,7 +340,7 @@ app.Use(async (context, next) =>
         if (HttpMethods.IsOptions(context.Request.Method))
         {
             context.Response.Headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,PATCH,DELETE,OPTIONS";
-            context.Response.Headers["Access-Control-Allow-Headers"] = "Authorization,Content-Type,X-CSRF-Token,X-VideoGrabber-Api-Version,X-VideoGrabber-Protocol";
+            context.Response.Headers["Access-Control-Allow-Headers"] = "Authorization,Content-Type,X-CSRF-Token,X-VideoGrabber-Api-Version,X-VideoGrabber-Protocol,X-Correlation-Id";
             context.Response.StatusCode = StatusCodes.Status204NoContent;
             return;
         }
@@ -401,6 +402,17 @@ app.UseRouting();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.Use(async (context, next) =>
+{
+    if (MediaStoragePolicy.ClientOnly(app.Configuration)
+        && MediaStoragePolicy.BlocksMediaPath(context.Request.Path.Value ?? "", context.Request.Method))
+    {
+        context.Response.StatusCode = StatusCodes.Status409Conflict;
+        await context.Response.WriteAsJsonAsync(new { code = "media_storage_disabled" });
+        return;
+    }
+    await next();
+});
 app.MapAdminEndpoints();
 app.MapAccountEndpoints();
 app.MapAccessEndpoints();
@@ -423,6 +435,7 @@ app.MapJobEndpoints();
 app.MapJobEventEndpoints();
 app.MapAttemptEndpoints();
 app.MapSourceEndpoints();
+app.MapDirectDownloadEndpoints();
 app.MapArtifactUploadEndpoints();
 app.MapPlatformHealthEndpoints();
 app.MapOperationsEndpoints();

@@ -33,6 +33,13 @@ function updateRecurring() {
   if (checkbox.disabled) checkbox.checked = false;
 }
 
+function productLabel(product) {
+  const names = { free: "Free", start: "Start", unlimited_video: "Unlimited Video", full_course: "Full Course" };
+  return names[product.planId] || (product.credits ? product.credits + " загрузок" : "Подписка VideoGrabber");
+}
+function subscriptionLabel(state) {
+  return { active: "Активна", cancelled: "Автопродление отключено", canceled: "Автопродление отключено", expired: "Завершена", pending: "Ожидает подтверждения", past_due: "Нужна оплата" }[state] || "Проверяем подписку";
+}
 async function loadProducts() {
   catalog = await api("/v1/payment-products?surface=telegram");
   const select = $("#payment-product");
@@ -48,19 +55,26 @@ async function loadProducts() {
     const option = document.createElement("option");
     option.value = product.sku;
     option.textContent =
-      product.sku + " • " + String(price.minorUnits) + " " + price.currency;
+      productLabel(product) + " • " + String(price.minorUnits) + " Stars";
     select.append(option);
   }
   updateRecurring();
   const hasProducts = select.options.length > 0;
+  select.disabled = !hasProducts;
+  if (!hasProducts) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Пока недоступно";
+    select.append(placeholder);
+  }
   const primaryReady = window.VideoGrabberApi.isPrimaryAccount();
   buy.disabled = !hasProducts || !primaryReady;
   if (!primaryReady) {
     availability.className = "notice error";
-    availability.textContent = "Сначала свяжите Telegram с основным аккаунтом через /link. Покупка на временный Telegram-аккаунт заблокирована.";
+    availability.textContent = "Перед оплатой свяжите аккаунт через команду /link в чате с ботом.";
   } else if (!hasProducts) {
     availability.className = "notice";
-    availability.textContent = "Продажи через Stars ещё не опубликованы: сервер ожидает утверждённые цены XTR.";
+    availability.textContent = "Оплата через Stars пока недоступна. Попробуйте позже.";
   } else {
     availability.className = "notice success";
     availability.textContent = "Telegram Stars доступны для этого аккаунта.";
@@ -81,9 +95,9 @@ async function refreshSubscriptions() {
     const label = document.createElement("span");
     label.className = "item-text";
     label.textContent =
-      subscription.provider + " • " + subscription.state
-      + " • оплачено до " + new Date(subscription.paidThrough).toLocaleString()
-      + " • auto-renew=" + (subscription.autoRenew ? "on" : "off");
+      subscriptionLabel(subscription.state)
+      + " • до " + new Date(subscription.paidThrough).toLocaleDateString("ru-RU")
+      + (subscription.autoRenew ? " • автопродление включено" : "");
     row.append(label);
     if (subscription.autoRenew && subscription.state === "active") {
       const cancel = document.createElement("button");
@@ -123,13 +137,13 @@ $("#payment-product").addEventListener("change", updateRecurring);
 $("#payment-buy").addEventListener("click", async () => {
   const product = selectedProduct();
   if (!product) {
-    status("Товар Stars недоступен.", "error");
+    status("Выберите доступный тариф.", "error");
     return;
   }
   const recurring = $("#payment-recurring").checked;
   const intent = paymentIntentKey(product.sku, recurring);
   try {
-    status("Создаю защищённый Stars invoice…");
+    status("Открываем оплату…");
     const checkout = await api("/v1/payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -141,7 +155,7 @@ $("#payment-buy").addEventListener("click", async () => {
       })
     });
     if (!checkout.redirectUri)
-      throw new Error("Telegram invoice link отсутствует");
+      throw new Error("Не удалось открыть оплату. Попробуйте позже.");
 
     const webApp = window.Telegram?.WebApp;
     if (!webApp?.openInvoice)
@@ -150,7 +164,7 @@ $("#payment-buy").addEventListener("click", async () => {
       if (invoiceStatus === "paid") {
         sessionStorage.removeItem(intent.key);
         status(
-          "Telegram сообщил об оплате. Проверяю серверное подтверждение…",
+          "Платёж получен. Проверяем доступ…",
           "success");
         try {
           await window.VideoGrabberApi.loadAll();
@@ -160,11 +174,11 @@ $("#payment-buy").addEventListener("click", async () => {
       } else if (invoiceStatus === "failed") {
         status("Telegram сообщил об ошибке оплаты. Доступ не изменён.", "error");
       } else {
-        status("Статус invoice: " + String(invoiceStatus));
+        status("Оплата ожидает подтверждения. Проверьте доступ чуть позже.");
       }
     });
   } catch (error) {
-    status("Stars invoice не создан: " + error.message, "error");
+    status("Не удалось открыть оплату. " + window.VideoGrabberApi.userError(error), "error");
   }
 });
 
@@ -178,7 +192,7 @@ async function boot() {
     await refreshPayments();
     await refreshSubscriptions();
   } catch (error) {
-    status("Платежи недоступны: " + error.message, "error");
+    status("Оплата временно недоступна. Попробуйте позже.", "error");
   }
 }
 

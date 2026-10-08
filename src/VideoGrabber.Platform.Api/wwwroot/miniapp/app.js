@@ -33,6 +33,36 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+function userError(error) {
+  if (error?.status === 401) return "Откройте приложение заново через Telegram.";
+  if (error?.status === 403) return "Для этого действия недостаточно прав.";
+  if (error?.status === 429) return "Слишком много запросов. Попробуйте чуть позже.";
+  if (error?.status === 503) return "Сервис временно недоступен. Попробуйте позже.";
+  return "Не удалось выполнить действие. Попробуйте ещё раз.";
+}
+
+function providerLabel(provider) {
+  return { google: "Google", email: "Электронная почта", telegram: "Telegram", owner: "Основной аккаунт" }[provider] || "Связанный аккаунт";
+}
+
+function googleMark() {
+  const badge = document.createElement("span");
+  badge.className = "google-mark-badge";
+  badge.setAttribute("aria-hidden", "true");
+  const icon = document.createElement("img");
+  icon.className = "google-mark";
+  icon.src = "/assets/icons/google-g.png";
+  icon.alt = "";
+  icon.width = 20;
+  icon.height = 20;
+  badge.append(icon);
+  return badge;
+}
+
+function destinationLabel(destination) {
+  return destination.title || { private: "Личный чат", group: "Группа", supergroup: "Группа", channel: "Канал" }[destination.kind] || "Telegram-чат";
+}
+
 function makeItem(text) {
   const row = document.createElement("div");
   row.className = "item";
@@ -45,7 +75,7 @@ function makeItem(text) {
 
 function planLabel(planId, profile) {
   const labels = { free: "Free", start: "Start", unlimited_video: "Unlimited Video", full_course: "Full Course" };
-  return labels[planId] || (profile?.role === "owner_admin" ? "Owner" : "Legacy");
+  return labels[planId] || (profile?.role === "owner_admin" ? "Полный доступ" : "Ваш тариф");
 }
 
 function primaryAccountReady(profile = state.profile) {
@@ -63,7 +93,10 @@ function renderProfile(profile, access) {
     .some((provider) => String(provider).toLowerCase() === "telegram");
 
   $("#plan-chip").textContent = plan;
-  $("#profile").textContent = "ID: " + profile.accountId + "\nРоль: " + profile.role + "\nБлокировка: " + (profile.blocked ? "да" : "нет") + ".";
+  $("#profile").textContent = profile.blocked
+    ? "Доступ к аккаунту ограничен. Обратитесь в поддержку."
+    : primaryReady ? "Ваш тариф работает в Telegram, на сайте и в Windows."
+    : "Свяжите аккаунт, чтобы пользоваться одним тарифом на всех устройствах.";
 
   if (access.unlimited) {
     $("#balance").textContent = "∞";
@@ -71,7 +104,7 @@ function renderProfile(profile, access) {
     $("#quota-bar").style.width = "100%";
   } else if (access.planId === "start") {
     $("#balance").textContent = "10/день";
-    $("#quota-caption").textContent = "Дневной лимит обновляется по UTC";
+    $("#quota-caption").textContent = "До 10 загрузок в сутки";
     $("#quota-bar").style.width = "100%";
   } else {
     const remaining = Math.max(0, Number(access.remainingDownloads || 0));
@@ -80,23 +113,28 @@ function renderProfile(profile, access) {
     $("#quota-bar").style.width = String(Math.max(0, Math.min(100, (remaining / 10) * 100))) + "%";
   }
 
-  $("#access-reason").textContent = access.reason || "—";
+  $("#access-reason").textContent = profile.blocked ? "Доступ ограничен" : !primaryReady ? "Свяжите аккаунт" : access.canDownload ? "Можно загружать" : "Загрузки недоступны";
   $("#access-until").textContent = access.validUntil
     ? new Date(access.validUntil).toLocaleString()
     : "Без срока";
   $("#primary-provider").textContent = primaryReady
-    ? "Основной вход: " + (profile.primaryAuthProvider || "owner")
+    ? providerLabel(profile.primaryAuthProvider || "owner")
     : "Основной аккаунт ещё не привязан";
+  $("#primary-provider").classList.toggle("provider-label", primaryReady && profile.primaryAuthProvider === "google");
+  if (primaryReady && profile.primaryAuthProvider === "google") {
+    $("#primary-provider").prepend(googleMark());
+  }
 
   if (primaryReady && telegramLinked) {
-    $("#sync-state").textContent = "Синхронизировано: Web · Windows · Telegram";
+    $("#sync-state").textContent = "Аккаунт связан";
   } else if (primaryReady) {
-    $("#sync-state").textContent = "Web · Windows синхронизированы";
+    $("#sync-state").textContent = "Аккаунт подключён";
   } else {
-    $("#sync-state").textContent = "Telegram нужно связать с основным аккаунтом";
+    $("#sync-state").textContent = "Свяжите аккаунт";
   }
 
   $("#link-main-account").hidden = primaryReady;
+  $("#link-account-hint").hidden = primaryReady;
   document.body.dataset.primaryAccount = primaryReady ? "ready" : "link-required";
   $("#admin").hidden = profile.role !== "owner_admin";
 }
@@ -109,8 +147,14 @@ function renderIdentities(identities) {
     return;
   }
   for (const identity of identities) {
-    const { row } = makeItem(identity.provider +
+    const { row, label } = makeItem(providerLabel(identity.provider) +
       (identity.verifiedEmail ? " • " + identity.verifiedEmail : ""));
+    if (identity.provider === "google") {
+      const text = document.createElement("span");
+      text.textContent = label.textContent;
+      label.classList.add("provider-label");
+      label.replaceChildren(googleMark(), text);
+    }
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Отвязать";
@@ -123,7 +167,7 @@ function renderIdentities(identities) {
         await loadAll();
         setStatus("Способ входа отвязан.", "success");
       } catch (error) {
-        setStatus("Не удалось отвязать: " + error.message, "error");
+        setStatus("Не удалось отвязать: " + userError(error), "error");
       }
     });
     row.append(button);
@@ -140,7 +184,7 @@ function renderDevices(devices) {
     return;
   }
   for (const device of active) {
-    const { row } = makeItem(device.name + " • " + device.deviceId);
+    const { row } = makeItem(device.name || "Компьютер Windows");
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Отозвать";
@@ -152,7 +196,7 @@ function renderDevices(devices) {
         await loadAll();
         setStatus("Устройство отозвано.", "success");
       } catch (error) {
-        setStatus("Не удалось отозвать: " + error.message, "error");
+        setStatus("Не удалось отозвать: " + userError(error), "error");
       }
     });
     row.append(button);
@@ -169,7 +213,7 @@ function renderDestinations(destinations) {
     return;
   }
   for (const destination of active) {
-    const { row } = makeItem(destination.kind + " • " + String(destination.chatId));
+    const { row } = makeItem(destinationLabel(destination));
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Отозвать";
@@ -181,7 +225,7 @@ function renderDestinations(destinations) {
         await loadAll();
         setStatus("Получатель отозван.", "success");
       } catch (error) {
-        setStatus("Не удалось отозвать получателя: " + error.message, "error");
+        setStatus("Не удалось отозвать получателя: " + userError(error), "error");
       }
     });
     row.append(button);
@@ -194,8 +238,8 @@ function renderCapabilities(capabilities) {
   const allowed = capabilities.mediaAvailable && primaryAccountReady()
     && state.access?.canDownload === true;
   $("#capability").textContent = capabilities.mediaAvailable
-    ? "Media worker доступен."
-    : "Media worker сейчас недоступен: " + capabilities.reason;
+    ? capabilities.reason === "client_only_media" ? "Отправьте MP4 в чат или загрузите видео в Windows." : "Готово к загрузке."
+    : "Загрузки временно недоступны. Попробуйте позже.";
   if (analyze) analyze.disabled = !allowed;
   if (create) create.disabled = !allowed;
   const lock = $("#media-lock");
@@ -203,7 +247,7 @@ function renderCapabilities(capabilities) {
   if (!primaryAccountReady()) {
     lock.hidden = false;
     lock.className = "notice error";
-    lock.textContent = "Telegram ещё не связан с основным VideoGrabber-аккаунтом. Отправьте /link боту @VideoGra_bot и войдите через Google или e-mail.";
+    lock.textContent = "Свяжите аккаунт: отправьте /link боту @VideoGra_bot и войдите через Google или почту.";
   } else if (!state.access?.canDownload) {
     lock.hidden = false;
     lock.className = "notice error";
@@ -249,7 +293,7 @@ async function establishSession() {
 }
 $("#refresh").addEventListener("click", async () => {
   try { await loadAll(); }
-  catch (error) { setStatus("Ошибка: " + error.message, "error"); }
+  catch (error) { setStatus("Ошибка: " + userError(error), "error"); }
 });
 
 $("#destination-form").addEventListener("submit", async (event) => {
@@ -257,12 +301,12 @@ $("#destination-form").addEventListener("submit", async (event) => {
   const chatText = $("#destination-chat").value.trim();
   const title = $("#destination-title").value.trim();
   if (!/^-?\d+$/.test(chatText) || !title) {
-    setStatus("Укажите корректный Telegram chat ID и название.", "error");
+    setStatus("Укажите числовой номер чата и название.", "error");
     return;
   }
   const chatId = Number(chatText);
   if (!Number.isSafeInteger(chatId) || chatId === 0) {
-    setStatus("Chat ID вне безопасного диапазона JavaScript. Используйте Telegram ID до 2^53-1.", "error");
+    setStatus("Проверьте номер чата: он указан неверно.", "error");
     return;
   }
   try {
@@ -281,7 +325,7 @@ $("#destination-form").addEventListener("submit", async (event) => {
   } catch (error) {
     setStatus(error.status === 403
       ? "Нет подтверждённых прав пользователя или бота на этот чат."
-      : "Не удалось привязать получателя: " + error.message, "error");
+      : "Не удалось привязать получателя: " + userError(error), "error");
   }
 });
 $("#admin-search").addEventListener("submit", async (event) => {
@@ -298,14 +342,13 @@ $("#admin-search").addEventListener("submit", async (event) => {
     }
     for (const account of results) {
       const { row } = makeItem(
-        account.accountId + " • " + account.role +
-        (account.blocked ? " • заблокирован" : ""));
+        "Аккаунт найден • " + (account.blocked ? "доступ ограничен" : "доступ открыт"));
       host.append(row);
     }
   } catch (error) {
     host.textContent = error.status === 403
-      ? "Admin-доступ отсутствует."
-      : "Ошибка поиска: " + error.message;
+      ? "Доступ к управлению ограничен."
+      : "Ошибка поиска: " + userError(error);
   }
 });
 
@@ -317,15 +360,38 @@ window.VideoGrabberApi = {
   setStatus,
   ready,
   currentAccess,
+  userError,
+  providerLabel,
+  destinationLabel,
   isPrimaryAccount: primaryAccountReady
 };
 
-document.querySelectorAll("[data-tab-target]").forEach((button) => {
-  button.addEventListener("click", () => {
-    document.querySelectorAll("[data-tab-target]").forEach((item) =>
-      item.classList.toggle("active", item === button));
-    document.querySelectorAll("[data-tab-panel]").forEach((panel) =>
-      panel.classList.toggle("active", panel.id === button.dataset.tabTarget));
+const tabs = [...document.querySelectorAll("[data-tab-target]")];
+function selectTab(button) {
+  tabs.forEach((item) => {
+    const selected = item === button;
+    item.classList.toggle("active", selected);
+    item.setAttribute("aria-selected", String(selected));
+    item.tabIndex = selected ? 0 : -1;
+  });
+  document.querySelectorAll("[data-tab-panel]").forEach((panel) => {
+    const selected = panel.id === button.dataset.tabTarget;
+    panel.classList.toggle("active", selected);
+    panel.hidden = !selected;
+  });
+}
+tabs.forEach((button, index) => {
+  button.addEventListener("click", () => selectTab(button));
+  button.addEventListener("keydown", (event) => {
+    let next;
+    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+    if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = tabs.length - 1;
+    if (next === undefined) return;
+    event.preventDefault();
+    selectTab(tabs[next]);
+    tabs[next].focus();
   });
 });
 
@@ -340,14 +406,14 @@ async function start() {
     const webApp = window.Telegram?.WebApp;
     webApp?.ready();
     webApp?.expand();
-    try { webApp?.setHeaderColor?.("#0d1522"); } catch {}
-    try { webApp?.setBackgroundColor?.("#0c1320"); } catch {}
+    try { webApp?.setHeaderColor?.("#060b17"); } catch {}
+    try { webApp?.setBackgroundColor?.("#060b17"); } catch {}
     await establishSession();
     await loadAll();
     readyResolve(true);
   } catch (error) {
     readyReject(error);
-    setStatus("Не удалось открыть Mini App: " + error.message, "error");
+    setStatus(window.Telegram?.WebApp?.initData ? "Не удалось подключить аккаунт. Откройте приложение заново через Telegram." : "Откройте VideoGrabber через бота @VideoGra_bot в Telegram.", "error");
   }
 }
 start();

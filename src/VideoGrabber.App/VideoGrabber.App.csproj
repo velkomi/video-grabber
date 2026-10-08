@@ -20,6 +20,9 @@
     <DefineConstants>$(DefineConstants);VIDEOGRABBER_MANAGED</DefineConstants>
     <AssemblyName>VideoGrabber.Managed</AssemblyName>
   </PropertyGroup>
+  <ItemGroup Condition="'$(VideoGrabberPresentationProbe)' == 'true'">
+    <Compile Include="../../tests/desktop/StudioPresentationProbe.cs" Link="StudioPresentationProbe.cs" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Web.WebView2" />
@@ -38,6 +41,8 @@
     <None Include="../../scripts/Install-DiagnosticsTasks.ps1" Link="scripts/Install-DiagnosticsTasks.ps1" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\VideoGrabber.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\VideoGrabber.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Fonts\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\Icons\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <PropertyGroup>
     <VideoGrabberBundledRuntimeRoot Condition="'$(VideoGrabberBundledRuntimeRoot)' == '' and '$(VIDEOGRABBER_BUNDLED_RUNTIME)' != ''">$(VIDEOGRABBER_BUNDLED_RUNTIME)</VideoGrabberBundledRuntimeRoot>

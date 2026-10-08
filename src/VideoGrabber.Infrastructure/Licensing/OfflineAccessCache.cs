@@ -14,7 +14,13 @@ public sealed class OfflineAccessCache(WindowsSessionStore store, Guid accountId
         DateTimeOffset serverUtc,
         CancellationToken cancellationToken)
     {
-        var claims = LeaseVerifier.Validate(lease, publicKeys, accountId, deviceId, serverUtc, serverUtc);
+        OfflineLeaseClaims claims;
+        try { claims = LeaseVerifier.Validate(lease, publicKeys, accountId, deviceId, serverUtc, serverUtc); }
+        catch (UnauthorizedAccessException ex)
+        {
+            // A rejected offline document does not invalidate the independently verified online session.
+            throw new InvalidDataException("offline_lease_invalid", ex);
+        }
         var state = new CachedLease(lease, new Dictionary<string, string>(publicKeys, StringComparer.Ordinal),
             serverUtc, Environment.TickCount64, claims.ExpiresAt);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(state);

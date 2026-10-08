@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+    <DefineConstants Condition="'$(VideoGrabberPresentationProbe)' == 'true'">$(DefineConstants);VIDEOGRABBER_PRESENTATION_PROBE</DefineConstants>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
 </Project>

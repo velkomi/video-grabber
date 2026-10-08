@@ -136,6 +136,71 @@ public sealed class CreditLedger : IAsyncDisposable
             "credit reserved", cancellationToken);
         return reserved;
     }
+    public async Task<(ReservationReceipt Receipt, bool Created)> PrepareDirectLinkAsync(
+        Guid accountId, Guid intentId, string sourceHash, CancellationToken cancellationToken, bool adminAccessOverride = false, bool externalDelivery = false)
+    {
+        var request = new ReservationRequest(intentId, sourceHash, "download", "server_worker", null);
+        ValidateReservation(request);
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        await LockAccountAsync(connection, transaction, accountId, cancellationToken);
+        var existing = await ReadReservationByIntentAsync(connection, transaction, accountId, intentId, cancellationToken);
+        if (existing is not null)
+        {
+            if (!existing.Matches(request)) throw new ReservationConflictException();
+            await transaction.CommitAsync(cancellationToken);
+            return (existing.ToReceipt(), false);
+        }
+        // server_worker is the existing quota bucket; no worker job or media artifact is created.
+        ReservationReceipt receipt;
+        if (adminAccessOverride)
+        {
+            var account = await ReadAccountAsync(connection, transaction, accountId, cancellationToken)
+                ?? throw new ReservationUnavailableException();
+            if (account.Blocked) throw new ReservationUnavailableException();
+            receipt = await InsertReservationAsync(connection, transaction, accountId, request,
+                null, false, _clock.GetUtcNow().Add(HoldLifetime), null, null, cancellationToken);
+        }
+        else receipt = await ReserveInTransactionAsync(connection, transaction, accountId, request, cancellationToken);
+        if (externalDelivery)
+        {
+            await using var mark = new NpgsqlCommand("update licensing.reservations set evidence_id='direct-send-started' where reservation_id=@id", connection, transaction);
+            mark.Parameters.AddWithValue("id", receipt.ReservationId);
+            await mark.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return (receipt, true);
+    }
+
+    public async Task<bool> ReleaseDirectUnsentAsync(Guid accountId, ReservationReceipt receipt, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        await LockAccountAsync(connection, transaction, accountId, cancellationToken);
+        // Preserve the account → reservation lock order used by preparation and finalization.
+        await using var reset = new NpgsqlCommand("update licensing.reservations set evidence_id=null where account_id=@account and reservation_id=@id and intent_id=@intent and state='reserved' and evidence_id='direct-send-started'", connection, transaction);
+        reset.Parameters.AddWithValue("account", accountId);
+        reset.Parameters.AddWithValue("id", receipt.ReservationId);
+        reset.Parameters.AddWithValue("intent", receipt.IntentId);
+        if (await reset.ExecuteNonQueryAsync(cancellationToken) != 1)
+        { await transaction.CommitAsync(cancellationToken); return false; }
+        var released = await ReleaseUnstartedInTransactionAsync(connection, transaction, receipt.ReservationId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return released;
+    }
+
+    public async Task<ReservationReceipt> CompleteDirectLinkAsync(
+        Guid accountId, ReservationReceipt receipt, string evidence, CancellationToken cancellationToken)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        var completed = await FinalizeInTransactionAsync(connection, transaction, accountId,
+            new FinalizeReservation(receipt.ReservationId, receipt.IntentId, 1, "success", evidence),
+            cancellationToken, directLinkIssued: true);
+        await transaction.CommitAsync(cancellationToken);
+        return completed;
+    }
+
     public async Task<ReservationReceipt> FinalizeAsync(
         Guid accountId,
         FinalizeReservation finalize,
@@ -154,7 +219,8 @@ public sealed class CreditLedger : IAsyncDisposable
         NpgsqlTransaction transaction,
         Guid accountId,
         FinalizeReservation finalize,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool directLinkIssued = false)
     {
         if (finalize.ReservationId == Guid.Empty || finalize.AttemptId == Guid.Empty ||
             finalize.Fence <= 0 || string.IsNullOrWhiteSpace(finalize.EvidenceId))
@@ -184,7 +250,7 @@ public sealed class CreditLedger : IAsyncDisposable
                 throw new InvalidOperationException("Reserved credit bucket is inconsistent.");
             await InsertLedgerEventAsync(connection, transaction, accountId, grantId,
                 row.ReservationId, "commit", 0, -1, +1, 0, finalize.EvidenceId,
-                "verified output committed", cancellationToken);
+                directLinkIssued ? "direct link issued" : "verified output committed", cancellationToken);
         }
         if (finalize.Outcome == "success" && row.QuotaPlanId == "start"
             && row.QuotaDate is DateOnly quotaDate)
@@ -330,7 +396,7 @@ public sealed class CreditLedger : IAsyncDisposable
     {
         if (reservationId == Guid.Empty) return false;
         var row = await ReadReservationByIdAsync(connection, transaction, null, reservationId, cancellationToken);
-        if (row is null || row.State != "reserved") return false;
+        if (row is null || row.State != "reserved" || row.EvidenceId == "direct-send-started") return false;
         await LockAccountAsync(connection, transaction, row.AccountId, cancellationToken);
         if (row.UsesCredit)
         {

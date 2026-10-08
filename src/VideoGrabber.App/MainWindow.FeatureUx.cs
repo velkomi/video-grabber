@@ -84,20 +84,20 @@ public sealed partial class MainWindow
         var intro = feature switch
         {
             FeatureAccessKind.FullCourse =>
-                "Скачивание полного курса — функция максимального тарифа Full Course. " +
-                "Он включает видео без лимита и сохранение структуры курса, страниц, вложений и найденных видео.",
+                "Для целого курса нужен Full Course. " +
+                "Он включает видео без лимита, уроки и вложения по папкам.",
             FeatureAccessKind.PaidTools =>
-                "Эта функция относится к расширенным инструментам VideoGrabber: MP3, редактор и локальная транскрибация. " +
-                "Они доступны на платных тарифах.",
+                "MP3, редактор и расшифровка речи " +
+                "доступны на платных тарифах.",
             _ =>
-                "Обычные загрузки доступны бесплатно в пределах 10 lifetime-загрузок. " +
-                "После исчерпания лимита можно перейти на Start или тариф с безлимитными видео."
+                "Бесплатно можно скачать 10 видео за всё время аккаунта. " +
+                "Затем выберите Start или тариф с видео без лимита."
         };
 
         var current = signedIn
             ? $"Текущий тариф: {FriendlyPlanName(access?.PlanId)}. " +
               $"Осталось загрузок: {access?.RemainingDownloads ?? 0}."
-            : "Сейчас вход в VideoGrabber-аккаунт не выполнен.";
+            : "Сначала войдите в VideoGrabber.";
 
         var panel = new StackPanel { Spacing = 10, MaxWidth = 520 };
         panel.Children.Add(new TextBlock
@@ -120,8 +120,8 @@ public sealed partial class MainWindow
         {
             Text =
                 "Free — 10 обычных видео за всё время аккаунта.\n" +
-                "Start — до 10 загрузок в сутки + MP3/редактор/ASR.\n" +
-                "Unlimited Video — отдельные видео без лимита + MP3/редактор/ASR.\n" +
+                "Start — до 10 загрузок в сутки, MP3, редактор и расшифровка речи.\n" +
+                "Unlimited Video — видео без лимита, MP3, редактор и расшифровка речи.\n" +
                 "Full Course — всё выше + скачивание полного курса.",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.85
@@ -130,7 +130,7 @@ public sealed partial class MainWindow
         {
             panel.Children.Add(new TextBlock
             {
-                Text = "Ответ сервера: " + serverReason,
+                Text = "Действие сейчас недоступно. Обновите данные аккаунта и проверьте свой тариф.",
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.7,
                 FontSize = 12
@@ -205,9 +205,8 @@ public sealed partial class MainWindow
         {
             await ShowOperationalHelpAsync(
                 "Когда нужна «Пауза»",
-                "Пауза работает только во время активной загрузки, скачивания курса, обработки MP3, " +
-                "редактирования или транскрибации. Она временно приостанавливает текущую работу, " +
-                "не удаляет очередь и не отменяет результат. После нажатия кнопка меняется на «Продолжить».");
+                "Начните загрузку или обработку файла. «Пауза» приостановит её, " +
+                "а «Продолжить» возобновит. Очередь и готовые файлы сохранятся.");
             return;
         }
 
@@ -220,8 +219,8 @@ public sealed partial class MainWindow
         {
             await ShowOperationalHelpAsync(
                 "Сейчас нечего отменять",
-                "Кнопка «Отменить всё» используется, когда уже идёт загрузка, курс, редактор, MP3 или транскрибация. " +
-                "Она останавливает текущую операцию. Невыполненная очередь и уже готовые локальные файлы сохраняются.");
+                "«Отменить всё» останавливает текущую загрузку или обработку. " +
+                "Очередь и готовые файлы сохраняются.");
             return;
         }
 
@@ -231,8 +230,7 @@ public sealed partial class MainWindow
     private async Task ExplainMissingDownloadedMediaAsync()
         => await ShowOperationalHelpAsync(
             "Сначала скачайте видео",
-            "«Транскрибировать скачанное» работает с последним успешно загруженным видео. " +
-            "Сначала скачайте ролик, затем эта кнопка автоматически будет использовать его как исходник.");
+            "Эта кнопка создаёт текст из последнего скачанного видео. Сначала загрузите ролик.");
 
     private void OpenPricingPage(string? planId = null)
     {
@@ -269,6 +267,16 @@ public sealed partial class MainWindow
             "unlimited_video" => "Unlimited Video",
             "full_course" => "Full Course",
             null or "" => "не определён",
-            _ => planId
+            _ => "другой тариф"
         };
+    private static string FriendlyProviderName(string provider) => provider.ToLowerInvariant() switch
+    {
+        "google" => "Google",
+        "email" => "Почта",
+        "telegram" => "Telegram",
+        "apple" => "Apple",
+        "yandex" => "Яндекс",
+        _ => "Другой способ входа"
+    };
+
 }

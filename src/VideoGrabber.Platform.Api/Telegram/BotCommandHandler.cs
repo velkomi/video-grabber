@@ -53,13 +53,14 @@ public sealed class BotCommandHandler(
 
         if (command is "/start" or "/help")
         {
-            await bot.SendMessageAsync(new BotMessage(chatId, HelpText()), cancellationToken);
+            await bot.SendMessageAsync(new BotMessage(chatId, HelpText(),
+                string.Equals(chatType, "private", StringComparison.OrdinalIgnoreCase) ? MenuMarkup() : null), cancellationToken);
             return;
         }
 
         if (command is "/account" or "/balance" or "/link" or "/devices" or "/destinations" or "/admin"
             or "/media" or "/jobs" or "/download" or "/course" or "/mp3" or "/trim" or "/join" or "/transcribe"
-            or "/subscription" or "/settings" or "/buy" or "/payments" or "/paysupport")
+            or "/subscription" or "/settings" or "/buy" or "/payments" or "/paysupport" or "/menu" or "/hide")
         {
             if (!string.Equals(chatType, "private", StringComparison.OrdinalIgnoreCase))
             {
@@ -70,6 +71,15 @@ public sealed class BotCommandHandler(
 
         switch (command)
         {
+            case "/menu":
+                await bot.SendMessageAsync(new BotMessage(chatId,
+                    "Пришлите ссылку на видео или выберите действие.", MenuMarkup()), cancellationToken);
+                return;
+            case "/hide":
+                await bot.SendMessageAsync(new BotMessage(chatId,
+                    "Меню скрыто. Вернуть кнопки: /menu. Ссылку на видео можно отправить прямо в чат.",
+                    JsonSerializer.SerializeToElement(new { remove_keyboard = true })), cancellationToken);
+                return;
             case "/account":
                 await SendAccountAsync(chatId, accountId, cancellationToken);
                 return;
@@ -98,8 +108,7 @@ public sealed class BotCommandHandler(
                     {
                         await bot.SendMessageAsync(new BotMessage(
                             chatId,
-                            "Сначала привяжите Telegram к основному VideoGrabber-аккаунту через /link. " +
-                            "Оплата для временного Telegram-аккаунта отключена, чтобы покупки не потерялись при объединении."),
+                            "Перед оплатой привяжите Telegram к аккаунту VideoGrabber: /link."),
                             cancellationToken);
                         return;
                     }
@@ -113,7 +122,7 @@ public sealed class BotCommandHandler(
             case "/settings":
                 await bot.SendMessageAsync(new BotMessage(
                     chatId,
-                    "Настройки аккаунта, компьютеров, Telegram и подписки доступны в Mini App.",
+                    "Аккаунт, компьютеры и подписка — в приложении бота.",
                     MiniAppMarkup()), cancellationToken);
                 return;
             case "/payments":
@@ -121,7 +130,12 @@ public sealed class BotCommandHandler(
                 await SendPaymentSupportAsync(chatId, accountId, cancellationToken);
                 return;
             default:
-                if (await media.HandleAsync(chatId, accountId, command, args, cancellationToken))
+                var messageId = message.TryGetProperty("message_id", out var id) && id.TryGetInt64(out var parsed) ? parsed : 0;
+                var intentBytes = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(
+                    "direct-telegram:" + chatId.ToString(CultureInfo.InvariantCulture) + ":" + messageId.ToString(CultureInfo.InvariantCulture)));
+                var directIntent = messageId == 0 ? Guid.NewGuid() : new Guid(intentBytes.AsSpan(0, 16));
+                if (await media.HandleAsync(chatId, accountId, command, args, cancellationToken, directIntent,
+                    command == "/media" ? ToolsMarkup() : null))
                     return;
                 await bot.SendMessageAsync(new BotMessage(chatId,
                     "Неизвестная команда. Используйте /help."), cancellationToken);
@@ -176,7 +190,8 @@ public sealed class BotCommandHandler(
         {
             await bot.SendMessageAsync(new BotMessage(
                 chatId,
-                "Telegram уже привязан к основному VideoGrabber-аккаунту."),
+                "Telegram уже привязан к аккаунту VideoGrabber. Пришлите ссылку на видео " +
+                "или выберите «Инструменты».", MenuMarkup()),
                 cancellationToken);
             return;
         }
@@ -188,8 +203,7 @@ public sealed class BotCommandHandler(
             await bot.SendMessageAsync(new BotMessage(
                 chatId,
                 "Привязка Telegram к VideoGrabber\n\n" +
-                "Откройте одноразовую ссылку и войдите через Google или e-mail. " +
-                "После подтверждения этот Telegram будет использовать тот же тариф, лимиты и устройства.\n\n" +
+                "Войдите через Google или почту, чтобы использовать общий тариф и компьютеры.\n\n" +
                 "Ссылка действует 5 минут.",
                 UrlMarkup("Привязать Telegram", ticket.LinkUri)),
                 cancellationToken);
@@ -198,15 +212,14 @@ public sealed class BotCommandHandler(
         {
             await bot.SendMessageAsync(new BotMessage(
                 chatId,
-                "На временном Telegram-аккаунте уже есть данные, которые нельзя безопасно объединить автоматически. " +
-                "Автоматическая привязка остановлена; потребуется проверка аккаунта."),
+                "Не удалось объединить аккаунты. Обратитесь в поддержку, чтобы сохранить ваши данные."),
                 cancellationToken);
         }
         catch (TelegramAccountLinkConflictException)
         {
             await bot.SendMessageAsync(new BotMessage(
                 chatId,
-                "Этот Telegram уже не является временным аккаунтом или уже связан с другим профилем."),
+                "Telegram уже связан с аккаунтом. Проверьте /account; если это не ваш аккаунт, обратитесь в поддержку."),
                 cancellationToken);
         }
     }
@@ -217,23 +230,23 @@ public sealed class BotCommandHandler(
             ?? throw new InvalidDataException("Telegram account points to a missing profile.");
         var access = await grants.EvaluateAsync(accountId, cancellationToken);
         var refresh = await callbacks.CreateAsync(accountId, "account:refresh", null, cancellationToken);
-        var text = $"Аккаунт\nРоль: {profile.Role}\n" +
+        var text = "Аккаунт VideoGrabber\n" +
                    $"Тариф: {PlanLabel(access)}\n" +
-                   $"Способы входа: {(profile.LinkedProviders.Length == 0 ? "—" : string.Join(", ", profile.LinkedProviders))}\n" +
+                   $"Вход: {(profile.LinkedProviders.Length == 0 ? "не привязан; используйте /link" : string.Join(", ", profile.LinkedProviders.Select(ProviderLabel)))}\n" +
                    $"Скачивания: {DownloadLimitLabel(access)}\n" +
                    $"Полный курс: {(access.CanDownloadCourse ? "доступен" : "не входит в тариф")}\n" +
-                   $"Доступ: {access.Reason}";
+                   AccessLabel(access);
         await bot.SendMessageAsync(new BotMessage(chatId, text, AccountMarkup(refresh)), cancellationToken);
     }
 
     private async Task SendBalanceAsync(long chatId, Guid accountId, CancellationToken cancellationToken)
     {
         var access = await grants.EvaluateAsync(accountId, cancellationToken);
-        var until = access.ValidUntil?.ToUniversalTime().ToString("u", CultureInfo.InvariantCulture) ?? "—";
+        var until = access.ValidUntil?.ToUniversalTime().ToString("dd.MM.yyyy HH:mm 'UTC'", CultureInfo.InvariantCulture);
         await bot.SendMessageAsync(new BotMessage(chatId,
-            $"Баланс / подписка. Тариф: {PlanLabel(access)}. Лимит: {DownloadLimitLabel(access)}. " +
-            $"Полный курс: {(access.CanDownloadCourse ? "да" : "нет")}. " +
-            $"Доступ до: {until}. Причина: {access.Reason}."), cancellationToken);
+            $"Тариф и баланс\n{PlanLabel(access)}\nСкачивания: {DownloadLimitLabel(access)}\n" +
+            $"Полный курс: {(access.CanDownloadCourse ? "доступен" : "не входит в тариф")}\n" +
+            (until is null ? "" : $"Доступ до: {until}\n") + AccessLabel(access)), cancellationToken);
     }
 
     private async Task SendDevicesAsync(long chatId, Guid accountId, CancellationToken cancellationToken)
@@ -242,9 +255,9 @@ public sealed class BotCommandHandler(
         var active = rows.Where(x => !x.Revoked).ToArray();
         var now = clock.GetUtcNow();
         var text = active.Length == 0
-            ? "Активных компьютеров нет."
+            ? "Компьютеры пока не подключены. Войдите в VideoGrabber на Windows под тем же аккаунтом."
             : "Компьютеры:\n" + string.Join("\n", active.Select(x =>
-                $"• {x.Name} — {(x.LastSeenAt is DateTimeOffset seen && now - seen < TimeSpan.FromSeconds(25) ? "online" : "offline")} — {x.DeviceId:D}"));
+                $"• {x.Name} — {(x.LastSeenAt is DateTimeOffset seen && now - seen < TimeSpan.FromSeconds(25) ? "подключён" : "не в сети")}"));
         await bot.SendMessageAsync(new BotMessage(chatId, text), cancellationToken);
     }
 
@@ -253,8 +266,9 @@ public sealed class BotCommandHandler(
         var rows = await destinations.ListAsync(accountId, cancellationToken);
         var active = rows.Where(x => !x.Revoked).ToArray();
         var text = active.Length == 0
-            ? "Проверенных получателей пока нет. Добавьте получателя в Mini App."
-            : "Проверенные получатели:\n" + string.Join("\n", active.Select(x => $"• {x.Kind} {x.ChatId}"));
+            ? "Получателей пока нет. Добавьте чат или канал в приложении бота."
+            : "Получатели:\n" + string.Join("\n", active.Select((x, index) => $"{index + 1}. {DestinationLabel(x.Kind)}")) +
+              "\nВыбрать или изменить получателя можно в приложении бота.";
         await bot.SendMessageAsync(new BotMessage(chatId, text, MiniAppMarkup()), cancellationToken);
     }
     private async Task HandleBuyAsync(
@@ -268,7 +282,7 @@ public sealed class BotCommandHandler(
         {
             await bot.SendMessageAsync(new BotMessage(
                 chatId,
-                "Формат: /buy <sku> [recurring]. В Telegram цифровые услуги оплачиваются только Stars."),
+                "Выберите тариф в приложении бота. Оплата в Telegram — через Stars."),
                 cancellationToken);
             return;
         }
@@ -284,7 +298,7 @@ public sealed class BotCommandHandler(
                 throw new InvalidDataException("Stars invoice link is unavailable.");
             await bot.SendMessageAsync(new BotMessage(
                 chatId,
-                $"Заказ {checkout.PaymentId:D} создан. Доступ появится только после подтверждённого платежа Telegram.",
+                "Счёт готов. Тариф будет активирован после подтверждения оплаты Telegram.",
                 UrlMarkup("Оплатить Stars", checkout.RedirectUri)),
                 cancellationToken);
         }
@@ -298,7 +312,7 @@ public sealed class BotCommandHandler(
         {
             await bot.SendMessageAsync(new BotMessage(
                 chatId,
-                "Покупка сейчас недоступна для этого товара/аккаунта."),
+                "Сейчас оплатить этот тариф нельзя. Проверьте аккаунт и попробуйте позже."),
                 cancellationToken);
         }
     }
@@ -311,11 +325,11 @@ public sealed class BotCommandHandler(
         var rows = await payments.ListAsync(accountId, 10, cancellationToken);
         var support = configuration["VG_PAYMENT_SUPPORT_TEXT"];
         if (string.IsNullOrWhiteSpace(support))
-            support = "Контакт поддержки платежей пока не настроен администратором.";
+            support = "Контакт поддержки пока недоступен. Проверьте оплату в аккаунте на сайте.";
         var history = rows.Count == 0
             ? "Платежей пока нет."
-            : string.Join("\n", rows.Select(x =>
-                $"{x.PaymentId:D} • {x.Sku} • {x.Status} • {x.Amount.MinorUnits} {x.Amount.Currency}"));
+            : string.Join("\n", rows.Select((x, index) =>
+                $"{index + 1}. {PaymentAmountLabel(x.Amount)} — {PaymentStatusLabel(x.Status)}"));
         await bot.SendMessageAsync(new BotMessage(
             chatId,
             support + "\n\nВаши последние платежи:\n" + history),
@@ -368,13 +382,47 @@ public sealed class BotCommandHandler(
             new[] { new { text = "Обновить", callback_data = refreshToken } }
         };
         if (TryMiniAppUrl(out var miniApp))
-            rows.Add(new[] { new { text = "Mini App", web_app = new { url = miniApp.AbsoluteUri } } });
+            rows.Add(new[] { new { text = "Открыть приложение", web_app = new { url = miniApp.AbsoluteUri } } });
         return JsonSerializer.SerializeToElement(new { inline_keyboard = rows });
     }
 
+    private static JsonElement MenuMarkup()
+        => JsonSerializer.SerializeToElement(new
+        {
+            keyboard = new[]
+            {
+                new[] { new { text = "Скачать видео" }, new { text = "Инструменты" } },
+                new[] { new { text = "Аккаунт" }, new { text = "Тариф" } },
+                new[] { new { text = "Очередь" }, new { text = "Компьютеры" } },
+                new[] { new { text = "Привязать аккаунт" }, new { text = "Помощь" } },
+                new[] { new { text = "Приложение" }, new { text = "Скрыть меню" } }
+            },
+            resize_keyboard = true,
+            one_time_keyboard = false,
+            input_field_placeholder = "Ссылка на видео"
+        });
+
+    private static JsonElement ToolsMarkup()
+        => JsonSerializer.SerializeToElement(new
+        {
+            keyboard = new[]
+            {
+                new[] { new { text = "MP3" }, new { text = "Курс" } },
+                new[] { new { text = "Обрезка" }, new { text = "Склейка" } },
+                new[] { new { text = "Текст" }, new { text = "Назад" } },
+                new[] { new { text = "Скрыть меню" } }
+            },
+            resize_keyboard = true,
+            one_time_keyboard = false,
+            input_field_placeholder = "Ссылка на видео"
+        });
+
     private JsonElement? MiniAppMarkup()
         => TryMiniAppUrl(out var uri)
-            ? UrlMarkup("Открыть Mini App", uri)
+            ? JsonSerializer.SerializeToElement(new
+            {
+                inline_keyboard = new[] { new[] { new { text = "Открыть приложение", web_app = new { url = uri.AbsoluteUri } } } }
+            })
             : null;
 
     private static JsonElement UrlMarkup(string label, Uri url)
@@ -417,15 +465,14 @@ public sealed class BotCommandHandler(
 
     private static string HelpText()
         => "VideoGrabber\n\n" +
-           "Загрузки:\n/download <URL> [quality] — видео\n" +
-           "/course <URL> [quality] — весь курс на Windows\n" +
-           "/mp3 <URL> [quality] — MP3\n" +
-           "/media — редактор, trim/join/transcribe\n/jobs — очередь\n\n" +
+           "Пришлите ссылку на видео прямо в этот чат. Для прямой отправки нужен MP4 до 20 МиБ.\n\n" +
+           "Видео: /download <ссылка>\n" +
+           "Курсы на Windows: /course <ссылка>\n" +
+           "/media — MP3, редактор и текст\n/jobs — очередь\n\n" +
            "Аккаунт:\n/account — профиль\n/subscription — тариф и лимиты\n" +
-           "/devices — компьютеры\n/settings — Mini App\n/link — способы входа\n\n" +
+           "/devices — компьютеры\n/settings — приложение бота\n/link — привязать аккаунт\n\n" +
            "Платежи:\n/payments — история и поддержка\n\n" +
-           "Покупки через Telegram Stars будут опубликованы после настройки реальных XTR-цен.\n" +
-           "/help — эта справка. /admin доступен только owner_admin.";
+           "/menu — вернуть кнопки\n/hide — скрыть кнопки\n/help — эта справка.";
 
     private static string PlanLabel(AccessSnapshot access)
         => access.PlanId switch
@@ -434,19 +481,86 @@ public sealed class BotCommandHandler(
             "start" => "Start",
             "unlimited_video" => "Unlimited Video",
             "full_course" => "Full Course",
-            _ => access.Unlimited ? "Owner / legacy unlimited" : "Legacy"
+            _ => access.Unlimited ? "Безлимитный доступ" : "Индивидуальный доступ"
         };
 
     private static string DownloadLimitLabel(AccessSnapshot access)
         => access.Unlimited
             ? "безлимит"
             : access.PlanId == "start"
-                ? "до 10 в UTC-сутки"
+                ? "до 10 в сутки (обновление в 00:00 UTC)"
                 : access.RemainingDownloads.ToString(CultureInfo.InvariantCulture) + " осталось";
+
+    private static string ProviderLabel(string provider) => provider switch
+    {
+        "google" => "Google",
+        "email" => "почта",
+        "telegram" => "Telegram",
+        "apple" => "Apple",
+        "yandex" => "Яндекс",
+        _ => "другой способ"
+    };
+
+    private static string AccessLabel(AccessSnapshot access) => access.Reason switch
+    {
+        "account_blocked" => "Аккаунт заблокирован. Обратитесь в поддержку.",
+        "free_allowance_exhausted" => "Бесплатные скачивания закончились. Выберите тариф в аккаунте.",
+        "plan_inactive" => "Подписка не активна. Проверьте тариф в аккаунте.",
+        _ => access.CanDownload ? "Скачивание доступно." : "Для скачивания выберите тариф в аккаунте."
+    };
+
+    private static string DestinationLabel(string kind) => kind switch
+    {
+        "private" => "личный чат",
+        "group" or "supergroup" => "группа",
+        "channel" => "канал",
+        _ => "чат"
+    };
+
+    private static string PaymentStatusLabel(string status) => status switch
+    {
+        "pending" => "ожидает оплаты",
+        "succeeded" => "оплачен",
+        "canceled" => "отменён",
+        "refunded" => "возврат выполнен",
+        "refund_pending" => "возврат обрабатывается",
+        _ => "проверьте статус в аккаунте"
+    };
+
+    private static string PaymentAmountLabel(Money amount) => amount.Currency switch
+    {
+        "RUB" => (amount.MinorUnits / 100m).ToString("0.##", CultureInfo.GetCultureInfo("ru-RU")) + " ₽",
+        "XTR" => amount.MinorUnits.ToString(CultureInfo.InvariantCulture) + " Stars",
+        _ => "Платёж"
+    };
 
     private static (string Command, string Args) ParseCommand(string text)
     {
         text = text.Trim();
+        if (Uri.TryCreate(text, UriKind.Absolute, out var source)
+            && source.Scheme is "http" or "https")
+            return ("/download", text);
+        var menuCommand = text switch
+        {
+            "Скачать видео" => "/download",
+            "Инструменты" => "/media",
+            "MP3" => "/mp3",
+            "Курс" => "/course",
+            "Обрезка" => "/trim",
+            "Склейка" => "/join",
+            "Текст" => "/transcribe",
+            "Назад" => "/menu",
+            "Аккаунт" => "/account",
+            "Тариф" => "/subscription",
+            "Очередь" => "/jobs",
+            "Компьютеры" => "/devices",
+            "Привязать аккаунт" => "/link",
+            "Помощь" => "/help",
+            "Приложение" => "/settings",
+            "Скрыть меню" => "/hide",
+            _ => null
+        };
+        if (menuCommand is not null) return (menuCommand, string.Empty);
         if (!text.StartsWith("/", StringComparison.Ordinal)) return (string.Empty, string.Empty);
         var space = text.IndexOf(' ');
         var command = space < 0 ? text : text[..space];

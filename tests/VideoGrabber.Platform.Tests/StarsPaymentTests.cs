@@ -254,7 +254,7 @@ public sealed class StarsPaymentTests
     }
 
     [Fact]
-    public async Task Paysupport_is_private_and_lists_only_current_accounts_references()
+    public async Task Paysupport_is_private_and_lists_only_current_accounts_payments_without_internal_ids()
     {
         await using var f = await ApiFixture.StartAsync();
         const long payer = 9206;
@@ -263,6 +263,10 @@ public sealed class StarsPaymentTests
         var foreign = await f.AccountAsync("telegram", "9207");
         var foreignCheckout = await CreateStarsCheckoutAsync(
             foreign.Client, "test.credits3", false);
+        await f.Service<PaymentStore>().ApplyAsync(
+            new VerifiedPayment("stars", "test", "foreign-support-charge",
+                foreignCheckout.PaymentId, foreign.Id, new Money(30, "XTR"),
+                "succeeded", f.Clock.GetUtcNow(), null, null), CancellationToken.None);
         f.TelegramApi.Clear();
 
         await PostWebhookAsync(f, 9920, new
@@ -284,7 +288,10 @@ public sealed class StarsPaymentTests
         using var json = JsonDocument.Parse(request.Body);
         var text = json.RootElement.GetProperty("text").GetString() ?? "";
         Assert.Contains("support@example.test", text);
-        Assert.Contains(checkout.PaymentId.ToString("D"), text);
+        Assert.Contains("1. 30 Stars — ожидает оплаты", text);
+        Assert.DoesNotContain("2.", text);
+        Assert.DoesNotContain("— оплачен", text);
+        Assert.DoesNotContain(checkout.PaymentId.ToString("D"), text);
         Assert.DoesNotContain(foreignCheckout.PaymentId.ToString("D"), text);
 
         f.TelegramApi.Clear();

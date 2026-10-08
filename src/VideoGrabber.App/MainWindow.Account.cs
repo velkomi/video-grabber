@@ -7,6 +7,7 @@ using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using VideoGrabber.Infrastructure.Licensing;
+using VideoGrabber.Infrastructure.Diagnostics;
 using VideoGrabber.Platform.Contracts;
 
 using VideoGrabber.Core.Licensing;
@@ -24,28 +25,31 @@ public sealed partial class MainWindow
     private StackPanel _accountDevicesPanel = null!;
     private bool _accountBusy;
     private bool _accountStartupAttempted;
+    private bool _offlineLeaseUnavailable;
+    private FrameworkElement _accountActions = null!;
+    private readonly List<FrameworkElement> _signedInAccountSections = [];
 
     private ScrollViewer BuildAccountPage()
     {
         var body = PageStack();
-        body.Children.Add(PageHeading("Аккаунт и доступ",
-            "Вход открывается только в системном браузере. Сессия хранится через Windows DPAPI."));
+        body.Children.Add(PageHeading("Один аккаунт — везде",
+            "Ваш тариф и история заданий — на сайте, в Windows и Telegram."));
         var auth = Vertical(10);
-        auth.Children.Add(SectionHeading("Вход / привязка способа входа"));
+        auth.Children.Add(SectionHeading("Войти в VideoGrabber"));
         auth.Children.Add(MutedText(
-            "Основной VideoGrabber-аккаунт создаётся через Google или e-mail Magic Link на сайте. " +
-            "Windows получает только одноразовый код входа и хранит refresh-сессию через DPAPI. Media WebView2 не используется."));
-        auth.Children.Add(Horizontal(
-            ProviderButton("Google", "google"),
-            ProviderButton("Почта", "email")));
-        auth.Children.Add(MutedText(
-            "Telegram привязывается командой /link в @VideoGra_bot после входа в основной аккаунт. " +
-            "Apple и Яндекс в текущем публичном запуске не используются."));
+            "Войдите через браузер. Для почты пароль не нужен — придёт ссылка для входа."));
+        auth.Children.Add(ResponsiveActions(
+            ProviderButton("Войти через Google", "google"),
+            ProviderButton("Войти по почте", "email")));
+        auth.Children.Add(StudioLink("Открыть @VideoGra_bot ↗", "https://t.me/VideoGra_bot"));
+        auth.Children.Add(MutedText("Чтобы подключить Telegram к этому аккаунту, отправьте боту /link после входа."));
         var refresh = SecondaryButton("Обновить данные");
         refresh.Click += async (_, _) => await LoadManagedAccountAsync();
         var signOut = SecondaryButton("Выйти");
         signOut.Click += async (_, _) => await SignOutManagedAccountAsync();
-        auth.Children.Add(Horizontal(refresh, signOut));
+        _accountActions = ResponsiveActions(refresh, signOut);
+        _accountActions.Visibility = Visibility.Collapsed;
+        auth.Children.Add(_accountActions);
         _accountStatus = MutedText("Проверяю сохранённую сессию…");
         auth.Children.Add(_accountStatus);
         body.Children.Add(Card(auth));
@@ -58,20 +62,31 @@ public sealed partial class MainWindow
         profile.Children.Add(_accountProvidersText);
         _accountIdentitiesPanel = Vertical(6);
         profile.Children.Add(_accountIdentitiesPanel);
-        body.Children.Add(Card(profile));
+        var profileCard = Details("Профиль и способы входа", profile);
+        _signedInAccountSections.Add(profileCard);
+        body.Children.Add(profileCard);
 
         _accountAccessText = new TextBlock { TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
         var access = Vertical(8);
         access.Children.Add(SectionHeading("Доступ"));
         access.Children.Add(_accountAccessText);
-        body.Children.Add(Card(access));
-        body.Children.Add(BuildManagedPaymentsCard());
+        var accessCard = Card(access);
+        _signedInAccountSections.Add(accessCard);
+        body.Children.Add(accessCard);
+        var paymentsCard = BuildManagedPaymentsCard();
+        _signedInAccountSections.Add(paymentsCard);
+        body.Children.Add(paymentsCard);
 
         _accountDevicesPanel = Vertical(8);
         _accountDevicesPanel.Children.Add(SectionHeading("Компьютеры"));
-        _accountDevicesPanel.Children.Add(MutedText("После входа здесь появятся зарегистрированные Windows-устройства."));
-        body.Children.Add(Card(_accountDevicesPanel));
-        body.Children.Add(BuildDesktopWorkerCard());
+        _accountDevicesPanel.Children.Add(MutedText("После входа здесь появятся ваши компьютеры."));
+        var devicesCard = Details("Ваши компьютеры", _accountDevicesPanel);
+        _signedInAccountSections.Add(devicesCard);
+        body.Children.Add(devicesCard);
+        var workerCard = Details("Задания с сайта", BuildDesktopWorkerCard());
+        _signedInAccountSections.Add(workerCard);
+        body.Children.Add(workerCard);
+        foreach (var section in _signedInAccountSections) section.Visibility = Visibility.Collapsed;
 
         var view = PageScrollViewer(body);
         view.Loaded += (_, _) => StartManagedAccountRestore();
@@ -82,11 +97,15 @@ public sealed partial class MainWindow
     {
         if (_accountStartupAttempted) return;
         _accountStartupAttempted = true;
+#if VIDEOGRABBER_PRESENTATION_PROBE
+        SetManagedSignedOut("Войдите, чтобы начать скачивание и синхронизировать аккаунт.");
+#else
         _ = InitializeManagedAccountAsync();
+#endif
     }
     private Button ProviderButton(string title, string provider)
     {
-        var button = SecondaryButton(title);
+        var button = provider == "google" ? StudioGoogleButton(title) : SecondaryButton(title);
         button.Click += async (_, _) =>
         {
             if (_managedAccountId is not null && !string.IsNullOrWhiteSpace(_managedAccessToken))
@@ -98,7 +117,7 @@ public sealed partial class MainWindow
             if (provider is not ("google" or "email"))
             {
                 SetAccountStatus(
-                    "Сначала войдите в основной аккаунт через Google или e-mail. " +
+                    "Сначала войдите в аккаунт через Google или почту. " +
                     "После этого можно привязать " + provider + ".");
                 return;
             }
@@ -124,15 +143,15 @@ public sealed partial class MainWindow
         }
         catch (UnauthorizedAccessException)
         {
-            SetManagedSignedOut("Войдите в аккаунт, чтобы использовать Managed-функции.");
+            SetManagedSignedOut("Войдите, чтобы начать скачивание и синхронизировать аккаунт.");
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            SetAccountStatus("Сервер сейчас недоступен. Подписанный офлайн-доступ, если он ещё действителен, сохранён. " + ex.Message);
+            SetAccountStatus("Не удалось подключиться. Проверьте интернет. Действующий доступ без интернета сохранён.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SetAccountStatus("Не удалось восстановить аккаунт: " + ex.Message);
+            SetAccountStatus("Не удалось восстановить вход. Попробуйте войти снова.");
         }
         finally { _accountBusy = false; }
     }
@@ -142,8 +161,8 @@ public sealed partial class MainWindow
         if (_accountBusy) return;
         _accountBusy = true;
         SetAccountStatus(
-            "Открываю сайт VideoGrabber в системном браузере. " +
-            "Выберите Google или e-mail Magic Link для входа…");
+            "Завершите вход в открывшемся браузере. Затем вернитесь сюда.");
+        using var operation = DiagnosticHub.Begin("auth.desktop.account_sign_in");
         try
         {
             var signIn = new SystemBrowserSignIn(_managedHttp, provider,
@@ -152,9 +171,11 @@ public sealed partial class MainWindow
             _managedAccessToken = session.AccessToken;
             RebuildManagedCoordinator();
             await LoadManagedAccountAsync();
+            // Account loading records its own result because its UI handles failures internally.
+            operation.Complete(message:"handoff_received");
         }
-        catch (OperationCanceledException) { SetAccountStatus("Вход отменён."); }
-        catch (Exception ex) { SetAccountStatus("Вход не выполнен: " + ex.Message); }
+        catch (OperationCanceledException) { operation.Cancel(); SetAccountStatus("Вход отменён."); }
+        catch (Exception ex) { operation.Complete(false, ex.GetType().Name); SetAccountStatus("Не удалось войти. Проверьте интернет и попробуйте ещё раз."); }
         finally { _accountBusy = false; }
     }
 
@@ -168,9 +189,9 @@ public sealed partial class MainWindow
                 timeout: TimeSpan.FromMinutes(5), sessionStore: _managedSessionStore);
             await lifecycle.SignOutAsync(_windowLifetime.Token);
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
-            SetAccountStatus("Сервер не подтвердил выход: " + ex.Message);
+            SetAccountStatus("Выход не подтверждён. Проверьте интернет и повторите попытку.");
             return;
         }
         finally { _accountBusy = false; }
@@ -192,9 +213,11 @@ public sealed partial class MainWindow
         SetAccountStatus(message);
         AccountUi(() =>
         {
-            _accountProfileText.Text = "Нет активной сессии.";
-            _accountProvidersText.Text = "Привязанные способы входа недоступны без сессии.";
-            _accountAccessText.Text = "Managed-операции заблокированы до входа.";
+            _accountActions.Visibility = Visibility.Collapsed;
+            foreach (var section in _signedInAccountSections) section.Visibility = Visibility.Collapsed;
+            _accountProfileText.Text = "Вы ещё не вошли.";
+            _accountProvidersText.Text = "Способы входа появятся после входа в аккаунт.";
+            _accountAccessText.Text = "Войдите, чтобы увидеть доступные возможности.";
             RenderManagedIdentities([]);
             RenderManagedDevices([]);
         });
@@ -209,9 +232,10 @@ public sealed partial class MainWindow
             return;
         }
 
+        using var operation = DiagnosticHub.Begin("auth.desktop.account_load");
         try
         {
-            SetAccountStatus("Обновляю профиль и права доступа…");
+            SetAccountStatus("Обновляю аккаунт…");
             var profile = await ManagedGetAsync<AccountProfile>("/v1/me", _windowLifetime.Token);
             var access = await ManagedGetAsync<AccessSnapshot>("/v1/access", _windowLifetime.Token);
             var devices = await ManagedGetAsync<DeviceReceipt[]>("/v1/devices", _windowLifetime.Token);
@@ -219,7 +243,9 @@ public sealed partial class MainWindow
             _managedAccountId = profile.AccountId;
             _managedAccessSnapshot = access;
 
+            DiagnosticHub.Log.Write("auth.desktop.device_lease", "started");
             await EnsureManagedDeviceAndLeaseAsync(profile, access, devices);
+            DiagnosticHub.Log.Write("auth.desktop.device_lease", "succeeded");
             devices = await ManagedGetAsync<DeviceReceipt[]>("/v1/devices", _windowLifetime.Token);
             await RestoreManagedQueueAsync(profile.AccountId);
             RebuildManagedCoordinator();
@@ -227,48 +253,62 @@ public sealed partial class MainWindow
 
             AccountUi(() =>
             {
-                _accountProfileText.Text = $"ID: {profile.AccountId:D}\nРоль: {profile.Role}\nБлокировка: {(profile.Blocked ? "да" : "нет")}";
+                _accountActions.Visibility = Visibility.Visible;
+                foreach (var section in _signedInAccountSections) section.Visibility = Visibility.Visible;
+                _accountProfileText.Text = profile.Blocked ? "Аккаунт заблокирован. Обратитесь в поддержку." : "Аккаунт активен.";
                 _accountProvidersText.Text = "Привязанные способы входа: " +
-                    (profile.LinkedProviders.Length == 0 ? "нет" : string.Join(", ", profile.LinkedProviders)) +
+                    (profile.LinkedProviders.Length == 0 ? "нет" : string.Join(", ", profile.LinkedProviders.Select(FriendlyProviderName))) +
                     $"\nTelegram: {(profile.LinkedProviders.Contains("telegram", StringComparer.OrdinalIgnoreCase) ? "привязан" : "не привязан")}";
                 RenderManagedIdentities(identities);
                 _accountAccessText.Text = FormatAccess(access);
                 RenderManagedDevices(devices);
-                _accountStatus.Text = "Данные аккаунта обновлены.";
+                _accountStatus.Text = _offlineLeaseUnavailable
+                    ? "Вы вошли. Сейчас для работы нужен интернет."
+                    : "Вы вошли. Аккаунт синхронизирован.";
             });
             SetOperationControls(false);
             await RefreshManagedPaymentProductsAsync();
             await RefreshManagedSubscriptionsAsync();
+            operation.Complete();
         }
         catch (UnauthorizedAccessException)
         {
+            operation.Complete(false, "UnauthorizedAccessException");
             _managedAccessToken = null;
             RebuildManagedCoordinator();
-            SetManagedSignedOut("Сессия истекла. Войдите снова.");
+            SetManagedSignedOut("Нужно войти снова.");
         }
-        catch (Exception ex) { SetAccountStatus("Не удалось обновить аккаунт: " + ex.Message); }
+        catch (Exception ex) { operation.Complete(false, ex.GetType().Name); SetAccountStatus(ex.Message == "Достигнут лимит устройств. Отзовите старый компьютер в аккаунте."
+                ? "Достигнут лимит компьютеров. Отключите старый компьютер в аккаунте и повторите вход."
+                : "Не удалось обновить аккаунт. Проверьте интернет и повторите попытку."); }
     }
 
     private static string FormatAccess(AccessSnapshot access)
     {
-        var until = access.ValidUntil?.ToLocalTime().ToString("g") ?? "—";
-        var offline = access.OfflineUntil?.ToLocalTime().ToString("g") ?? "—";
-        return $"Скачивание: {(access.CanDownload ? "разрешено" : "нет")}\n" +
-               $"Редактор/ASR: {(access.CanEdit ? "разрешено" : "нет")}\n" +
-               $"Безлимит: {(access.Unlimited ? "да" : "нет")}\n" +
-               $"Осталось скачиваний: {access.RemainingDownloads}\n" +
-               $"Доступ до: {until}\nОфлайн до: {offline}\nПричина: {access.Reason}";
+        var lines = new List<string>
+        {
+            access.CanDownload ? "Загрузка доступна" : "Загрузка пока недоступна",
+            access.Unlimited ? "Видео без лимита" : $"Осталось загрузок: {access.RemainingDownloads}",
+            access.CanEdit ? "Редактор, MP3 и расшифровка доступны" : "Редактор и расшифровка — в платных тарифах"
+        };
+        if (access.ValidUntil is { } until) lines.Add($"Тариф действует до {until.ToLocalTime():d}");
+        return string.Join("\n", lines);
     }
 
     private async Task<T> ManagedGetAsync<T>(string path, CancellationToken cancellationToken)
     {
+        var stage = path switch { "/v1/me" => "profile", "/v1/access" => "access", "/v1/devices" => "devices",
+            "/v1/identities" => "identities", _ => "request" };
+        using var operation = DiagnosticHub.Begin("auth.desktop.load." + stage);
         using var request = ManagedRequest(HttpMethod.Get, path);
         using var response = await _managedHttp.SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.Unauthorized)
             throw new UnauthorizedAccessException("managed_session_expired");
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken)
+        var value = await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken)
             ?? throw new InvalidDataException("Ответ сервера пуст.");
+        operation.Complete(exitCode:(int)response.StatusCode);
+        return value;
     }
 
     private HttpRequestMessage ManagedRequest(HttpMethod method, string path)
@@ -278,6 +318,7 @@ public sealed partial class MainWindow
         var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _managedAccessToken);
         request.Headers.Add("X-VideoGrabber-Api-Version", "1");
+        request.Headers.Add("X-Correlation-Id", DiagnosticHub.CurrentJobId ?? Guid.NewGuid().ToString("N"));
         return request;
     }
 
@@ -305,6 +346,7 @@ public sealed partial class MainWindow
             _managedOfflineCache = null;
         }
 
+        _offlineLeaseUnavailable = false;
         if (access.CanEdit)
         {
             try
@@ -313,6 +355,14 @@ public sealed partial class MainWindow
                 _managedOfflineCache = cache;
             }
             catch (HttpRequestException) when (_managedOfflineCache is not null) { }
+            catch (InvalidDataException ex) when (ex.Message == "offline_lease_invalid")
+            {
+                _managedOfflineCache = null;
+                _offlineLeaseUnavailable = true;
+                DiagnosticHub.Log.Write("auth.desktop.offline_lease", "failed",
+                    ex.InnerException?.Message is { } reason && reason.StartsWith("lease_", StringComparison.Ordinal)
+                        ? reason : "offline_lease_invalid");
+            }
         }
     }
 
@@ -438,7 +488,7 @@ public sealed partial class MainWindow
     {
         if (_accountBusy) return;
         _accountBusy = true;
-        SetAccountStatus("Готовлю безопасную привязку способа входа…");
+        SetAccountStatus("Подключаю способ входа…");
         try
         {
             await RefreshManagedSensitiveSessionAsync();
@@ -457,9 +507,9 @@ public sealed partial class MainWindow
         catch (OperationCanceledException) { SetAccountStatus("Привязка отменена."); }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
         {
-            SetAccountStatus("Этот способ входа уже принадлежит другому аккаунту или challenge уже использован.");
+            SetAccountStatus("Этот способ входа уже связан с другим аккаунтом или подтверждение устарело. Начните привязку заново.");
         }
-        catch (Exception ex) { SetAccountStatus("Не удалось привязать способ входа: " + ex.Message); }
+        catch (Exception) { SetAccountStatus("Не удалось подключить способ входа. Проверьте интернет и попробуйте ещё раз."); }
         finally { _accountBusy = false; }
     }
 
@@ -487,7 +537,7 @@ public sealed partial class MainWindow
             SetAccountStatus("Способ входа отвязан. Обновляю профиль…");
             await LoadManagedAccountAsync();
         }
-        catch (Exception ex) { SetAccountStatus("Не удалось отвязать способ входа: " + ex.Message); }
+        catch (Exception) { SetAccountStatus("Не удалось отвязать способ входа. Проверьте интернет и повторите попытку."); }
         finally { _accountBusy = false; }
     }
 
@@ -505,7 +555,7 @@ public sealed partial class MainWindow
         {
             var label = new TextBlock
             {
-                Text = identity.Provider +
+                Text = FriendlyProviderName(identity.Provider) +
                     (string.IsNullOrWhiteSpace(identity.VerifiedEmail) ? string.Empty : "  •  " + identity.VerifiedEmail),
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center
@@ -519,7 +569,7 @@ public sealed partial class MainWindow
                 {
                     await ShowOperationalHelpAsync(
                         "Нельзя отвязать единственный способ входа",
-                        "У аккаунта должен остаться хотя бы один способ входа. Сначала привяжите Google или e-mail в этом разделе, затем текущий способ можно будет безопасно отвязать.");
+                        "Сначала подключите Google или почту в этом разделе. Затем можно отвязать прежний способ входа.");
                     return;
                 }
                 await UnlinkManagedIdentityAsync(id);
@@ -527,7 +577,7 @@ public sealed partial class MainWindow
             _accountIdentitiesPanel.Children.Add(TwoColumn(label, unlink, secondAuto: true));
         }
         _accountIdentitiesPanel.Children.Add(MutedText(
-            "Привязка требует текущую сессию и отдельное подтверждение нового провайдера. Совпадение email само по себе аккаунты не объединяет."));
+            "Новый способ входа нужно подтвердить отдельно. Одинаковая почта сама по себе не объединяет аккаунты."));
     }
     private void RenderManagedDevices(IEnumerable<DeviceReceipt> devices)
     {
@@ -537,13 +587,14 @@ public sealed partial class MainWindow
         {
             var label = new TextBlock
             {
-                Text = $"{device.Name}  •  {device.DeviceId:D}" +
+                Text = device.Name +
                     (device.DeviceId == _managedDeviceId ? "  •  этот компьютер" : "") +
-                    (device.Revoked ? "  •  отозван" : ""),
+                    (device.Revoked ? "  •  отключён" : "") +
+                    (device.LastSeenAt is { } seen ? $"\nПоследнее подключение: {seen.ToLocalTime():g}" : ""),
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            var revoke = SecondaryButton(device.Revoked ? "Уже отозван" : "Отозвать");
+            var revoke = SecondaryButton(device.Revoked ? "Уже отключён" : "Отключить");
             revoke.IsEnabled = true;
             var id = device.DeviceId;
             var alreadyRevoked = device.Revoked;
@@ -552,8 +603,8 @@ public sealed partial class MainWindow
                 if (alreadyRevoked)
                 {
                     await ShowOperationalHelpAsync(
-                        "Устройство уже отозвано",
-                        "Это устройство больше не может получать задания или обновлять офлайн-доступ. Если оно снова понадобится, войдите на нём в VideoGrabber и зарегистрируйте его заново.");
+                        "Компьютер уже отключён",
+                        "Он больше не получает задания и новый доступ без интернета. Чтобы подключить его снова, войдите на нём в VideoGrabber.");
                     return;
                 }
                 await RevokeManagedDeviceAsync(id);
@@ -561,7 +612,7 @@ public sealed partial class MainWindow
             _accountDevicesPanel.Children.Add(TwoColumn(label, revoke, secondAuto: true));
         }
         if (_accountDevicesPanel.Children.Count == 1)
-            _accountDevicesPanel.Children.Add(MutedText("Нет зарегистрированных устройств."));
+            _accountDevicesPanel.Children.Add(MutedText("Подключённых компьютеров пока нет."));
     }
 
     private async Task RevokeManagedDeviceAsync(Guid deviceId)
@@ -578,7 +629,7 @@ public sealed partial class MainWindow
                 _managedDeviceId = null;
                 _managedOfflineCache = null;
                 RebuildManagedCoordinator();
-                SetAccountStatus("Этот компьютер отозван. Нажмите «Обновить данные», чтобы зарегистрировать его заново.");
+                SetAccountStatus("Этот компьютер отключён. Нажмите «Обновить данные», чтобы подключить его снова.");
                 var devices = await ManagedGetAsync<DeviceReceipt[]>("/v1/devices", _windowLifetime.Token);
             var identities = await ManagedGetAsync<LinkedIdentity[]>("/v1/identities", _windowLifetime.Token);
                 AccountUi(() => RenderManagedDevices(devices));
@@ -586,7 +637,7 @@ public sealed partial class MainWindow
             }
             await LoadManagedAccountAsync();
         }
-        catch (Exception ex) { SetAccountStatus("Не удалось отозвать устройство: " + ex.Message); }
+        catch (Exception) { SetAccountStatus("Не удалось отключить компьютер. Проверьте интернет и повторите попытку."); }
     }
 
     private void SetAccountStatus(string message)

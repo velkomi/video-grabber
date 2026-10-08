@@ -11,6 +11,7 @@
     <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets><IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets></PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/VideoGrabber.Core/VideoGrabber.Core.csproj" />
     <ProjectReference Include="../../src/VideoGrabber.Platform.Api/VideoGrabber.Platform.Api.csproj" />
     <ProjectReference Include="../../src/VideoGrabber.Platform.Persistence/VideoGrabber.Platform.Persistence.csproj" />
     <ProjectReference Include="../../src/VideoGrabber.Platform.Contracts/VideoGrabber.Platform.Contracts.csproj" />

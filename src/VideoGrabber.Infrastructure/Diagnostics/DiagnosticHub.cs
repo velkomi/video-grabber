@@ -7,7 +7,13 @@ public static class DiagnosticHub
     private static readonly AsyncLocal<string?> Job = new();
     public static string? CurrentJobId => Job.Value;
     public static DiagnosticLog Log { get; } = new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoGrabber", "logs"));
+#if VIDEOGRABBER_PRESENTATION_PROBE
+        Path.GetFullPath(Environment.GetEnvironmentVariable("VIDEOGRABBER_PRESENTATION_ROOT")
+            ?? throw new InvalidOperationException("Presentation probe requires an isolated output directory.")),
+#else
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VideoGrabber",
+#endif
+        "logs"));
     public static Operation Begin(string stage, string message = "") => new(stage, message);
     public sealed class Operation : IDisposable
     {

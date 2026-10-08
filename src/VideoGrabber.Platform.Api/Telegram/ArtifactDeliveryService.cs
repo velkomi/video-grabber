@@ -29,6 +29,8 @@ public sealed class ArtifactDeliveryService(
         DeliveryRequest request,
         CancellationToken cancellationToken)
     {
+        if (Jobs.MediaStoragePolicy.ClientOnly(configuration))
+            throw new DeliveryConflictException();
         ValidateRequest(request);
         var created = await CreateOrReadAsync(accountId, request, cancellationToken)
             .ConfigureAwait(false);
@@ -102,6 +104,7 @@ public sealed class ArtifactDeliveryService(
     public async Task<DeliveryView?> ProcessNextAsync(
         CancellationToken cancellationToken)
     {
+        if (Jobs.MediaStoragePolicy.ClientOnly(configuration)) return null;
         Guid accountId;
         Guid deliveryId;
         await using (var connection = await dataSource.OpenConnectionAsync(cancellationToken))

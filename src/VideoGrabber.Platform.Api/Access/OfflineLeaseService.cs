@@ -92,6 +92,8 @@ public sealed class OfflineLeaseService : IDisposable
     {
         var claims = new List<Claim>
         {
+            new(JwtRegisteredClaimNames.Iat, issuedAt.ToUnixTimeSeconds().ToString(
+                System.Globalization.CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),
             new(JwtRegisteredClaimNames.Sub, accountId.ToString("D")),
             new(JwtRegisteredClaimNames.Jti, leaseId.ToString("D")),
             new("account_id", accountId.ToString("D")),

@@ -1,0 +1,66 @@
+[
+  {
+    "family": "Manrope",
+    "subset": "cyrillic-ext",
+    "file": "manrope-cyrillic-ext.woff2",
+    "source": "https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggqxSuXd.woff2",
+    "sha256": "de37de877dc17e4577341fa68bb5cb526b53d54cb29721e674208546a3c7849d",
+    "bytes": 2552
+  },
+  {
+    "family": "Manrope",
+    "subset": "cyrillic",
+    "file": "manrope-cyrillic.woff2",
+    "source": "https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggOxSuXd.woff2",
+    "sha256": "c268b459a9329e59fecf39a17618efd44c71735532048d60b12aab76a8c14914",
+    "bytes": 14500
+  },
+  {
+    "family": "Manrope",
+    "subset": "latin-ext",
+    "file": "manrope-latin-ext.woff2",
+    "source": "https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggmxSuXd.woff2",
+    "sha256": "3911b66d9f2e005a4b989223405d0e5032619c668597ba467cc76a23c8fffcfb",
+    "bytes": 15120
+  },
+  {
+    "family": "Manrope",
+    "subset": "latin",
+    "file": "manrope-latin.woff2",
+    "source": "https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSg.woff2",
+    "sha256": "a30ddcd349703aff7464c34bef3fffdff405ee50c113440d7c8693c02d210972",
+    "bytes": 24836
+  },
+  {
+    "family": "Onest",
+    "subset": "cyrillic-ext",
+    "file": "onest-cyrillic-ext.woff2",
+    "source": "https://fonts.gstatic.com/s/onest/v11/gNMKW3F-SZuj7xmS-HY6EQ.woff2",
+    "sha256": "268f03691b3d06e57abcf20f9277e314ea8784298983aab5b40c1b91965027e1",
+    "bytes": 10540
+  },
+  {
+    "family": "Onest",
+    "subset": "cyrillic",
+    "file": "onest-cyrillic.woff2",
+    "source": "https://fonts.gstatic.com/s/onest/v11/gNMKW3F-SZuj7xmb-HY6EQ.woff2",
+    "sha256": "68e5e01d6265bd68967746d4f5a9d18d0e6cbb5d15583c7082d6384ab1229b27",
+    "bytes": 15860
+  },
+  {
+    "family": "Onest",
+    "subset": "latin-ext",
+    "file": "onest-latin-ext.woff2",
+    "source": "https://fonts.gstatic.com/s/onest/v11/gNMKW3F-SZuj7xmR-HY6EQ.woff2",
+    "sha256": "14e7d3079b75860e2ab50efc6c318c398fdb46ede9b56e625f12ae70a3c5d9a4",
+    "bytes": 28452
+  },
+  {
+    "family": "Onest",
+    "subset": "latin",
+    "file": "onest-latin.woff2",
+    "source": "https://fonts.gstatic.com/s/onest/v11/gNMKW3F-SZuj7xmf-HY.woff2",
+    "sha256": "052df74533250c2e0ca0c4bdd32de594e107d99c1648e63820ef9c6142067828",
+    "bytes": 33760
+  }
+]

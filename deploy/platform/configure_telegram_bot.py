@@ -13,6 +13,19 @@ import sys
 import urllib.error
 import urllib.request
 
+BOT_COMMANDS = [
+    {"command": "start", "description": "Открыть VideoGrabber"},
+    {"command": "menu", "description": "Вернуть кнопки меню"},
+    {"command": "link", "description": "Привязать аккаунт"},
+    {"command": "download", "description": "Скачать видео по ссылке"},
+    {"command": "jobs", "description": "Очередь загрузок"},
+    {"command": "account", "description": "Мой аккаунт"},
+    {"command": "settings", "description": "Открыть Mini App"},
+    {"command": "subscription", "description": "Тариф и лимиты"},
+    {"command": "help", "description": "Как пользоваться ботом"},
+    {"command": "hide", "description": "Скрыть кнопки меню"},
+]
+
 
 def secret(name: str, file_name: str) -> str:
     direct = os.environ.get(name, "").strip()
@@ -49,13 +62,29 @@ def api(token: str, method: str, payload: dict | None = None) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--commands-only", action="store_true", help="Update command menu only; leave the webhook unchanged")
     args = parser.parse_args()
 
     token = secret("VG_TELEGRAM_BOT_TOKEN", "VG_TELEGRAM_BOT_TOKEN_FILE")
+    username = os.environ.get("VG_TELEGRAM_BOT_USERNAME", "@VideoGra_bot").strip()
+    me = api(token, "getMe")["result"]
+    actual_username = "@" + str(me.get("username") or "")
+    if actual_username.lower() != username.lower():
+        raise SystemExit(
+            f"Bot token belongs to {actual_username or '<no username>'}, expected {username}"
+        )
+    if args.commands_only:
+        print(json.dumps({"bot": actual_username, "commands": [item["command"] for item in BOT_COMMANDS], "menu_button": "commands", "webhook_changed": False}, ensure_ascii=False, indent=2))
+        if not args.apply:
+            print("DRY_RUN_OK")
+            return 0
+        configure_command_menu(token)
+        print("COMMAND_MENU_VERIFIED")
+        return 0
+
     webhook_secret = secret(
         "VG_TELEGRAM_WEBHOOK_SECRET", "VG_TELEGRAM_WEBHOOK_SECRET_FILE"
     )
-    username = os.environ.get("VG_TELEGRAM_BOT_USERNAME", "@VideoGra_bot").strip()
     public_url = os.environ.get(
         "VG_PLATFORM_PUBLIC_URL",
         "https://videograbber.srv1902378.hstgr.cloud/",
@@ -68,55 +97,18 @@ def main() -> int:
     if not public_url.startswith("https://") or not miniapp_url.startswith("https://"):
         raise SystemExit("Telegram webhook and Mini App URLs must use HTTPS")
 
-    me = api(token, "getMe")["result"]
-    actual_username = "@" + str(me.get("username") or "")
-    if actual_username.lower() != username.lower():
-        raise SystemExit(
-            f"Bot token belongs to {actual_username or '<no username>'}, expected {username}"
-        )
-
     plan = {
         "bot": actual_username,
         "webhook": public_url + "/v1/telegram/webhook",
         "miniapp": miniapp_url,
-        "commands": [
-            "start", "download", "course", "mp3", "media", "jobs",
-            "account", "subscription", "devices", "settings", "link",
-            "payments", "help",
-        ],
+        "commands": [item["command"] for item in BOT_COMMANDS],
     }
     print(json.dumps(plan, ensure_ascii=False, indent=2))
     if not args.apply:
         print("DRY_RUN_OK")
         return 0
 
-    commands = [
-        {"command": "start", "description": "Открыть VideoGrabber"},
-        {"command": "download", "description": "Скачать видео по ссылке"},
-        {"command": "course", "description": "Скачать полный курс на Windows"},
-        {"command": "mp3", "description": "Скачать аудио MP3"},
-        {"command": "media", "description": "Редактор и обработка медиа"},
-        {"command": "jobs", "description": "Мои задания и очередь"},
-        {"command": "account", "description": "Аккаунт и привязки"},
-        {"command": "subscription", "description": "Тариф и лимиты"},
-        {"command": "devices", "description": "Мои Windows-компьютеры"},
-        {"command": "settings", "description": "Открыть Mini App"},
-        {"command": "link", "description": "Привязать способ входа"},
-        {"command": "payments", "description": "Платежи и поддержка"},
-        {"command": "help", "description": "Справка"},
-    ]
-    api(token, "setMyCommands", {"commands": commands})
-    api(
-        token,
-        "setChatMenuButton",
-        {
-            "menu_button": {
-                "type": "web_app",
-                "text": "VideoGrabber",
-                "web_app": {"url": miniapp_url},
-            }
-        },
-    )
+    configure_command_menu(token)
     api(
         token,
         "setWebhook",
@@ -150,6 +142,17 @@ def main() -> int:
         )
     )
     return 0
+
+
+def configure_command_menu(token: str) -> None:
+    if api(token, "getMyCommands", {})["result"] != BOT_COMMANDS:
+        api(token, "setMyCommands", {"commands": BOT_COMMANDS})
+    if api(token, "getChatMenuButton", {})["result"].get("type") != "commands":
+        api(token, "setChatMenuButton", {"menu_button": {"type": "commands"}})
+    if api(token, "getMyCommands", {})["result"] != BOT_COMMANDS:
+        raise RuntimeError("Telegram command menu verification failed")
+    if api(token, "getChatMenuButton", {})["result"].get("type") != "commands":
+        raise RuntimeError("Telegram menu button verification failed")
 
 
 if __name__ == "__main__":

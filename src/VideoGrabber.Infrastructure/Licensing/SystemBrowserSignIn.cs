@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Infrastructure.Diagnostics;
 
 namespace VideoGrabber.Infrastructure.Licensing;
 
@@ -35,15 +36,30 @@ public sealed class SystemBrowserSignIn
 
     public async Task<ApiSession> SignInAsync(CancellationToken cancellationToken)
     {
+        using var operation = DiagnosticHub.Begin("auth.desktop.handoff");
+        try
+        {
+            var session = await SignInCoreAsync(cancellationToken).ConfigureAwait(false);
+            operation.Complete();
+            return session;
+        }
+        catch (OperationCanceledException) { operation.Cancel(); throw; }
+        catch (Exception ex) { operation.Complete(false, ex.GetType().Name); throw; }
+    }
+
+    private async Task<ApiSession> SignInCoreAsync(CancellationToken cancellationToken)
+    {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start(1);
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var returnUri = new Uri($"http://127.0.0.1:{port}{CallbackPath}");
 
-        using var startResponse = await _http.PostAsJsonAsync(
-            "/v1/auth/desktop/start",
-            new DesktopSignInStartRequest(returnUri),
-            cancellationToken).ConfigureAwait(false);
+        DiagnosticHub.Log.Write("auth.desktop.start", "started");
+        using var startRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/auth/desktop/start")
+            { Content = JsonContent.Create(new DesktopSignInStartRequest(returnUri)) };
+        startRequest.Headers.Add("X-Correlation-Id", DiagnosticHub.CurrentJobId);
+        using var startResponse = await _http.SendAsync(startRequest, cancellationToken).ConfigureAwait(false);
+        DiagnosticHub.Log.Write("auth.desktop.start", startResponse.IsSuccessStatusCode ? "succeeded" : "failed", exitCode:(int)startResponse.StatusCode);
         if (!startResponse.IsSuccessStatusCode)
             throw new UnauthorizedAccessException("managed_sign_in_start_failed");
         var started = await startResponse.Content.ReadFromJsonAsync<DesktopSignInStart>(
@@ -54,24 +70,27 @@ public sealed class SystemBrowserSignIn
         timeout.CancelAfter(_timeout);
         var callbackTask = ReceiveCallbackAsync(listener, timeout.Token);
         await _launch(started.VerificationUri, timeout.Token).ConfigureAwait(false);
+        DiagnosticHub.Log.Write("auth.desktop.browser", "opened");
         var callback = await callbackTask.ConfigureAwait(false);
+        DiagnosticHub.Log.Write("auth.desktop.callback", "received");
         if (!FixedEquals(callback.State, started.State))
             throw new UnauthorizedAccessException("managed_sign_in_state_mismatch");
 
-        using var complete = await _http.PostAsJsonAsync(
-            "/v1/auth/desktop/consume",
-            new DesktopSignInConsumeRequest(
-                started.FlowId,
-                callback.Code,
-                callback.State),
-            cancellationToken).ConfigureAwait(false);
+        DiagnosticHub.Log.Write("auth.desktop.consume", "started");
+        using var consumeRequest = new HttpRequestMessage(HttpMethod.Post, "/v1/auth/desktop/consume")
+            { Content = JsonContent.Create(new DesktopSignInConsumeRequest(started.FlowId, callback.Code, callback.State)) };
+        consumeRequest.Headers.Add("X-Correlation-Id", DiagnosticHub.CurrentJobId);
+        using var complete = await _http.SendAsync(consumeRequest, cancellationToken).ConfigureAwait(false);
+        DiagnosticHub.Log.Write("auth.desktop.consume", complete.IsSuccessStatusCode ? "succeeded" : "failed", exitCode:(int)complete.StatusCode);
         if (!complete.IsSuccessStatusCode)
             throw new UnauthorizedAccessException("managed_sign_in_complete_failed");
         var session = await complete.Content.ReadFromJsonAsync<ApiSession>(
             cancellationToken: cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidDataException("Sign-in completion response was empty.");
+        DiagnosticHub.Log.Write("auth.desktop.session_store", "started");
         await SaveRefreshAsync(session.RefreshToken, cancellationToken)
             .ConfigureAwait(false);
+        DiagnosticHub.Log.Write("auth.desktop.session_store", _sessionStore is null ? "not_configured" : "succeeded");
         return session;
     }
 
@@ -198,7 +217,7 @@ public sealed class SystemBrowserSignIn
             await ReplyAsync(stream, 400, "Missing sign-in parameters.", cancellationToken).ConfigureAwait(false);
             throw new UnauthorizedAccessException("managed_sign_in_callback_missing");
         }
-        await ReplyAsync(stream, 200, "VideoGrabber: вход подтверждён. Это окно можно закрыть.", cancellationToken)
+        await ReplyAsync(stream, 200, "VideoGrabber: вернитесь в приложение — оно завершает вход. Это окно можно закрыть.", cancellationToken)
             .ConfigureAwait(false);
         return new(code, state);
     }

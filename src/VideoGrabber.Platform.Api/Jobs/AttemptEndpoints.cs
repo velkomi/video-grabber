@@ -24,6 +24,7 @@ public static class AttemptEndpoints
         JobStore jobs, CancellationToken cancellationToken)
     {
         if (!Authorized(http, configuration)) return Results.Unauthorized();
+        if (MediaStoragePolicy.ClientOnly(configuration)) return Results.NoContent();
         try
         {
             if (!PlatformProtocol.IsSupported(request.ProtocolVersion))

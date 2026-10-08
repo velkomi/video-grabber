@@ -35,10 +35,13 @@ public static class SourceEndpoints
         AnalyzeSourceRequest request,
         HttpContext http,
         SourceAnalysisService analysis,
+        IConfiguration configuration,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(http.User.FindFirst("account_id")?.Value, out var accountId))
             return Results.Unauthorized();
+        if (MediaStoragePolicy.ClientOnly(configuration))
+            return Results.Conflict(new { code = "desktop_execution_required" });
         try
         {
             return Results.Ok(await analysis.AnalyzeAsync(accountId, request.Source, cancellationToken));

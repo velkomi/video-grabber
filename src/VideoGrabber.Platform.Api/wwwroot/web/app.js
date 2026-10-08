@@ -19,7 +19,8 @@ const keys = {
   refresh: "vg_web_refresh",
   auth: "vg_web_auth",
   desktop: "vg_desktop_auth",
-  telegramLink: "vg_telegram_account_link"
+  telegramLink: "vg_telegram_account_link",
+  directIntent: "vg_direct_pending_intent"
 };
 
 const state = {
@@ -123,6 +124,20 @@ async function api(path, options = {}, retry = true) {
   return response.json();
 }
 
+function authAvailabilityError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
+function googleSignInMessage(error) {
+  return ({
+    preview_backend_unavailable:"Это локальный просмотр дизайна: API авторизации здесь не подключён. Для настоящего входа откройте рабочий сайт.",
+    auth_config_unavailable:"Сервис авторизации сейчас недоступен. Подождите немного и повторите вход.",
+    google_disabled:"Google-вход сейчас отключён. Используйте вход по почте."
+  })[error?.code] || "Не удалось связаться с сервисом входа. Проверьте соединение и попробуйте ещё раз.";
+}
+
 let supabaseAuthConfig = null;
 
 async function getSupabaseAuthConfig() {
@@ -131,7 +146,11 @@ async function getSupabaseAuthConfig() {
     headers: { "Accept": "application/json" },
     cache: "no-store"
   });
-  if (!response.ok) throw new Error("Авторизация VideoGrabber пока не настроена.");
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw authAvailabilityError(body.code === "preview_backend_unavailable"
+      ? "preview_backend_unavailable" : "auth_config_unavailable");
+  }
   supabaseAuthConfig = await response.json();
   return supabaseAuthConfig;
 }
@@ -155,7 +174,7 @@ function authRedirectUri(cfg) {
 async function beginGoogleSignIn() {
   setStatus("#auth-status", "Перенаправляю в Google…");
   const cfg = await getSupabaseAuthConfig();
-  if (!cfg.googleEnabled) throw new Error("Google-вход сейчас недоступен.");
+  if (!cfg.googleEnabled) throw authAvailabilityError("google_disabled");
   const target =
     cfg.url.replace(/\/$/u, "") +
     "/auth/v1/authorize?provider=google&redirect_to=" +
@@ -594,7 +613,7 @@ function renderDevices() {
   list.replaceChildren();
   if (active.length === 0) {
     list.textContent =
-      "Нет зарегистрированного Windows VideoGrabber. Войдите в Managed-приложение и включите задания с сайта.";
+      "Откройте VideoGrabber в Windows, войдите в аккаунт и включите задания с сайта.";
   } else {
     for (const device of active) {
       const row = document.createElement("div");
@@ -626,10 +645,11 @@ function renderSelectedDevice() {
   const submit = $("#submit-job");
 
   field.hidden = target !== "desktop";
+  $("#quality").disabled = target === "browser";
 
   if (target === "browser") {
     pill.className = "pill online";
-    pill.textContent = "Скачать прямо в браузер";
+    pill.textContent = "Прямой файл с источника";
     submit.disabled = false;
     submit.textContent = $("#operation").value === "mp3"
       ? "Скачать MP3"
@@ -659,17 +679,29 @@ function renderSelectedDevice() {
     : "Отправить в Windows";
 }
 
+let visibleJobCount = 5;
+
+function recentJobPage(jobs, limit = 5) {
+  return [...jobs].reverse().slice(0, Math.max(5, limit));
+}
+
 function renderJobs() {
   const host = $("#jobs-list");
   host.replaceChildren();
-  const jobs = [...state.jobs].reverse().slice(0, 12);
+  const jobs = recentJobPage(state.jobs, visibleJobCount);
+  $("#jobs-count").textContent = state.jobs.length ? `${jobs.length} из ${state.jobs.length}` : "";
+  $("#jobs-more").hidden = jobs.length >= state.jobs.length;
+  $("#jobs-collapse").hidden = visibleJobCount <= 5;
   if (jobs.length === 0) {
-    host.textContent = "Заданий пока нет.";
+    const empty = document.createElement("li");
+    empty.className = "job-empty";
+    empty.textContent = "Заданий пока нет.";
+    host.append(empty);
     return;
   }
 
   for (const job of jobs) {
-    const row = document.createElement("div");
+    const row = document.createElement("li");
     row.className = "job-row";
 
     const main = document.createElement("div");
@@ -679,7 +711,7 @@ function renderJobs() {
     const meta = document.createElement("small");
     meta.textContent =
       (job.executor === "server_worker" ? "Сайт" : "Windows") +
-      (job.reason ? " · " + job.reason : "");
+      (job.quality && /^(best|[0-9]{3,4}p)$/.test(job.quality) ? " · " + (job.quality === "best" ? "Лучшее качество" : job.quality) : "");
     main.append(title, meta);
 
     const action = document.createElement("div");
@@ -689,22 +721,10 @@ function renderJobs() {
     status.textContent = stateName(job.state);
     action.append(status);
 
-    if (job.state === "completed"
-        && job.executor === "server_worker"
-        && job.artifactId) {
-      const download = document.createElement("button");
-      download.type = "button";
-      download.className = "text-button";
-      download.textContent = "Скачать";
-      download.addEventListener("click", async () => {
-        try {
-          await downloadJobResult(job.jobId);
-        } catch (error) {
-          setStatus("#job-status", "Не удалось скачать файл: " + error.message, "error");
-        }
-      });
-      action.append(download);
-    }
+    if (job.state === "completed" && job.executor === "server_worker")
+      status.textContent = "завершено ранее";
+    if (job.state === "completed" && job.executor === "desktop_worker")
+      status.textContent = "файл на компьютере";
 
     row.append(main, action);
     host.append(row);
@@ -739,12 +759,20 @@ async function loadDashboard() {
   $("#dashboard").hidden = false;
   $("#header-login").textContent = "Кабинет";
   renderAccount();
+  $("#telegram-link-help").hidden = state.identities.some(identity => identity.provider === "telegram");
+  try {
+    const bot = await api("/v1/telegram/bot-link");
+    if (bot.url && /^https:\/\/t\.me\/[A-Za-z0-9_]{5,32}$/.test(bot.url))
+      $("#telegram-bot-link").href = bot.url;
+  } catch {} // Account information remains usable when Telegram's metadata service is unavailable.
   renderDevices();
   renderJobs();
   setTimeout(() => window.ScrollTrigger?.refresh?.(), 0);
 }
 
 function signedOut(message = "") {
+  visibleJobCount = 5;
+  sessionStorage.removeItem(keys.directIntent);
   $("#signed-out").hidden = false;
   $("#dashboard").hidden = true;
   $("#header-login").textContent = "Войти";
@@ -843,8 +871,20 @@ async function downloadJobResult(jobId) {
   );
 }
 
+let directRequestInFlight = false;
+async function directRequestIntent(source) {
+  const sourceHash = await sha256Hex(String(state.profile?.accountId || "") + ":" + source);
+  let pending;
+  try { pending = JSON.parse(sessionStorage.getItem(keys.directIntent) || "null"); } catch {}
+  if (pending?.sourceHash === sourceHash && /^[a-f0-9-]{36}$/i.test(pending.intentId || "")) return pending.intentId;
+  const intentId = crypto.randomUUID().toLowerCase();
+  sessionStorage.setItem(keys.directIntent, JSON.stringify({ sourceHash, intentId }));
+  return intentId;
+}
+
 async function submitJob(event) {
   event.preventDefault();
+  if (directRequestInFlight) return;
   clearResultActions();
   setStatus("#job-status", "Проверяю ссылку и создаю задание…");
 
@@ -904,15 +944,42 @@ async function submitJob(event) {
     let quality = requestedQuality;
 
     if (target === "browser") {
-      const analyzed = await api("/v1/sources/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: url })
-      });
-      if (!Array.isArray(analyzed) || analyzed.length === 0)
-        throw new Error("source_analysis_failed");
-      source = analyzed[0];
-      quality = chooseServerQuality(source.qualities, requestedQuality);
+      if (kind !== "download") {
+        $("#download-target").value = "desktop";
+        renderSelectedDevice();
+        setStatus("#job-status", "MP3 и обработка выполняются в Windows. Выберите компьютер и нажмите «Отправить в Windows».");
+        return;
+      }
+      directRequestInFlight = true;
+      $("#submit-job").disabled = true;
+      try {
+        const direct = await api("/v1/direct-downloads", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: url, intentId: await directRequestIntent(url) })
+        });
+        const targetUrl = new URL(direct.url);
+        if (!["http:", "https:"].includes(targetUrl.protocol) || targetUrl.username || targetUrl.password) throw new Error("direct_response_invalid");
+        sessionStorage.removeItem(keys.directIntent);
+        const anchor = document.createElement("a");
+        anchor.className = "button button-primary";
+        anchor.href = direct.url;
+        anchor.download = "";
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = "Открыть готовый файл";
+        $("#result-actions").replaceChildren(anchor);
+        anchor.click();
+        setStatus("#job-status", "Прямая ссылка готова. Файл идёт с источника на ваше устройство. Если открылся плеер, выберите «Сохранить видео». Лимит учтён при подготовке ссылки.", "success");
+        try { state.access = await api("/v1/access"); renderAccount(); }
+        catch { setStatus("#job-status", "Прямая ссылка готова. Файл открыт с источника; для обновления остатка загрузок перезагрузите кабинет.", "success"); }
+      } catch (error) {
+        if (error.message === "desktop_execution_required") {
+          $("#download-target").value = "desktop";
+          renderSelectedDevice();
+          setStatus("#job-status", "Для этой ссылки нужно Windows-приложение. Выберите компьютер и нажмите «Отправить в Windows».");
+        } else { throw error; }
+      } finally { directRequestInFlight = false; renderSelectedDevice(); }
+      return;
     } else {
       source = await api("/v1/sources/register-desktop", {
         method: "POST",
@@ -925,8 +992,8 @@ async function submitJob(event) {
       intentId: crypto.randomUUID().toLowerCase(),
       requestHash: "",
       kind,
-      executor: target === "browser" ? "server_worker" : "desktop_worker",
-      deviceId: target === "browser" ? null : deviceId.toLowerCase(),
+      executor: "desktop_worker",
+      deviceId: deviceId.toLowerCase(),
       sourceId: source.sourceId,
       quality,
       inputArtifactIds: [],
@@ -971,7 +1038,7 @@ async function submitJob(event) {
                   ? "Серверный модуль загрузки временно недоступен. Бесплатная загрузка не списывается."
                   : error.message === "source_analysis_failed"
                     ? "Не удалось определить видео по этой ссылке. Бесплатная загрузка не списывается; для закрытых страниц используйте Windows VideoGrabber."
-                    : "Не удалось создать задание: " + error.message;
+                    : "Не удалось создать задание. Проверьте ссылку и попробуйте ещё раз.";
     setStatus("#job-status", message, "error");
   }
 }
@@ -995,7 +1062,7 @@ async function watchJob(jobId, target = "browser") {
           } catch (error) {
             setStatus(
               "#job-status",
-              "Файл готов, но браузер не начал скачивание автоматически. Нажмите «Скачать» в очереди. " + error.message,
+              "Файл готов. Нажмите «Скачать» в списке заданий.",
               "error"
             );
           }
@@ -1296,46 +1363,10 @@ function setupStoryStage() {
   const heroSlot = document.querySelector(".story-slot-hero");
   if (!stage || !visual || !heroSlot) return;
 
-  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const compactViewport = matchMedia("(max-width: 1050px)").matches;
+  const compact = matchMedia("(max-width: 1050px)");
+  const motion = matchMedia("(prefers-reduced-motion: reduce)");
   const gsapApi = window.gsap;
   const scrollTriggerApi = window.ScrollTrigger;
-
-  const dispatchStoryState = (state, progress = 0) => {
-    stage.dataset.storyState = state;
-    visual.dispatchEvent(new CustomEvent("videograbber:story-state", {
-      detail: { state, progress }
-    }));
-  };
-
-  const placeAtHeroSlot = () => {
-    const rect = heroSlot.getBoundingClientRect();
-    stage.classList.remove("is-managed");
-    stage.style.right = "auto";
-    stage.style.left = rect.left + window.scrollX + "px";
-    stage.style.top = rect.top + window.scrollY + "px";
-    stage.style.width = rect.width + "px";
-    stage.style.height = rect.height + "px";
-    stage.style.opacity = "1";
-    dispatchStoryState("hero", 0);
-  };
-
-  if (
-    visualTestMode ||
-    reducedMotion ||
-    compactViewport ||
-    !gsapApi ||
-    !scrollTriggerApi
-  ) {
-    placeAtHeroSlot();
-    window.addEventListener("resize", placeAtHeroSlot, { passive: true });
-    return;
-  }
-
-  gsapApi.registerPlugin(scrollTriggerApi);
-  stage.classList.add("is-managed");
-  stage.style.right = "auto";
-
   const definitions = [
     { state: "hero", trigger: "#top", slot: ".story-slot-hero", startPercent: 0 },
     { state: "workflow", trigger: "#how", slot: ".story-slot-workflow", startPercent: 42 },
@@ -1343,130 +1374,117 @@ function setupStoryStage() {
     { state: "pricing", trigger: "#pricing", slot: ".story-slot-pricing", startPercent: 42 },
     { state: "windows", trigger: "#download", slot: ".story-slot-windows", startPercent: 72 }
   ];
-
-  const previousState = {
-    workflow: "hero",
-    sync: "workflow",
-    pricing: "sync",
-    windows: "pricing"
+  let activeState = "hero";
+  let cleanup = () => {};
+  const publishVisibility = () => {
+    // IntersectionObserver owns viewport visibility; this event owns the motion preference.
+    const visible = !motion.matches;
+    visual.dispatchEvent(new CustomEvent("videograbber:story-visibility", {detail: {visible, reducedMotion:motion.matches}}));
   };
 
-  let currentState = "hero";
-
-  const targetFor = (definition) => {
-    const slot = document.querySelector(definition.slot);
-    if (!slot) return null;
+  const dispatch = (state, progress = 0) => {
+    stage.dataset.storyState = state;
+    visual.dispatchEvent(new CustomEvent("videograbber:story-state", { detail: { state, progress } }));
+  };
+  const place = (state, immediate = false) => {
+    const definition = definitions.find(item => item.state === state);
+    const slot = definition && document.querySelector(definition.slot);
+    if (!slot) return;
     const rect = slot.getBoundingClientRect();
-    const top = definition.state === "hero"
-      ? rect.top
-      : Math.max(88, Math.min(150, rect.top));
-    return {
-      left: rect.left,
-      top,
-      width: Math.max(rect.width, 1),
-      height: Math.max(rect.height, 1)
-    };
+    if (rect.width < 1 || rect.height < 1) return;
+    activeState = state;
+    dispatch(state);
+    // Use document coordinates: the scene stays inside the section's reserved slot.
+    const target = {left: rect.left + window.scrollX, top: rect.top + window.scrollY,
+      width: rect.width, height: rect.height, opacity: 1};
+    stage.style.right = "auto";
+    if (gsapApi && !motion.matches && !visualTestMode) {
+      gsapApi.to(stage, {...target, duration: immediate ? 0 : .7,
+        ease: "power3.inOut", overwrite: true});
+    } else {
+      for (const [name, value] of Object.entries(target))
+        stage.style[name] = name === "opacity" ? String(value) : value + "px";
+    }
   };
-
-  const activate = (state, immediate = false) => {
-    const definition = definitions.find((item) => item.state === state);
-    const target = definition ? targetFor(definition) : null;
-    if (!definition || !target) return;
-
-    currentState = state;
-    dispatchStoryState(state, 0);
-
-    gsapApi.to(stage, {
-      left: target.left,
-      top: target.top,
-      width: target.width,
-      height: target.height,
-      opacity: 1,
-      duration: immediate ? 0 : 0.78,
-      ease: immediate ? "none" : "power3.out",
-      overwrite: true
-    });
-  };
-
-  for (const definition of definitions.slice(1)) {
-    const triggerNode = document.querySelector(definition.trigger);
-    if (!triggerNode) continue;
-
-    scrollTriggerApi.create({
-      trigger: triggerNode,
-      start: "top " + definition.startPercent + "%",
-      end: "bottom 42%",
-      onEnter: () => activate(definition.state),
-      onEnterBack: () => activate(definition.state),
-      onLeaveBack: () => activate(previousState[definition.state] || "hero"),
-      onUpdate: (self) => {
-        if (currentState !== definition.state) return;
-        visual.dispatchEvent(new CustomEvent("videograbber:story-progress", {
-          detail: {
-            state: definition.state,
-            progress: self.progress,
-            direction: self.direction
-          }
-        }));
-      }
-    });
-  }
-
-  const footer = document.querySelector("footer");
-  if (footer) {
-    scrollTriggerApi.create({
-      trigger: footer,
-      start: "top 96%",
-      onEnter: () => {
-        visual.dispatchEvent(new CustomEvent("videograbber:story-visibility", {
-          detail: { visible: false }
-        }));
-        gsapApi.to(stage, {
-          opacity: 0,
-          duration: 0.35,
-          ease: "power2.out",
-          overwrite: true
-        });
-      },
-      onLeaveBack: () => {
-        visual.dispatchEvent(new CustomEvent("videograbber:story-visibility", {
-          detail: { visible: true }
-        }));
-        gsapApi.to(stage, {
-          opacity: 1,
-          duration: 0.35,
-          ease: "power2.out",
-          overwrite: true
-        });
-      }
-    });
-  }
-
-  const determineInitialState = () => {
+  const stateForScroll = () => {
+    const totalHeight = document.documentElement?.scrollHeight || Infinity;
+    const last = document.querySelector("#download");
+    if (window.scrollY > 0 && window.scrollY + innerHeight >= totalHeight - 2 &&
+        last && last.getBoundingClientRect().top < innerHeight) return "windows";
     let state = "hero";
     for (const definition of definitions.slice(1)) {
       const node = document.querySelector(definition.trigger);
-      if (!node) continue;
-      if (
-        node.getBoundingClientRect().top <=
-        innerHeight * (definition.startPercent / 100)
-      )
+      if (node && node.getBoundingClientRect().top <= readingLine(definition))
         state = definition.state;
     }
     return state;
   };
+  const readingLine = definition => Math.min(280, innerHeight * definition.startPercent / 100);
 
-  activate(determineInitialState(), true);
+  const configure = () => {
+    cleanup();
+    gsapApi?.killTweensOf(stage);
+    const triggers = [];
+    stage.classList.remove("is-managed");
+    publishVisibility();
+    if (visualTestMode || motion.matches) {
+      place("hero", true);
+      const resize = () => place("hero", true);
+      window.addEventListener("resize", resize, {passive: true});
+      cleanup = () => window.removeEventListener("resize", resize);
+      return;
+    }
 
-  scrollTriggerApi.addEventListener("refresh", () =>
-    activate(currentState, true)
-  );
-
-  window.addEventListener(
-    "resize",
-    () => scrollTriggerApi.refresh(),
-    { passive: true }
-  );
+    if (!compact.matches && gsapApi && scrollTriggerApi) {
+      stage.classList.add("is-managed");
+      gsapApi.registerPlugin(scrollTriggerApi);
+      for (const definition of definitions.slice(1)) {
+        const trigger = document.querySelector(definition.trigger);
+        if (!trigger) continue;
+        triggers.push(scrollTriggerApi.create({trigger,
+          start: () => "top " + readingLine(definition) + "px", end: "bottom 42%",
+          onEnter: () => place(definition.state), onEnterBack: () => place(definition.state),
+          onLeaveBack: () => place(stateForScroll()),
+          onUpdate: self => {
+            if (activeState === definition.state)
+              visual.dispatchEvent(new CustomEvent("videograbber:story-progress", {
+                detail: {state: definition.state, progress: self.progress, direction: self.direction}
+              }));
+          }}));
+      }
+    }
+    const update = () => {
+      const next = stateForScroll();
+      if (next !== activeState) place(next);
+      publishVisibility();
+    };
+    const resize = () => {place(stateForScroll(), true); scrollTriggerApi?.refresh();};
+    const refresh = () => place(stateForScroll(), true);
+    const ready = () => place(stateForScroll(), true);
+    window.addEventListener("scroll", update, {passive: true});
+    window.addEventListener("resize", resize, {passive: true});
+    visual.addEventListener?.("videograbber:three-ready", ready);
+    scrollTriggerApi?.addEventListener("refresh", refresh);
+    place(stateForScroll(), true);
+    cleanup = () => {
+      for (const trigger of triggers) trigger.kill();
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", resize);
+      visual.removeEventListener?.("videograbber:three-ready", ready);
+      scrollTriggerApi?.removeEventListener("refresh", refresh);
+    };
+  };
+  compact.addEventListener("change", configure);
+  motion.addEventListener("change", configure);
+  window.addEventListener("pagehide", event => {
+    cleanup(); gsapApi?.killTweensOf(stage);
+    if (!event.persisted) {
+      compact.removeEventListener("change", configure);
+      motion.removeEventListener("change", configure);
+    }
+  });
+  window.addEventListener("pageshow", event => { if (event.persisted) configure(); });
+  configure();
 }
 
 function scheduleThreeHero() {
@@ -1474,26 +1492,25 @@ function scheduleThreeHero() {
   const art = document.querySelector(".hero-art");
   if (!canvas || !art) return;
 
-  if (
-    matchMedia("(prefers-reduced-motion: reduce)").matches &&
-    !visualTestMode
-  ) {
-    canvas.hidden = true;
-    return;
-  }
+  const motion = matchMedia("(prefers-reduced-motion: reduce)");
 
   let started = false;
   const startImport = () => {
     if (started) return;
+    if (motion.matches && !visualTestMode) return;
     started = true;
-    import("/web/hero-three.bundle.js").catch((error) => {
+    canvas.hidden = false;
+    import("/web/hero-three.bundle.js?v=webgl-recovery-1").catch((error) => {
       console.warn("VideoGrabber Three.js scene unavailable", error);
       canvas.hidden = true;
+      canvas.dataset.context = "failed";
       $("#hero-visual")?.classList.remove("three-ready");
+      window.dispatchEvent(new CustomEvent("videograbber:webgl", {detail:{event:"initialization_failed"}}));
     });
   };
 
   const schedule = () => {
+    if (motion.matches && !visualTestMode) { canvas.hidden = true; return; }
     if ("requestIdleCallback" in window) {
       requestIdleCallback(startImport, { timeout: 1200 });
       return;
@@ -1502,7 +1519,14 @@ function scheduleThreeHero() {
   };
 
   if (art.complete) schedule();
-  else art.addEventListener("load", schedule, { once: true });
+  else {
+    art.addEventListener("load", schedule, { once: true });
+    art.addEventListener("error", schedule, { once: true });
+  }
+  const update = () => { if (!motion.matches && !started) schedule(); };
+  motion.addEventListener("change", update);
+  window.addEventListener("pagehide", event => { if (!event.persisted) motion.removeEventListener("change", update); });
+  window.addEventListener("pageshow", event => { if (event.persisted) update(); });
 }
 
 function setupHeroScene() {
@@ -1548,7 +1572,20 @@ async function start() {
     card.addEventListener("pointerenter", () =>
       setPricingFocus(card.dataset.plan)
     );
-    card.addEventListener("pointerleave", () => setPricingFocus(null));
+    card.addEventListener("pointerleave", () => {
+      setPricingFocus(null);
+      card.style.setProperty("--card-tilt-x", "0deg");
+      card.style.setProperty("--card-tilt-y", "0deg");
+    });
+    card.addEventListener("pointermove", event => {
+      if (!matchMedia("(hover: hover) and (pointer: fine)").matches ||
+          matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const rect = card.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      const y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+      card.style.setProperty("--card-tilt-x", ((.5 - y) * 3).toFixed(2) + "deg");
+      card.style.setProperty("--card-tilt-y", ((x - .5) * 3).toFixed(2) + "deg");
+    });
 
     const actionButton = card.querySelector(".plan-action");
     actionButton?.addEventListener("focus", () =>
@@ -1580,8 +1617,8 @@ async function start() {
     try {
       await beginGoogleSignIn();
     } catch (error) {
-      console.error("Google sign-in failed", error);
-      setStatus("#auth-status", "Не удалось начать вход. Попробуйте ещё раз.", "error");
+      $("#auth-preview-link").hidden = error.code !== "preview_backend_unavailable";
+      setStatus("#auth-status", googleSignInMessage(error), "error");
     }
   });
 
@@ -1607,7 +1644,9 @@ async function start() {
           "Для этого адреса пока недоступен вход по почте.",
         "email rate limit exceeded":
           "Слишком много писем. Подождите немного и попробуйте снова."
-      })[message] || "Не удалось отправить ссылку для входа. Попробуйте ещё раз позже.";
+      })[message] || (error.code === "preview_backend_unavailable" ? googleSignInMessage(error)
+        : "Не удалось отправить ссылку для входа. Попробуйте ещё раз позже.");
+      $("#auth-preview-link").hidden = error.code !== "preview_backend_unavailable";
       setStatus("#auth-status", translated, "error");
     } finally {
       button.disabled = false;
@@ -1621,9 +1660,11 @@ async function start() {
   $("#operation").addEventListener("change", renderCourseHint);
   $("#download-target").addEventListener("change", renderCourseHint);
   $("#device-select").addEventListener("change", renderSelectedDevice);
+  $("#jobs-more").addEventListener("click", () => { visibleJobCount += 5; renderJobs(); });
+  $("#jobs-collapse").addEventListener("click", () => { visibleJobCount = 5; renderJobs(); });
   $("#refresh-jobs").addEventListener("click", async () => {
     try { await refreshJobs(); }
-    catch (error) { setStatus("#job-status", error.message, "error"); }
+    catch (error) { setStatus("#job-status", "Не удалось обновить загрузки. Попробуйте ещё раз.", "error"); }
   });
   $("#logout").addEventListener("click", logout);
 

@@ -14,38 +14,45 @@ public static class CapabilityEndpoints
     {
         endpoints.MapGet("/v1/capabilities", (IConfiguration configuration) =>
         {
-            var serverAsr = !string.IsNullOrWhiteSpace(
+            var clientOnly = Jobs.MediaStoragePolicy.ClientOnly(configuration);
+            var serverAsr = !clientOnly && !string.IsNullOrWhiteSpace(
                 configuration["VG_WORKER_WHISPER_MODEL"]);
             var operations = new[]
             {
                 new MediaCapability(
-                    "download", ["server_worker","desktop_worker"],
+                    "download", clientOnly ? ["desktop_worker"] : ["server_worker","desktop_worker"],
                     RequiresSource: true, MinimumInputs: 0, Available: true),
                 new MediaCapability(
                     "course_download", ["desktop_worker"],
                     RequiresSource: true, MinimumInputs: 0, Available: true),
                 new MediaCapability(
-                    "mp3", ["server_worker","desktop_worker"],
+                    "mp3", clientOnly ? ["desktop_worker"] : ["server_worker","desktop_worker"],
                     RequiresSource: true, MinimumInputs: 0, Available: true),
                 new MediaCapability(
-                    "trim", ["server_worker","desktop_worker"],
-                    RequiresSource: true, MinimumInputs: 1, Available: true),
+                    "trim", clientOnly ? ["desktop_worker"] : ["server_worker","desktop_worker"],
+                    RequiresSource: true, MinimumInputs: 1, Available: !clientOnly),
                 new MediaCapability(
-                    "join", ["server_worker","desktop_worker"],
-                    RequiresSource: true, MinimumInputs: 2, Available: true),
+                    "join", clientOnly ? ["desktop_worker"] : ["server_worker","desktop_worker"],
+                    RequiresSource: true, MinimumInputs: 2, Available: !clientOnly),
                 new MediaCapability(
                     "transcribe",
                     serverAsr
                         ? ["server_worker","desktop_worker"]
                         : ["desktop_worker"],
-                    RequiresSource: true, MinimumInputs: 1, Available: true)
+                    RequiresSource: true, MinimumInputs: 1, Available: !clientOnly)
             };
             return Results.Ok(new PlatformCapabilities(
                 MediaAvailable: true,
                 DesktopWorkerAvailable: true,
-                Reason: serverAsr ? "ready" : "server_asr_requires_model",
+                Reason: clientOnly ? "client_only_media" : serverAsr ? "ready" : "server_asr_requires_model",
                 Operations: operations));
         }).RequireAuthorization();
+        endpoints.MapGet("/v1/telegram/bot-link", async (IBotApiClient bot, CancellationToken token) =>
+        {
+            try { return Results.Ok(new { url = (await bot.PublicBotLinkAsync(token))?.AbsoluteUri }); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+            { return Results.Ok(new { url = (string?)null }); }
+        }).AllowAnonymous();
         return endpoints;
     }
 }

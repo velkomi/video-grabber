@@ -55,16 +55,29 @@ function parseInputs() {
   if (!text) return [];
   const ids = text.split(",").map((x) => x.trim()).filter(Boolean);
   const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (ids.some((id) => !guid.test(id))) throw new Error("Некорректный artifact ID");
+  if (ids.some((id) => !guid.test(id))) throw new Error("Проверьте номера готовых файлов.");
   return ids;
 }
 
+const mediaLabels = {
+  download: "Видео", video: "Видео", course_download: "Полный курс", mp3: "Аудио MP3",
+  trim: "Обрезать видео", join: "Объединить видео", transcribe: "Текст из видео", transcription: "Текст из видео",
+  desktop_worker: "Мой компьютер Windows", server_worker: "Онлайн", server: "Онлайн", telegram: "Telegram",
+  best: "Лучшее доступное", worst: "Минимальный размер", audio: "Только аудио"
+};
+function mediaLabel(value) {
+  return mediaLabels[value] || (/^\d+p$/.test(value) ? value : "Доступный вариант");
+}
+function mediaError(error) {
+  const message = error?.message || "";
+  return /^[А-Яа-яЁё]/.test(message) ? message : window.VideoGrabberApi.userError(error);
+}
 function fillSelect(select, values) {
   select.replaceChildren();
   for (const value of values) {
     const option = document.createElement("option");
     option.value = value;
-    option.textContent = value;
+    option.textContent = mediaLabel(value);
     select.append(option);
   }
 }
@@ -96,6 +109,7 @@ async function loadCapabilities() {
   $("#media-analyze").disabled =
     !window.VideoGrabberApi.isPrimaryAccount() || permitted.length === 0;
   updateExecutors();
+  $("#media-direct-telegram").hidden = capabilities.reason !== "client_only_media";
 }
 
 function updateExecutors() {
@@ -135,7 +149,7 @@ $("#media-form").addEventListener("submit", async (event) => {
       ? "Проверяю ссылку курса для Windows…"
       : "Анализирую источник…");
 
-    if (kind === "course_download") {
+    if (kind === "course_download" || capabilities?.reason === "client_only_media") {
       analyzed = await api("/v1/sources/register-desktop", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,7 +161,7 @@ $("#media-form").addEventListener("submit", async (event) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: raw })
       });
-      if (!rows.length) throw new Error("Media не найдено");
+      if (!rows.length) throw new Error("Видео по этой ссылке не найдено.");
       analyzed = rows[0];
     }
 
@@ -157,10 +171,10 @@ $("#media-form").addEventListener("submit", async (event) => {
     status(
       kind === "course_download"
         ? "Курс будет скачан зарегистрированным Windows VideoGrabber. Выберите качество."
-        : "Источник проверен. Выберите качество и исполнителя.",
+        : "Выберите качество и место обработки.",
       "success");
   } catch (error) {
-    status("Анализ не выполнен: " + error.message, "error");
+    status("Анализ не выполнен: " + mediaError(error), "error");
   }
 });
 
@@ -191,7 +205,7 @@ $("#media-create").addEventListener("click", async () => {
       trimDurationMs = Number($("#media-trim-duration").value);
       if (!Number.isSafeInteger(trimStartMs) || trimStartMs < 0
           || !Number.isSafeInteger(trimDurationMs) || trimDurationMs <= 0)
-        throw new Error("Укажите корректные границы trim в миллисекундах");
+        throw new Error("Укажите начало и длительность в миллисекундах.");
     }
 
     const payloadKey = JSON.stringify({
@@ -221,10 +235,10 @@ $("#media-create").addEventListener("click", async () => {
       body: JSON.stringify(request)
     });
     sessionStorage.removeItem("vg_pending_media_intent");
-    status("Задание создано: " + job.state, "success");
+    status("Загрузка добавлена в очередь.", "success");
     await refreshJobs();
   } catch (error) {
-    status("Задание не создано: " + error.message, "error");
+    status("Задание не создано: " + mediaError(error), "error");
   }
 });
 
@@ -239,7 +253,7 @@ function russianState(job) {
     review_required: "нужна проверка",
     failed: "ошибка"
   };
-  return states[job.state] || job.state;
+  return states[job.state] || "проверяем состояние";
 }
 
 async function mutateJob(jobId, action) {
@@ -263,7 +277,7 @@ async function refreshJobs() {
     const label = document.createElement("span");
     label.className = "item-text";
     label.textContent =
-      job.jobId + " • " + russianState(job) + " • " + job.reason;
+      (mediaLabels[job.kind] || "Загрузка") + " • " + russianState(job);
     row.append(label);
     if (["queued","waiting_for_worker","running"].includes(job.state)) {
       const cancel = document.createElement("button");
@@ -295,7 +309,7 @@ async function refreshDestinations() {
   for (const destination of rows) {
     const option = document.createElement("option");
     option.value = destination.destinationId;
-    option.textContent = destination.kind + " • " + String(destination.chatId);
+    option.textContent = window.VideoGrabberApi.destinationLabel(destination);
     select.append(option);
   }
 }
@@ -331,16 +345,20 @@ async function requestDelivery(job) {
     });
     if (delivery.state === "delivered") {
       sessionStorage.removeItem(key.storageKey);
-      status("Файл доставлен. Telegram message: " + String(delivery.messageId), "success");
+      status("Файл отправлен в Telegram.", "success");
     } else if (delivery.state === "delivery_unknown") {
       status("Telegram мог принять файл, но подтверждение потеряно. Не повторяйте автоматически.", "error");
     } else {
-      status("Доставка: " + delivery.reason, "error");
+      status("Не удалось подтвердить доставку. Проверьте чат.", "error");
     }
     await refreshDeliveries();
   } catch (error) {
-    status("Ошибка доставки: " + error.message, "error");
+    status("Ошибка доставки: " + mediaError(error), "error");
   }
+}
+
+function deliveryLabel(state) {
+  return { delivered: "Файл доставлен", delivery_unknown: "Проверьте получение файла в чате", pending: "Отправляем файл", sending: "Отправляем файл", failed: "Не удалось отправить файл", queued: "Ожидает отправки" }[state] || "Проверяем доставку";
 }
 
 async function refreshDeliveries() {
@@ -352,7 +370,7 @@ async function refreshDeliveries() {
     row.className = "item";
     const label = document.createElement("span");
     label.className = "item-text";
-    label.textContent = delivery.deliveryId + " • " + delivery.state + " • " + delivery.reason;
+    label.textContent = deliveryLabel(delivery.state);
     row.append(label);
     if (delivery.state === "delivery_unknown") {
       const retry = document.createElement("button");
@@ -393,8 +411,35 @@ async function boot() {
     await refreshDeliveries();
     connectEvents();
   } catch (error) {
-    status("Media UI недоступен: " + error.message, "error");
+    status("Загрузки недоступны: " + mediaError(error), "error");
   }
 }
 
 boot();
+
+let directTelegramIntent = null;
+let directTelegramSending = false;
+$("#media-url").addEventListener("input", () => { directTelegramIntent = null; });
+$("#media-destination").addEventListener("change", () => { directTelegramIntent = null; });
+$("#media-direct-telegram").addEventListener("click", async () => {
+  if (directTelegramSending) return;
+  const source = $("#media-url").value.trim();
+  const destinationId = $("#media-destination").value;
+  if (!source || !destinationId) { status("Укажите прямую ссылку на MP4 и выберите связанный Telegram-чат.", "error"); return; }
+  directTelegramIntent ||= crypto.randomUUID().toLowerCase();
+  directTelegramSending = true;
+  try {
+    const result = await api("/v1/direct-downloads/telegram", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, destinationId, intentId: directTelegramIntent })
+    });
+    status(result.state === "delivered" || result.state === "already_delivered"
+      ? "Telegram получил готовый файл напрямую с источника."
+      : result.state === "pending" ? "Этот запрос уже обрабатывается; повторная отправка не запускалась."
+      : "Отправка не подтверждена. Проверьте чат перед новым запросом; автоматического повтора нет.", result.state === "review_required" ? "error" : "success");
+  } catch (error) {
+    status(error.message === "desktop_execution_required"
+      ? "Для этой ссылки нужно приложение VideoGrabber для Windows."
+      : "Не удалось выполнить прямую отправку. Проверьте получателя, тариф и предыдущий запрос.", "error");
+  } finally { directTelegramSending = false; }
+});

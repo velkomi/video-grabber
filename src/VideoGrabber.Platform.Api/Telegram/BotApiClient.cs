@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Globalization;
 using VideoGrabber.Platform.Contracts;
 
 namespace VideoGrabber.Platform.Api.Telegram;
@@ -12,6 +13,11 @@ public interface IBotApiClient
     Task<BotSentMessage> SendMessageAsync(BotMessage message, CancellationToken cancellationToken);
     Task AnswerCallbackAsync(string callbackQueryId, string text, CancellationToken cancellationToken);
     Task<BotSentMessage> SendDocumentAsync(long chatId, Stream content, string fileName, CancellationToken cancellationToken);
+    Task<Uri?> PublicBotLinkAsync(CancellationToken cancellationToken) => Task.FromResult<Uri?>(null);
+    Task<BotSentMessage> SendVideoUrlAsync(long chatId, Uri source, CancellationToken cancellationToken)
+        => throw new NotSupportedException("Direct cloud delivery is unavailable.");
+    Task<BotSentMessage> SendVideoUrlAsync(long chatId, Uri source, string caption, CancellationToken cancellationToken)
+        => throw new NotSupportedException("Direct cloud delivery with a caption is unavailable.");
     Task<TelegramChatRights> GetRightsAsync(long chatId, long userId, CancellationToken cancellationToken);
     Task<Uri> CreateInvoiceAsync(long payerId, string payload, string title, Money amount, int? subscriptionPeriod, CancellationToken cancellationToken);
     Task AnswerPreCheckoutAsync(string queryId, bool accepted, string? error, CancellationToken cancellationToken);
@@ -23,7 +29,8 @@ public interface IBotApiClient
 public sealed class BotApiClient(
     IHttpClientFactory clients,
     TelegramSecurityOptions security,
-    IConfiguration configuration) : IBotApiClient
+    IConfiguration configuration,
+    ILogger<BotApiClient>? logger = null) : IBotApiClient
 {
     private readonly Uri _baseUri = ResolveBaseUri(configuration);
 
@@ -68,6 +75,131 @@ public sealed class BotApiClient(
             && id.TryGetInt64(out var returnedChatId))
             chatId = returnedChatId;
         return new BotSentMessage(chatId, messageId);
+    }
+
+    private Uri? _publicBotLink;
+    private readonly SemaphoreSlim _publicLinkGate = new(1, 1);
+    public async Task<Uri?> PublicBotLinkAsync(CancellationToken cancellationToken)
+    {
+        if (_publicBotLink is not null) return _publicBotLink;
+        await _publicLinkGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_publicBotLink is not null) return _publicBotLink;
+            using var request = new HttpRequestMessage(HttpMethod.Get, MethodUri("getMe"));
+            using var response = await clients.CreateClient("TelegramBotApi").SendAsync(request,
+                HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var envelope = await response.Content.ReadFromJsonAsync<TelegramEnvelope>(cancellationToken: cancellationToken);
+            if (envelope is not { Ok: true } || !envelope.Result.TryGetProperty("username", out var value)) return null;
+            var username = value.GetString();
+            if (username is null || !System.Text.RegularExpressions.Regex.IsMatch(username, "^[A-Za-z0-9_]{5,32}$")) return null;
+            return _publicBotLink = new Uri("https://t.me/" + username);
+        }
+        finally { _publicLinkGate.Release(); }
+    }
+
+    public Task<BotSentMessage> SendVideoUrlAsync(long chatId, Uri source, CancellationToken cancellationToken)
+        => SendVideoUrlAsync(chatId, source, string.Empty, cancellationToken);
+
+    public async Task<BotSentMessage> SendVideoUrlAsync(long chatId, Uri source, string caption, CancellationToken cancellationToken)
+    {
+        if (_baseUri.Scheme != "https" || _baseUri.IdnHost != "api.telegram.org")
+            throw new NotSupportedException("Direct fetching requires Telegram cloud Bot API.");
+        if (chatId == 0 || source.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(source.UserInfo))
+            throw new ArgumentException("Invalid direct video request.");
+        ArgumentNullException.ThrowIfNull(caption);
+        if (caption.Length > 1024) throw new ArgumentException("Telegram video caption is too long.", nameof(caption));
+        using var request = new HttpRequestMessage(HttpMethod.Post, MethodUri("sendVideo"))
+        {
+            Content = JsonContent.Create(new { chat_id = chatId, video = source.AbsoluteUri, caption, supports_streaming = true })
+        };
+        using var response = await clients.CreateClient("TelegramBotApi").SendAsync(request,
+            HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<TelegramEnvelope>(cancellationToken: cancellationToken)
+            ?? throw new InvalidDataException("Telegram response was empty.");
+        if (!envelope.Ok || !envelope.Result.TryGetProperty("message_id", out var message)
+            || !message.TryGetInt64(out var messageId))
+            throw new HttpRequestException("Telegram did not confirm direct delivery.");
+        // A confirmed send must stay confirmed even if this optional cosmetic
+        // update times out, is rejected, or returns malformed metadata.
+        try
+        {
+            var confirmedCaption = ConfirmedVideoCaption(caption, envelope.Result);
+            if (confirmedCaption is not null && confirmedCaption != caption)
+            {
+                using var captionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                await CallAsync("editMessageCaption", new
+                {
+                    chat_id = chatId,
+                    message_id = messageId,
+                    caption = confirmedCaption
+                }, captionTimeout.Token).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning("caption.update failed: {ExceptionType}", ex.GetType().Name);
+        }
+        return new BotSentMessage(chatId, messageId);
+    }
+
+    private static string? ConfirmedVideoCaption(string caption, JsonElement message)
+    {
+        if (!message.TryGetProperty("video", out var video) || video.ValueKind != JsonValueKind.Object)
+            return null;
+        var lines = caption.Length == 0 ? new List<string>() : caption.Split('\n').ToList();
+        var changed = false;
+        if (TryInteger(video, "width", out var width) && width > 0
+            && TryInteger(video, "height", out var height) && height > 0)
+        {
+            SetField("Качество:", $"{width} × {height}");
+            changed = true;
+        }
+        if (TryInteger(video, "duration", out var seconds) && seconds >= 0)
+        {
+            var duration = seconds >= 3600
+                ? $"{seconds / 3600}:{seconds / 60 % 60:00}:{seconds % 60:00}"
+                : $"{seconds / 60:00}:{seconds % 60:00}";
+            SetField("Длительность:", duration);
+            changed = true;
+        }
+        if (video.TryGetProperty("file_name", out var fileName) && fileName.ValueKind == JsonValueKind.String
+            && SafeVideoFileName(fileName.GetString()) is { } safeName)
+        {
+            SetField("Название:", safeName + " (имя файла)");
+            changed = true;
+        }
+        if (!changed) return null;
+        if (TryInteger(message, "date", out var sentAt) && sentAt > 0)
+            SetField("Отправлено:", DateTimeOffset.FromUnixTimeSeconds(sentAt).ToString("dd.MM.yyyy HH:mm 'UTC'", CultureInfo.InvariantCulture));
+        var updated = string.Join('\n', lines);
+        return updated.Length <= 1024 ? updated : null;
+
+        void SetField(string prefix, string value)
+        {
+            var index = lines.FindIndex(line => line.StartsWith(prefix, StringComparison.Ordinal));
+            if (index >= 0) lines[index] = prefix + " " + value;
+            else lines.Add(prefix + " " + value);
+        }
+    }
+
+    private static bool TryInteger(JsonElement element, string name, out int number)
+    {
+        number = 0;
+        return element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt32(out number);
+    }
+
+    private static string? SafeVideoFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 160
+            || name.IndexOfAny(['/', '\\', '?', '#', ':']) >= 0)
+            return null;
+        var safe = string.Concat(name.Select(character => char.IsControl(character)
+            || char.GetUnicodeCategory(character) == UnicodeCategory.Format ? ' ' : character)).Trim();
+        return safe.Length == 0 ? null : safe;
     }
 
     public async Task<BotSentMessage> SendDocumentAsync(

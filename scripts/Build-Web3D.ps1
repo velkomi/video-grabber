@@ -1,7 +1,8 @@
 param(
     [string]$Npx = 'npx.cmd',
     [string]$EsbuildVersion = '0.28.2',
-    [string]$ThreeVersion = '0.186.1'
+    [string]$ThreeVersion = '0.186.1',
+    [string]$EsbuildBinary
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,7 +40,14 @@ $arguments = @(
     "--outfile=$output"
 )
 
-& $Npx @arguments
+if ($EsbuildBinary) {
+    if (-not (Test-Path -LiteralPath $EsbuildBinary -PathType Leaf)) {
+        throw "Missing cached esbuild executable."
+    }
+    & $EsbuildBinary @($arguments | Select-Object -Skip 2)
+} else {
+    & $Npx @arguments
+}
 if ($LASTEXITCODE -ne 0) {
     throw "esbuild failed with exit code $LASTEXITCODE."
 }
@@ -71,7 +79,7 @@ if ($file.Length -lt 300000 -or $file.Length -gt 1000000) {
 $content = Get-Content -LiteralPath $output -Raw
 foreach ($needle in @(
     'three.js r',
-    'videograbber-planet-map.webp',
+    'videograbber:studio-model',
     'videograbber:hero-accent'
 )) {
     if ($content.IndexOf($needle, [StringComparison]::Ordinal) -lt 0) {

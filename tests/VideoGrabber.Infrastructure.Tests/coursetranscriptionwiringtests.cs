@@ -48,7 +48,7 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("EnqueueCourseTranscription(path)", course);
         Assert.Contains("WaitForCourseTranscriptionAsync", course);
         Assert.Contains("ScheduleCompletionActionAfterDownloads", course);
-        Assert.Contains("Транскрибировать видео курса в TXT", browser);
+        Assert.Contains("Сохранять текст речи рядом с видео", browser);
         Assert.Contains("CreateWhisperModelSelector", browser);
         var modelUi = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.TranscriptionModels.cs"));
         Assert.DoesNotContain("Источник модели", modelUi, StringComparison.Ordinal);
@@ -56,13 +56,13 @@ public sealed class CourseTranscriptionWiringTests
         Assert.Contains("Модель транскрибации изменена.", modelUi);
         Assert.Contains("editableCourseSettings", course);
         var mediaActions = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.MediaActions.cs"));
-        Assert.Contains("Язык транскрибации изменён.", mediaActions);
+        Assert.Contains("Язык распознавания речи изменён.", mediaActions);
         Assert.Contains("EnsureWhisperModelAvailableAsync", transcription);
         Assert.Contains("IsChecked = _preferences.CourseAutoTranscription", browser);
-        Assert.Contains("может увеличить общее время на несколько часов", browser);
+        Assert.Contains("Большие курсы могут занять на несколько часов дольше", browser);
         Assert.Contains("_courseTranscriptionEnabledForRun", course);
         Assert.Contains("Транскрибация была выключена", course);
-        Assert.Contains("Фоновая транскрибация курса", browser);
+        Assert.Contains("Текст уроков", browser);
         Assert.Contains("В очереди:", transcription);
         Assert.Contains("Развернуть дополнительные возможности", shell);
         Assert.Contains("advancedPanel.Visibility = Visibility.Collapsed", shell);

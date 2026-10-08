@@ -374,7 +374,7 @@ public sealed partial class BrowserWiringRegressionTests
         var batch = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.App", "MainWindow.BatchDownload.cs"));
 
-        Assert.Contains("Найденные видео и потоки", browser);
+        Assert.Contains("Найденные видео", browser);
         Assert.Contains("Качество выбранного видео", browser);
         Assert.Contains("Скачать выбранное видео", browser);
         Assert.Contains("Добавить в очередь", browser);
@@ -578,7 +578,7 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.Contains("Выбрана папка другого курса", course);
         Assert.Contains("Directory.EnumerateDirectories", course);
 
-        Assert.Contains("войдите в свой аккаунт GetCourse", browser);
+        Assert.Contains("войдите в GetCourse, если требуется", browser);
         Assert.Contains("Открыть курс во встроенном браузере", browser);
         Assert.Contains("BrowserActionButton", shell);
         Assert.Contains("24, 94, 61", shell);
@@ -622,7 +622,7 @@ public sealed partial class BrowserWiringRegressionTests
         var connector = File.ReadAllText(Path.Combine(
             root, "src", "VideoGrabber.Infrastructure", "Networking", "RouteConnector.cs"));
 
-        Assert.Contains("Авто — физический интернет", network);
+        Assert.Contains("Авто — обычное подключение", network);
         Assert.Contains("AutoPhysicalAdapterId", network);
         Assert.Contains("servicecdn.ru", profiles);
         Assert.Contains("AutoPhysicalAdapterId = \"auto-physical\"", connector);
@@ -691,7 +691,10 @@ public sealed partial class BrowserWiringRegressionTests
         Assert.DoesNotContain("локально на вашем ПК", shell);
         Assert.DoesNotContain("Встроенные инструменты", shell);
         Assert.Contains("\"Настройки\"", shell);
-        Assert.Contains("new FontFamily(\"Segoe UI\")", shell);
+        Assert.Contains("FontFamily = StudioBodyFont", shell);
+        var studio = File.ReadAllText(Path.Combine(root, "src", "VideoGrabber.App", "MainWindow.Studio.cs"));
+        Assert.Contains("Assets/Fonts/Onest.ttf#Onest", studio);
+        Assert.Contains("Assets/Fonts/Manrope.ttf#Manrope", studio);
         Assert.Contains("VerticalScrollBarVisibility = ScrollBarVisibility.Visible", shell);
         Assert.DoesNotContain("ScrollBarThumbBackground", shell);
         Assert.Contains("ResponsiveActions", browser);

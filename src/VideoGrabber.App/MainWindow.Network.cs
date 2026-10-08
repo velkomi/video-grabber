@@ -24,15 +24,15 @@ public sealed partial class MainWindow
     {
         var panel = Vertical(12);
         panel.Children.Add(SectionHeading("Подключение для отдельных сайтов"));
-        panel.Children.Add(MutedText("Рекомендуемый режим «Авто — физический интернет» сам находит Ethernet/Wi‑Fi на этом компьютере, исключает VPN/Tunnel/WSL и использует его для сайта и связанных GetCourse/CDN-доменов. Если физический путь недоступен, используется системный маршрут. Можно также закрепить конкретный адаптер вручную."));
-        _routeHost = new TextBox { Header = "Домен или ссылка для правила", PlaceholderText = "iglyrazuma.ru" };
+        panel.Children.Add(MutedText("Если сайт не открывается через VPN, попробуйте «Авто — обычное подключение». Приложение выберет Ethernet или Wi-Fi. Если они недоступны, подключение останется как в Windows."));
+        _routeHost = new TextBox { Header = "Адрес сайта", PlaceholderText = "iglyrazuma.ru" };
         AttachPasteContextMenu(_routeHost);
         _routeAdapter = new ComboBox { Header = "Подключение для этого сайта", HorizontalAlignment = HorizontalAlignment.Stretch };
         _routeList = new ComboBox { Header = "Сохранённые правила", HorizontalAlignment = HorizontalAlignment.Stretch };
         _routeStatus = MutedText("");
         var save = PrimaryButton("Сохранить правило");
         var remove = SecondaryButton("Удалить выбранное правило");
-        var refresh = SecondaryButton("Обновить адаптеры");
+        var refresh = SecondaryButton("Обновить подключения");
         var check = SecondaryButton("Проверить подключение к сайту");
         save.Click += (_, _) => SaveSiteRule();
         remove.Click += (_, _) => RemoveSiteRule();
@@ -42,8 +42,8 @@ public sealed partial class MainWindow
         panel.Children.Add(Horizontal(save, refresh));
         panel.Children.Add(_routeList); panel.Children.Add(remove); panel.Children.Add(check);
         panel.Children.Add(_routeStatus);
-        panel.Children.Add(MutedText("Правила сохраняются автоматически. При изменении правила встроенный браузер закрывается: потребуется повторный вход. Для GetCourse связанные домены видео/CDN наследуют тот же маршрут автоматически; вручную добавлять api*.gcvh.ru, servicecdn.ru или kinescopecdn.net не нужно."));
-        panel.Children.Add(MutedText("Прямой режим: IPv4. При включённых правилах работает локальный прокси VideoGrabber; системные HTTP/PAC-прокси не наследуются. Это не настройка VPN для всего компьютера."));
+        panel.Children.Add(MutedText("После изменения правила встроенный браузер закроется — потребуется войти на сайт снова. Для GetCourse достаточно адреса учебного сайта: подключения к видео настроятся автоматически."));
+        panel.Children.Add(MutedText("Правила действуют только внутри VideoGrabber. При их использовании системный прокси не применяется; настройки других приложений не меняются."));
         try
         {
             var loaded = SiteRouteSettings.Load(RoutesPath);
@@ -52,10 +52,10 @@ public sealed partial class MainWindow
             if (!loaded.Rules.SequenceEqual(_routes.Rules))
                 _routes.Save(RoutesPath);
         }
-        catch (Exception ex) { _routeReadError = SensitiveDataRedactor.Redact(ex.Message); }
+        catch (Exception) { _routeReadError = "Не удалось прочитать правила подключения. Проверьте настройки или обратитесь в поддержку."; }
         _routePolicy.Update(_routes);
         RefreshRouteAdapters(); RefreshRouteList();
-        _routeStatus.Text = _routeReadError ?? "Нет автоматического обхода: действуют только сохранённые правила.";
+        _routeStatus.Text = _routeReadError ?? "Подключение используется как в Windows, если для сайта не задано правило.";
         return Card(panel);
     }
     private static SiteRouteSettings MakeRoutesPortable(
@@ -90,7 +90,7 @@ public sealed partial class MainWindow
             _routeAdapter.Items.Clear();
             _routeAdapter.Items.Add(new ComboBoxItem
             {
-                Content = "Авто — физический интернет (рекомендуется)",
+                Content = "Авто — обычное подключение (рекомендуется)",
                 Tag = RouteConnector.AutoPhysicalAdapterId
             });
             foreach (var item in RouteConnector.GetAdapters())
@@ -101,7 +101,7 @@ public sealed partial class MainWindow
                 });
             _routeAdapter.SelectedIndex = 0;
         }
-        catch (Exception ex) { _routeStatus.Text = SensitiveDataRedactor.Redact(ex.Message); }
+        catch (Exception) { _routeStatus.Text = "Не удалось получить список подключений. Попробуйте обновить его."; }
     }
     private void RefreshRouteList()
     {
@@ -112,14 +112,14 @@ public sealed partial class MainWindow
                     rule.AdapterId,
                     RouteConnector.AutoPhysicalAdapterId,
                     StringComparison.OrdinalIgnoreCase)
-                ? "Авто — физический интернет"
-                : "конкретный адаптер";
+                ? "Авто — обычное подключение"
+                : "выбранное подключение";
             _routeList.Items.Add(new ComboBoxItem
             {
                 Content = rule.Host
                     + (rule.IncludeSubdomains
-                        ? " (+ поддомены)"
-                        : " (точно)")
+                        ? " (включая страницы этого сайта)"
+                        : " (только этот адрес)")
                     + " → "
                     + routeLabel,
                 Tag = rule
@@ -140,11 +140,11 @@ public sealed partial class MainWindow
         {
             var host = SiteRouteSettings.NormalizeHost(_routeHost.Text);
             var adapter = (_routeAdapter.SelectedItem as ComboBoxItem)?.Tag as string;
-            if (adapter is null) throw new InvalidOperationException("Выберите доступный сетевой адаптер.");
+            if (adapter is null) throw new InvalidOperationException("Выберите доступное подключение.");
             ApplySiteRules(SiteRouteProfiles.Merge(_routes, host, adapter));
             _routeStatus.Text = "Правило сохранено: " + host + ". Теперь откройте урок во встроенном браузере.";
         }
-        catch (Exception ex) { _routeStatus.Text = SensitiveDataRedactor.Redact(ex.Message); }
+        catch (Exception) { _routeStatus.Text = "Не удалось сохранить правило. Проверьте адрес сайта и выбранное подключение."; }
     }
     private void RemoveSiteRule()
     {
@@ -153,9 +153,9 @@ public sealed partial class MainWindow
         try
         {
             ApplySiteRules(new SiteRouteSettings(_routes.Rules.Where(r => r.Host != rule.Host)));
-            _routeStatus.Text = "Правило удалено. Новые подключения следуют оставшимся правилам или маршруту Windows.";
+            _routeStatus.Text = "Правило удалено. Теперь сайт использует подключение Windows или оставшееся подходящее правило.";
         }
-        catch (Exception ex) { _routeStatus.Text = SensitiveDataRedactor.Redact(ex.Message); }
+        catch (Exception) { _routeStatus.Text = "Не удалось удалить правило. Попробуйте ещё раз."; }
     }
     private void ApplySiteRules(SiteRouteSettings settings)
     {
@@ -176,7 +176,7 @@ public sealed partial class MainWindow
     }
     private SiteRouteProxy? EnsureRoutingProxy(Uri source, Uri? referer = null, DownloadRouteScope? routeScope = null)
     {
-        if (_routeReadError is not null) throw new InvalidOperationException("Исправьте файл правил подключения в разделе «Компоненты»: " + _routeReadError);
+        if (_routeReadError is not null) throw new InvalidOperationException("Не удалось прочитать правила подключения. Проверьте их в настройках или обратитесь в поддержку.");
         if (routeScope is not null) return routeScope.ResolveProxy(_routes, source, referer);
         if (DownloadRouteResolver.ResolveAdapterId(_routePolicy, _routes, source, referer) is null) return null;
         if (_routeProxy is not null) return _routeProxy;
@@ -190,7 +190,7 @@ public sealed partial class MainWindow
     private EgressSessionLease EnsureDownloadEgress(Uri source, Uri? referer, DownloadRouteScope routeScope)
     {
         if (_routeReadError is not null)
-            throw new InvalidOperationException("Исправьте файл правил подключения в разделе «Компоненты»: " + _routeReadError);
+            throw new InvalidOperationException("Не удалось прочитать правила подключения. Проверьте их в настройках или обратитесь в поддержку.");
         return routeScope.ResolveEgress(_egressRegistry, _routes, source, referer);
     }
     private async Task CheckSiteRouteAsync()
@@ -203,9 +203,9 @@ public sealed partial class MainWindow
             if (_routes.Find(host) is null) { _routeStatus.Text = "Сначала сохраните правило для этого сайта."; return; }
             _routeStatus.Text = "Сравниваю подключение Windows и сохранённое правило…";
             var results = await Task.WhenAll(ProbeSiteAsync(host, new SiteRouteSettings([])), ProbeSiteAsync(host, _routes));
-            _routeStatus.Text = "По маршруту Windows: " + results[0] + "\nПо правилу сайта: " + results[1];
+            _routeStatus.Text = "Как в Windows: " + results[0] + "\nС правилом сайта: " + results[1];
         }
-        catch (Exception ex) { _routeStatus.Text = SensitiveDataRedactor.Redact(ex.Message); }
+        catch (Exception) { _routeStatus.Text = "Не удалось проверить подключение. Проверьте адрес сайта и повторите попытку."; }
         finally { _routeProbeRunning = false; }
     }
     private static async Task<string> ProbeSiteAsync(string host, SiteRouteSettings settings)
@@ -220,14 +220,14 @@ public sealed partial class MainWindow
             };
             using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(20) };
             using var response = await http.GetAsync("https://" + host + "/", HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
-            var status = "HTTPS установлен, HTTP " + (int)response.StatusCode;
+            var status = response.IsSuccessStatusCode ? "сайт доступен" : "подключение установлено, но сайт не открыл страницу";
             DiagnosticHub.Log.Write("network.check", "succeeded", "host=" + host + " mode=" + (settings.Find(host) is null ? "system" : "selected-interface") + " HTTP=" + (int)response.StatusCode);
             return status;
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException or InvalidOperationException)
         {
             DiagnosticHub.Log.Write("network.check", "failed", "host=" + host + " error=" + ex.GetType().Name);
-            return "не установлено (" + ex.GetType().Name + ")";
+            return "подключиться не удалось";
         }
     }
 }

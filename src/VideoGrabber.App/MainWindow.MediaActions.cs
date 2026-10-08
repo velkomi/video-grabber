@@ -20,8 +20,8 @@ public sealed partial class MainWindow
     private ComboBox _languageBox = null!;
     private Button _mp3Button = null!;
     private Button _textButton = null!;
-    private const string LocalMediaReadyHint = "«Извлечь MP3» сохраняет звуковую дорожку. «Получить текст + SRT» выполняет локальную расшифровку речи прямо на компьютере. Передачи аудио в облако нет.";
-    private const string LocalMediaCourseBusyHint = "Звук и текст временно недоступны: VideoGrabber сейчас выполняет другую операцию или скачивает курс. Дождитесь завершения либо остановите текущую работу — кнопки включатся автоматически.";    private UiPreferences _preferences = ReadPreferences();
+    private const string LocalMediaReadyHint = "«Извлечь MP3» сохраняет звук из видео. «Получить текст и субтитры» расшифровывает речь на вашем компьютере.";
+    private const string LocalMediaCourseBusyHint = "Дождитесь завершения текущей работы или остановите её, чтобы обработать другой файл.";    private UiPreferences _preferences = ReadPreferences();
     private static string PreferencesPath => Path.Combine(AppDataRoot, "preferences.json");
     private sealed class UiPreferences
     {
@@ -39,10 +39,10 @@ public sealed partial class MainWindow
     {
         var panel = Vertical(12);
         panel.Children.Add(SectionHeading("Звук и текст"));
-        panel.Children.Add(MutedText("Работает с последним скачанным роликом или любым вашим локальным видео/аудиофайлом. Исходник не изменяется."));
+        panel.Children.Add(MutedText("Выберите видео или аудиофайл. Исходный файл останется без изменений."));
         _localMediaBox = new TextBox { Header = "Видео или аудиофайл", PlaceholderText = "Вставьте путь к файлу или выберите его" };
         AttachPasteContextMenu(_localMediaBox);
-        _localOutputBaseBox = new TextBox { Header = "Путь результата без расширения" };
+        _localOutputBaseBox = new TextBox { Header = "Путь готового файла без расширения" };
         AttachPasteContextMenu(_localOutputBaseBox);
         var choose = SecondaryButton("Выбрать файл…");
         choose.Click += async (_, _) =>
@@ -57,10 +57,10 @@ public sealed partial class MainWindow
                 _localMediaBox.Text = file.Path;
                 _localOutputBaseBox.Text = Path.Combine(Path.GetDirectoryName(file.Path)!, Path.GetFileNameWithoutExtension(file.Path) + "-result");
             }
-            catch (Exception ex) { _localMediaStatus.Text = SensitiveDataRedactor.Redact(ex.Message); }
+            catch (Exception) { _localMediaStatus.Text = "Не удалось обработать файл. Проверьте, доступен ли он и выбрана ли папка результата."; }
         };
         _mp3Button = PrimaryButton("Извлечь MP3");
-        _textButton = SecondaryButton("Получить текст + SRT");
+        _textButton = SecondaryButton("Получить текст и субтитры");
         _mp3Button.Click += async (_, _) => await RunLocalMediaAsync(false);
         _textButton.Click += async (_, _) => await RunLocalMediaAsync(true);
         var mediaPauseButton = PauseButton();
@@ -91,7 +91,7 @@ public sealed partial class MainWindow
         if (!await EnsureFeatureAccessAsync(
                 FeatureAccessKind.PaidTools,
                 text
-                    ? "Транскрибация доступна на платных тарифах"
+                    ? "Расшифровка речи доступна на платных тарифах"
                     : "MP3 доступен на платных тарифах",
                 text ? "transcribe" : "mp3"))
             return;
@@ -113,11 +113,11 @@ public sealed partial class MainWindow
         }
         catch (UnauthorizedAccessException ex)
         {
-            _localMediaStatus.Text = "Доступ к операции не разрешён: " + ex.Message;
+            _localMediaStatus.Text = "Эта функция сейчас недоступна. Проверьте свой тариф.";
             await ShowFeatureAccessDialogAsync(
                 FeatureAccessKind.PaidTools,
                 text
-                    ? "Транскрибация недоступна на текущем тарифе"
+                    ? "Расшифровка речи недоступна на текущем тарифе"
                     : "MP3 недоступен на текущем тарифе",
                 ex.Message);
         }
@@ -142,7 +142,7 @@ public sealed partial class MainWindow
         _operation = operation;
         SetOperationControls(true);
         var components = Volatile.Read(ref _componentServices);
-        _localMediaStatus.Text = text ? "Распознаю речь локально…" : "Извлекаю и проверяю MP3…";
+        _localMediaStatus.Text = text ? "Распознаю речь на этом компьютере…" : "Извлекаю и проверяю MP3…";
         try
         {
             var runner = new ProcessRunner();
@@ -151,12 +151,12 @@ public sealed partial class MainWindow
                 var language = (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "auto";
                 if (!components.Tools.WhisperAvailable)
                 {
-                    _localMediaStatus.Text = "Локальная транскрибация недоступна. Переустановите полную версию VideoGrabber.";
+                    _localMediaStatus.Text = "Распознавание речи недоступно. Переустановите полную версию VideoGrabber.";
                     return OperationOutcome.Failed;
                 }
                 var model = await EnsureWhisperModelAvailableAsync(operation.Token);
                 var result = await components.Transcriber.TranscribeAsync(input, output,
-                    components.Tools.WhisperCli, model, language, operation.Token);                _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.TextPath + "\n" + result.SubtitlesPath : "");
+                    components.Tools.WhisperCli, model, language, operation.Token);                _localMediaStatus.Text = result.Success ? "Текст и субтитры готовы.\n" + result.TextPath + "\n" + result.SubtitlesPath : "Не удалось распознать речь. Проверьте исходный файл и попробуйте ещё раз.";
                 operation.Token.ThrowIfCancellationRequested();
                 outcome = result.Success ? OperationOutcome.Succeeded : OperationOutcome.Failed;
                 job.Complete(result.Success);
@@ -164,7 +164,7 @@ public sealed partial class MainWindow
             else
             {
                 var result = await new FfmpegAudioExtractor(runner, components.Tools).ExtractAsync(input, output + ".mp3", operation.Token);
-                _localMediaStatus.Text = result.Message + (result.Success ? "\n" + result.OutputPath : "");
+                _localMediaStatus.Text = result.Success ? "MP3 готов.\n" + result.OutputPath : "Не удалось создать MP3. Проверьте исходный файл и попробуйте ещё раз.";
                 operation.Token.ThrowIfCancellationRequested();
                 outcome = result.Success ? OperationOutcome.Succeeded : OperationOutcome.Failed;
                 job.Complete(result.Success);
@@ -174,7 +174,7 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             DiagnosticHub.Log.Write("ui.media", "failed", ex.Message, jobId: job.Id);
-            _localMediaStatus.Text = SensitiveDataRedactor.Redact(ex.Message);
+            _localMediaStatus.Text = "Не удалось обработать файл. Проверьте, доступен ли он и выбрана ли папка результата.";
         }
         finally
         {
@@ -213,7 +213,7 @@ public sealed partial class MainWindow
             _preferences.Language = language;
             PersistUiPreferences();
             RequestCourseTranscriptionRestartForSettingsChange(
-                "Язык транскрибации изменён.");
+                "Язык распознавания речи изменён.");
         };
         var save = PrimaryButton("Сохранить язык");
         save.Click += (_, _) => SavePreferences();
@@ -235,7 +235,7 @@ public sealed partial class MainWindow
             var file = await picker.PickSingleFileAsync();
             if (file is not null) target.Text = file.Path;
         }
-        catch (Exception ex) { _logStatus.Text = SensitiveDataRedactor.Redact(ex.Message); }
+        catch (Exception) { _logStatus.Text = "Не удалось сохранить язык. Попробуйте ещё раз."; }
     }
 
     private static UiPreferences ReadPreferences()
@@ -260,8 +260,8 @@ public sealed partial class MainWindow
             _preferences.Language = (_languageBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "auto";
             _preferences.LogMode = DiagnosticHub.Log.Mode;
             PersistUiPreferences();
-            _logStatus.Text = "Настройки сохранены. Пароли и cookies в настройки не записываются.";
+            _logStatus.Text = "Настройки сохранены.";
         }
-        catch (Exception ex) { _logStatus.Text = "Не удалось сохранить настройки: " + SensitiveDataRedactor.Redact(ex.Message); }
+        catch (Exception) { _logStatus.Text = "Не удалось сохранить настройки. Проверьте доступ к папке приложения и попробуйте ещё раз."; }
     }
 }

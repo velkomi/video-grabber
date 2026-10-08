@@ -19,21 +19,20 @@ public sealed partial class MainWindow
         var panel = Vertical(8);
         panel.Children.Add(SectionHeading("Тарифы и оплата"));
         panel.Children.Add(MutedText(
-            "Выбор и оплата тарифа выполняются на официальной странице VideoGrabber. " +
-            "После подтверждения оплаты сервер обновит единый доступ для сайта, Windows и Telegram."));
+            "Тариф общий для сайта, Windows и Telegram. Выбор и оплата — на сайте."));
         _managedPaymentProduct = new ComboBox
         {
-            PlaceholderText = "Выберите товар",
+            PlaceholderText = "Выберите тариф",
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         panel.Children.Add(_managedPaymentProduct);
         _managedPaymentRecurring = new CheckBox
         {
-            Content = "Автопродление, если разрешено товаром"
+            Content = "Автопродление, если доступно для тарифа"
         };
         panel.Children.Add(_managedPaymentRecurring);
 
-        var refresh = SecondaryButton("Обновить товары");
+        var refresh = SecondaryButton("Обновить тарифы");
         refresh.Click += async (_, _) =>
         {
             await RefreshManagedPaymentProductsAsync();
@@ -47,7 +46,7 @@ public sealed partial class MainWindow
         };
         panel.Children.Add(Horizontal(refresh, buy));
         _managedPaymentStatus = MutedText(
-            "До входа покупка недоступна. Live-каталог не включается автоматически.");
+            "Войдите, чтобы увидеть свой тариф и подписки.");
         panel.Children.Add(_managedPaymentStatus);
         panel.Children.Add(SectionHeading("Подписки"));
         _managedSubscriptionsPanel = Vertical(6);
@@ -82,13 +81,12 @@ public sealed partial class MainWindow
             });
             SetManagedPaymentStatus(
                 products.Length == 0
-                    ? "YooKassa товары не настроены сервером."
-                    : $"Каталог {catalog.Version}, среда {catalog.Environment}. " +
-                      "Цена берётся только с сервера.");
+                    ? "Каталог сейчас недоступен. Посмотрите тарифы на сайте."
+                    : "Актуальные тарифы загружены.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SetManagedPaymentStatus("Не удалось загрузить товары: " + ex.Message);
+            SetManagedPaymentStatus("Не удалось загрузить тарифы. Проверьте интернет или откройте тарифы на сайте.");
         }
     }
 
@@ -109,7 +107,16 @@ public sealed partial class MainWindow
             {
                 var line = Vertical(4);
                 line.Children.Add(MutedText(
-                    $"{subscription.Provider} • {subscription.State} • оплачено до {subscription.PaidThrough.ToLocalTime():g} • auto-renew={(subscription.AutoRenew ? "on" : "off")}"));
+                    $"Оплачено до {subscription.PaidThrough.ToLocalTime():g}. Автопродление: {(subscription.AutoRenew ? "включено" : "выключено")}. " +
+                    (subscription.State switch
+                    {
+                        "active" => "Подписка активна.",
+                        "cancelled" => "Продление отменено.",
+                        "expired" => "Подписка закончилась.",
+                        "past_due" => "Не удалось продлить подписку. Проверьте оплату на сайте.",
+                        "pending" => "Ожидается подтверждение оплаты.",
+                        _ => "Проверьте состояние подписки на сайте."
+                    })));
                 if (subscription.AutoRenew && subscription.State == "active")
                 {
                     var cancel = SecondaryButton("Отключить автопродление");
@@ -140,9 +147,9 @@ public sealed partial class MainWindow
                 $"Автопродление отключено. Оплаченный период сохранён до {view.PaidThrough.ToLocalTime():g}.");
             await RefreshManagedSubscriptionsAsync();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SetManagedPaymentStatus("Не удалось отключить автопродление: " + ex.Message);
+            SetManagedPaymentStatus("Не удалось отключить автопродление. Проверьте интернет и повторите попытку.");
         }
     }
     private async Task StartManagedYooKassaPurchaseAsync()
@@ -157,7 +164,7 @@ public sealed partial class MainWindow
             await RefreshManagedPaymentProductsAsync();
             if (_managedPaymentProduct.SelectedItem is not DesktopPaymentProduct refreshed)
             {
-                SetManagedPaymentStatus("Нет доступного YooKassa товара.");
+                SetManagedPaymentStatus("Доступных тарифов пока нет. Посмотрите тарифы на сайте.");
                 return;
             }
             product = refreshed;
@@ -165,7 +172,7 @@ public sealed partial class MainWindow
         var recurring = _managedPaymentRecurring.IsChecked == true;
         if (recurring && !product.RecurringAllowed)
         {
-            SetManagedPaymentStatus("Для этого товара автопродление не разрешено.");
+            SetManagedPaymentStatus("Для этого тарифа автопродление недоступно.");
             return;
         }
 
@@ -190,12 +197,12 @@ public sealed partial class MainWindow
                 UseShellExecute = true
             });
             SetManagedPaymentStatus(
-                $"Заказ {checkout.PaymentId:D} открыт в браузере. " +
-                "После оплаты нажмите «Обновить данные»; только серверная проверка изменит доступ.");
+                "Страница оплаты открыта в браузере. " +
+                "После оплаты нажмите «Обновить данные». Доступ появится после подтверждения оплаты.");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SetManagedPaymentStatus("Checkout не создан: " + ex.Message);
+            SetManagedPaymentStatus("Не удалось открыть оплату. Проверьте интернет и попробуйте ещё раз.");
         }
     }
 
@@ -225,9 +232,9 @@ public sealed partial class MainWindow
             get
             {
                 if (!Prices.TryGetValue("yookassa", out var price))
-                    return Sku;
+                    return string.IsNullOrWhiteSpace(PlanId) ? "Пакет доступа" : FriendlyPlanName(PlanId);
                 var rub = price.MinorUnits / 100m;
-                return $"{Sku} • {rub:0.00} {price.Currency}";
+                return $"{(string.IsNullOrWhiteSpace(PlanId) ? (Days > 0 ? $"Доступ на {Days} дней" : $"Пакет на {Credits} загрузок") : FriendlyPlanName(PlanId))} • {rub:0.00} {price.Currency}";
             }
         }
     }

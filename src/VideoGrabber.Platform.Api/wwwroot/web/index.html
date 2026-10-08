@@ -7,7 +7,10 @@
   <title>VideoGrabber — скачивайте видео проще</title>
   <meta name="description" content="VideoGrabber помогает скачивать видео, MP3 и полные курсы. Работает на сайте, в Windows и Telegram.">
   <link rel="icon" type="image/png" href="/assets/videograbber-icon.png">
-  <link rel="stylesheet" href="/web/styles.css">
+  <link rel="stylesheet" href="/web/styles.css?v=unified-studio-20261008">
+  <link rel="stylesheet" href="/assets/fonts/fonts.css">
+  <link rel="preload" href="/assets/fonts/manrope-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/assets/fonts/onest-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
   <div class="page-glow page-glow-a" aria-hidden="true"></div>
@@ -33,10 +36,10 @@
         <div class="hero-art-shell">
           <img
             class="hero-art"
-            src="/assets/videograbber-hero.webp"
-            alt="Объёмная 3D-сцена VideoGrabber: видео, MP3, Windows, Telegram и полные курсы"
-            width="782"
-            height="770"
+            src="/assets/videograbber-studio-hero.webp"
+            alt="Стеклянный знак воспроизведения VideoGrabber с металлической лентой"
+            width="1360"
+            height="1157"
             decoding="async"
             fetchpriority="high">
           <canvas
@@ -46,12 +49,25 @@
             data-quality="pending"
             data-dpr="0"
             data-frame-ms="0"></canvas>
-          <a class="hero-hotspot hotspot-url" data-feature="url" href="#app" aria-label="Вставить ссылку"></a>
-          <a class="hero-hotspot hotspot-video" data-feature="video" href="#app" aria-label="Скачать видео"></a>
-          <a class="hero-hotspot hotspot-mp3" data-feature="mp3" href="#app" aria-label="Скачать MP3"></a>
-          <a class="hero-hotspot hotspot-course" data-feature="course" href="#pricing" aria-label="Посмотреть тариф для полных курсов"></a>
-          <a class="hero-hotspot hotspot-windows" data-feature="windows" href="/download/windows" aria-label="Скачать VideoGrabber для Windows"></a>
-          <a class="hero-hotspot hotspot-telegram" data-feature="telegram" href="/miniapp/" aria-label="Открыть VideoGrabber в Telegram"></a>
+          <a class="hero-hotspot hotspot-url" data-feature="url" href="#app" aria-label="Вставить ссылку" hidden></a>
+          <a class="hero-hotspot hotspot-video" data-feature="video" href="#app" aria-label="Скачать видео"><span>MP4</span></a>
+          <a class="hero-hotspot hotspot-mp3" data-feature="mp3" href="#app" aria-label="Скачать MP3"><span>MP3</span></a>
+          <a class="hero-hotspot hotspot-course" data-feature="course" href="#pricing" aria-label="Посмотреть тариф для полных курсов"><span>Курс</span></a>
+          <a class="hero-hotspot hotspot-windows" data-feature="windows" href="/download/windows" aria-label="Скачать VideoGrabber для Windows" hidden></a>
+          <a class="hero-hotspot hotspot-telegram" data-feature="telegram" href="/miniapp/" aria-label="Открыть VideoGrabber в Telegram" hidden></a>
+        </div>
+        <div class="scene-controls" aria-label="Действия трёхмерной сцены">
+          <button class="scene-control" data-scene="workflow" data-feature="workflow-url" type="button" hidden>Ссылка<small>Как подготовить</small></button>
+          <button class="scene-control" data-scene="workflow" data-feature="workflow-format" type="button" hidden>Формат<small>Что выбрать</small></button>
+          <button class="scene-control" data-scene="workflow" data-feature="workflow-download" type="button" hidden>Файл<small>Как сохранить</small></button>
+          <button class="scene-control" data-scene="pricing" data-feature="pricing-free" type="button" hidden>Free<small>10 видео</small></button>
+          <button class="scene-control" data-scene="pricing" data-feature="pricing-start" type="button" hidden>Start<small>Подробнее</small></button>
+          <button class="scene-control" data-scene="pricing" data-feature="pricing-unlimited_video" type="button" hidden>Unlimited<small>Подробнее</small></button>
+          <button class="scene-control" data-scene="pricing" data-feature="pricing-full_course" type="button" hidden>Full Course<small>Подробнее</small></button>
+          <button class="scene-control device-control" data-scene="sync" data-feature="device-windows" type="button" hidden>Windows<small>Приложение</small></button>
+          <button class="scene-control device-control" data-scene="sync" data-feature="device-web" type="button" hidden>Сайт<small>Один аккаунт</small></button>
+          <button class="scene-control device-control" data-scene="sync" data-feature="device-telegram" type="button" hidden>Telegram<small>На телефоне</small></button>
+          <button class="scene-control device-control" data-scene="windows" data-feature="windows-app" type="button" aria-label="Подробнее о VideoGrabber для Windows" hidden>VideoGrabber<small>Подробнее</small></button>
         </div>
       </div>
   </div>
@@ -59,27 +75,24 @@
   <main>
     <section class="hero" id="top">
       <div class="hero-copy">
-        <p class="eyebrow eyebrow-pill">Ваше видео — в ваших руках</p>
-        <h1>Скачивайте видео проще.<br><span>Файлы остаются у вас.</span></h1>
+        <h1 aria-label="Скачивайте видео проще. Файлы остаются у вас.">Скачивайте<br>видео проще.<br><span>Файлы остаются<br>у вас.</span></h1>
         <p class="hero-lead">
-          Обычные видео можно скачать прямо через сайт. Приложение для Windows помогает
-          с полными курсами, закрытыми страницами и расширенными задачами.
+          Видео, MP3 и полные курсы — на сайте, в Windows и Telegram.
         </p>
         <div class="hero-actions">
-          <a class="button button-primary button-hero" href="#app">Попробовать бесплатно <small>10 видео навсегда</small></a>
-          <a class="button button-quiet button-hero" href="/download/windows">Скачать для Windows <small>для курсов и сложных задач</small></a>
+          <a class="button button-primary button-hero" href="#app"><img class="ui-icon" src="/assets/icons/download.svg" alt="" aria-hidden="true">Попробовать бесплатно</a>
+          <a class="button button-quiet button-hero" href="/download/windows"><img class="ui-icon" src="/assets/icons/windows.svg" alt="" aria-hidden="true">Скачать для Windows</a>
         </div>
         <div class="trust-line" aria-label="Где работает VideoGrabber">
-          <span>✓ Работает на сайте</span>
-          <span>✓ Приложение для Windows</span>
-          <span>✓ Бот в Telegram</span>
+          <span>10 видео бесплатно навсегда</span>
+          <span>Файлы сохраняются на ваше устройство</span>
         </div>
       </div>
 
       <div class="hero-stage-origin story-slot story-slot-hero" data-story-state="hero" aria-hidden="true"></div>
     </section>
 
-    <section id="how" class="section section-card how-section story-section" data-story-state="workflow">
+    <section id="how" class="section how-section story-section" data-story-state="workflow">
       <div class="section-head compact">
         <h2>Как это работает</h2>
         <p>Всего 3 простых шага — и нужный файл у вас на устройстве.</p>
@@ -87,18 +100,18 @@
       <div class="story-slot story-slot-workflow" data-story-state="workflow" aria-hidden="true"></div>
       <div class="steps">
         <article class="step">
-          <div class="step-icon">↗</div>
-          <div><strong>1. Вставьте ссылку</strong><p>Скопируйте ссылку и вставьте её на сайте или в приложении.</p></div>
+          <button class="step-icon" data-info="link" type="button" aria-label="Подробнее: ссылка"><img src="/assets/icons/link-45deg.svg" alt="" aria-hidden="true" width="30" height="30"></button>
+          <div><strong>Ссылка</strong><p>Скопируйте ссылку и вставьте её на сайте или в приложении.</p></div>
         </article>
         <div class="step-arrow" aria-hidden="true">›</div>
         <article class="step">
-          <div class="step-icon">▤</div>
-          <div><strong>2. Выберите формат</strong><p>Видео, MP3 или целый курс — в пару кликов.</p></div>
+          <button class="step-icon" data-info="format" type="button" aria-label="Подробнее: формат"><img src="/assets/icons/file-earmark-text.svg" alt="" aria-hidden="true" width="30" height="30"></button>
+          <div><strong>Формат</strong><p>Выберите, что нужно: видео, MP3 или целый курс.</p></div>
         </article>
         <div class="step-arrow" aria-hidden="true">›</div>
         <article class="step">
-          <div class="step-icon">↓</div>
-          <div><strong>3. Скачайте</strong><p>Файлы сохраняются на ваше устройство. Быстро и удобно.</p></div>
+          <button class="step-icon" data-info="file" type="button" aria-label="Подробнее: файл"><img src="/assets/icons/download.svg" alt="" aria-hidden="true" width="30" height="30"></button>
+          <div><strong>Файл</strong><p>Скачайте файл на своё устройство. Быстро и удобно.</p></div>
         </article>
       </div>
     </section>
@@ -108,19 +121,21 @@
         <div class="sync-copy">
           <p class="eyebrow">Один аккаунт везде</p>
           <h2>Вход и синхронизация</h2>
-          <p>Один аккаунт работает на сайте, в Windows и Telegram. Ваши загрузки, настройки и тариф всегда с вами.</p>
+          <p>Один аккаунт работает на сайте, в Windows и Telegram. Тариф, лимиты и история заданий — общие. Файлы остаются на выбранном устройстве.</p>
         </div>
 
         <div id="signed-out" class="auth-panel">
           <div class="auth-actions">
-            <button id="google-login" class="button button-google" type="button"><span>G</span> Войти через Google</button>
+            <button id="google-login" class="button button-google" type="button"><img src="/assets/icons/google-g.png" width="20" height="20" alt="" aria-hidden="true"> Войти через Google</button>
             <form id="email-login-form" class="email-login-form">
-              <input id="login-email" type="email" autocomplete="email" placeholder="ваш e-mail" required>
+              <label for="login-email">Ваша почта</label>
+              <input id="login-email" type="email" autocomplete="email" placeholder="name@example.com" required>
               <button id="email-login" class="button button-quiet" type="submit">Войти по почте</button>
             </form>
           </div>
           <p class="field-note">Без пароля: на почту придёт одноразовая ссылка для входа.</p>
           <p id="auth-status" class="status" role="status"></p>
+          <a id="auth-preview-link" class="text-button" href="https://videograbber.srv1902378.hstgr.cloud/web/#app" target="_blank" rel="noopener" hidden>Открыть рабочий сайт для входа</a>
         </div>
 
         <div class="story-slot story-slot-sync" data-story-state="sync" aria-hidden="true"></div>
@@ -137,7 +152,7 @@
           <section class="panel download-panel">
             <div class="panel-title">
               <div><p class="eyebrow">Новое задание</p><h3>Скачать</h3></div>
-              <span id="device-pill" class="pill offline">Скачать прямо в браузер</span>
+              <span id="device-pill" class="pill offline">Прямой файл с источника</span>
             </div>
             <form id="download-form">
               <label>Ссылка
@@ -179,6 +194,7 @@
             </form>
             <p id="job-status" class="status" role="status"></p>
             <div id="result-actions" class="result-actions"></div>
+            <p class="field-note">Готовые MP4/WebM открываются напрямую с источника в исходном качестве. Для других ссылок, MP3 и курсов нужен Windows. Лимит прямой ссылки учитывается при её подготовке.</p>
           </section>
 
           <aside class="panel account-panel">
@@ -192,7 +208,8 @@
               <div><dt>Telegram</dt><dd id="telegram-value">—</dd></div>
             </dl>
             <a id="admin-link" class="text-link" href="/admin/" hidden>Админ-панель →</a>
-            <a class="text-link" href="/miniapp/">Открыть Telegram →</a>
+            <a id="telegram-bot-link" class="text-link" href="/miniapp/" target="_blank" rel="noopener noreferrer">Открыть Telegram →</a>
+            <p id="telegram-link-help" class="field-note" hidden>Чтобы объединить аккаунт: в Telegram-боте отправьте /link, откройте полученную ссылку и войдите с той же почтой, что на сайте и в Windows. История и тариф будут общими.</p>
             <a id="change-plan-link" class="text-link" href="#pricing">Изменить тариф →</a>
           </aside>
         </div>
@@ -200,7 +217,9 @@
         <div class="dashboard-grid lower">
           <section class="panel">
             <div class="panel-title"><div><p class="eyebrow">Очередь</p><h3>Последние задания</h3></div><button id="refresh-jobs" class="text-button" type="button">Обновить</button></div>
-            <div id="jobs-list" class="job-list"></div>
+            <p id="jobs-count" class="field-note" aria-live="polite"></p>
+            <ul id="jobs-list" class="job-list" aria-label="Последние задания"></ul>
+            <div class="job-history-actions"><button id="jobs-more" class="text-button" type="button" hidden>Показать ещё 5</button><button id="jobs-collapse" class="text-button" type="button" hidden>Свернуть до 5</button></div>
           </section>
           <section class="panel">
             <div class="panel-title"><div><p class="eyebrow">Устройства</p><h3>Windows VideoGrabber</h3></div></div>
@@ -221,7 +240,7 @@
 
       <div class="pricing-grid">
         <article class="price-card" data-plan="free">
-          <div class="plan-top"><span class="plan-symbol">✦</span><p class="plan">Free</p></div>
+          <div class="plan-top"><img class="plan-symbol" src="/assets/studio-plan-free.webp" alt="" aria-hidden="true" width="96" height="96" loading="lazy"><p class="plan">Free</p></div>
           <p class="price">0 ₽</p>
           <p class="plan-for">Для знакомства с сервисом</p>
           <ul class="feature-list">
@@ -230,10 +249,11 @@
             <li class="no">Без полных курсов</li>
           </ul>
           <button class="plan-action" type="button">Начать бесплатно</button>
+          <img class="plan-pedestal" src="/assets/studio-plan-pedestal.webp" alt="" aria-hidden="true" width="640" height="220" loading="lazy">
         </article>
 
         <article class="price-card" data-plan="start">
-          <div class="plan-top"><span class="plan-symbol">⚡</span><p class="plan">Start</p></div>
+          <div class="plan-top"><img class="plan-symbol" src="/assets/studio-plan-start.webp" alt="" aria-hidden="true" width="96" height="96" loading="lazy"><p class="plan">Start</p></div>
           <p class="price">1 500 ₽<small>/ 30 дней</small></p>
           <p class="plan-for">Для обычных регулярных загрузок</p>
           <ul class="feature-list">
@@ -243,11 +263,12 @@
             <li class="no">Без полных курсов</li>
           </ul>
           <button class="plan-action" type="button">Выбрать Start</button>
+          <img class="plan-pedestal" src="/assets/studio-plan-pedestal.webp" alt="" aria-hidden="true" width="640" height="220" loading="lazy">
         </article>
 
         <article class="price-card featured" data-plan="unlimited_video">
           <span class="badge">Популярный</span>
-          <div class="plan-top"><span class="plan-symbol">♛</span><p class="plan">Unlimited Video</p></div>
+          <div class="plan-top"><img class="plan-symbol" src="/assets/studio-plan-unlimited.webp" alt="" aria-hidden="true" width="96" height="96" loading="lazy"><p class="plan">Unlimited Video</p></div>
           <p class="price">2 500 ₽<small>/ 30 дней</small></p>
           <p class="plan-for">Для тех, кто часто скачивает отдельные видео</p>
           <ul class="feature-list">
@@ -257,11 +278,12 @@
             <li class="no">Не для полных курсов</li>
           </ul>
           <button class="plan-action" type="button">Выбрать Unlimited</button>
+          <img class="plan-pedestal" src="/assets/studio-plan-pedestal.webp" alt="" aria-hidden="true" width="640" height="220" loading="lazy">
         </article>
 
         <article class="price-card course-plan" data-plan="full_course">
           <span class="badge badge-course">Для курсов</span>
-          <div class="plan-top"><span class="plan-symbol">◇</span><p class="plan">Full Course</p></div>
+          <div class="plan-top"><img class="plan-symbol" src="/assets/studio-plan-course.webp" alt="" aria-hidden="true" width="96" height="96" loading="lazy"><p class="plan">Full Course</p></div>
           <p class="price">5 000 ₽<small>/ 30 дней</small></p>
           <p class="plan-for">Для курсов и закрытых страниц</p>
           <ul class="feature-list">
@@ -271,6 +293,7 @@
             <li class="yes">TXT рядом с видео по желанию</li>
           </ul>
           <button class="plan-action" type="button">Выбрать Full Course</button>
+          <img class="plan-pedestal" src="/assets/studio-plan-pedestal.webp" alt="" aria-hidden="true" width="640" height="220" loading="lazy">
         </article>
       </div>
       <p class="pricing-note">Нажмите на тариф — покажем подробности. Списание не начинается простым нажатием на карточку.</p>
@@ -286,6 +309,7 @@
             <a class="button button-primary" href="/download/windows">Скачать установщик</a>
             <a class="button button-quiet" href="/download/windows/portable">Portable ZIP</a>
           </div>
+          <p class="mac-note"><span class="mac-badge">Mac — в разработке</span><span>Нужно приложение для macOS? <a href="https://t.me/Velkoshkin" target="_blank" rel="noopener noreferrer">Напишите разработчику в Telegram ↗</a></span></p>
         </div>
         <div class="story-slot story-slot-windows" data-story-state="windows" aria-hidden="true"></div>
       </div>
@@ -302,8 +326,21 @@
       <a href="#download">Скачать</a>
       <a href="#pricing">Тарифы</a>
       <a href="#app">Кабинет</a>
+      <a href="/miniapp/">Telegram</a>
     </nav>
   </footer>
+
+  <dialog id="info-dialog" class="plan-dialog info-dialog" aria-labelledby="info-dialog-title">
+    <button id="info-dialog-x" class="dialog-x" type="button" aria-label="Закрыть подробную информацию">×</button>
+    <p class="eyebrow">Как пользоваться VideoGrabber</p>
+    <h2 id="info-dialog-title"></h2>
+    <p id="info-dialog-lead" class="dialog-description"></p>
+    <div id="info-dialog-content"></div>
+    <div class="dialog-actions">
+      <a id="info-dialog-action" class="button button-primary" href="#app">Перейти к загрузкам</a>
+      <button id="info-dialog-close" class="button button-quiet" type="button">Закрыть</button>
+    </div>
+  </dialog>
 
   <dialog id="plan-dialog" class="plan-dialog" aria-labelledby="plan-dialog-title">
     <button id="plan-dialog-x" class="dialog-x" type="button" aria-label="Закрыть">×</button>
@@ -331,6 +368,8 @@
 
   <script src="/web/vendor/gsap-3.15.0.min.js" defer></script>
   <script src="/web/vendor/ScrollTrigger-3.15.0.min.js" defer></script>
-  <script src="/web/app.js" defer></script>
+  <script src="/web/diagnostics.js?v=webgl-recovery-1" defer></script>
+  <script src="/web/app.js?v=unified-studio-20261008" defer></script>
+  <script src="/web/scene-actions.js?v=unified-studio-20261008" defer></script>
 </body>
 </html>

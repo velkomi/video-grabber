@@ -28,7 +28,7 @@ public sealed partial class MainWindow
     private void AddBrowserControls(StackPanel panel)
     {
         _browserAddress = new TextBox { Header = "Открытая страница — проверяйте адрес перед входом", IsReadOnly = true };
-        _mediaCandidatesBox = new ComboBox { Header = "Найденные видео и потоки", HorizontalAlignment = HorizontalAlignment.Stretch };
+        _mediaCandidatesBox = new ComboBox { Header = "Найденные видео", HorizontalAlignment = HorizontalAlignment.Stretch };
         _mediaQualityBox = new ComboBox { Header = "Качество выбранного видео", HorizontalAlignment = HorizontalAlignment.Stretch };
         _mediaCandidatesBox.SelectionChanged += (_, _) =>
         {
@@ -68,11 +68,11 @@ public sealed partial class MainWindow
             downloadAll,
             howTo));
         panel.Children.Add(SectionHeading("После скачивания"));
-        _transcribeDownloadedButton = SecondaryButton("Транскрибировать скачанное");
+        _transcribeDownloadedButton = SecondaryButton("Получить текст из видео");
         _transcribeDownloadedButton.IsEnabled = true;
         ToolTipService.SetToolTip(
             _transcribeDownloadedButton,
-            "Если видео ещё не скачано или тариф не подходит, VideoGrabber объяснит, что нужно сделать.");
+            "Сначала скачайте видео, затем создайте текст из его речи.");
         _transcribeDownloadedButton.Click += async (_, _) => await TranscribeLastDownloadedAsync();
         panel.Children.Add(_transcribeDownloadedButton);
         panel.Children.Add(SectionHeading("Очередь загрузок"));
@@ -91,8 +91,8 @@ public sealed partial class MainWindow
         runQueue.Click += async (_, _) => await DownloadQueuedCandidatesAsync();
         panel.Children.Add(ResponsiveActions(addAll, up, down, remove));
         panel.Children.Add(runQueue);
-        panel.Children.Add(MutedText("Для каждого найденного видео можно выбрать своё качество. Успешные пункты удаляются из очереди; оставшиеся можно продолжить позже. Отмена останавливает всю очередь."));
-        panel.Children.Add(MutedText("Для закрытого урока войдите на сайте и выберите выше «Встроенный браузер — только эта загрузка». Пароль приложение не читает. DRM не обходится."));
+        panel.Children.Add(MutedText("Выберите качество для каждого видео. Готовые пункты удаляются из очереди; остальные можно продолжить позже. Отмена останавливает всю очередь."));
+        panel.Children.Add(MutedText("Для закрытого урока войдите на сайте и выберите «Встроенный браузер — только эта загрузка». Пароль приложение не читает. Защищённое видео не скачивается."));
     }
 
     private Border BuildCourseToolsCard()
@@ -100,9 +100,8 @@ public sealed partial class MainWindow
         var content = Vertical(10);
         content.Children.Add(SectionHeading("Курсы GetCourse"));
         content.Children.Add(MutedText(
-            "Полный курс — отдельная расширенная функция. Для закрытого курса вставьте ссылку выше, " +
-            "откройте её во встроенном браузере, войдите в свой аккаунт GetCourse и дождитесь страницы курса. " +
-            "Кнопка скачивания остаётся видимой и объяснит, если требуется другой тариф или сначала нужен вход."));
+            "Для целого курса нужен тариф Full Course. Вставьте ссылку, откройте курс во встроенном браузере " +
+            "и войдите в GetCourse, если требуется. Затем нажмите «Скачать весь курс»."));
 
         var openCourse = BrowserActionButton("Открыть курс во встроенном браузере");
         openCourse.Click += OpenBrowser_Click;
@@ -122,7 +121,7 @@ public sealed partial class MainWindow
 
         _courseTranscriptionCheckBox = new CheckBox
         {
-            Content = "Транскрибировать видео курса в TXT",
+            Content = "Сохранять текст речи рядом с видео",
             IsChecked = _preferences.CourseAutoTranscription,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Margin = new Thickness(0, 4, 0, 0)
@@ -132,8 +131,8 @@ public sealed partial class MainWindow
         {
             var enabled = _courseTranscriptionCheckBox.IsChecked == true;
             _courseTranscriptionOptionHint.Text = enabled
-                ? "Включено: после скачивания каждого видео автоматически будет создаваться TXT. Следующее видео продолжит скачиваться параллельно, но полное завершение курса будет ждать готовности текста. Процесс заметно нагружает процессор и для больших курсов может увеличить общее время на несколько часов."
-                : "Выключено: VideoGrabber скачает и проверит курс без фоновой транскрибации. TXT автоматически создаваться не будут.";
+                ? "Включено: текст сохраняется рядом с каждым видео. Скачивание продолжится параллельно, но курс завершится после подготовки текста. Большие курсы могут занять на несколько часов дольше."
+                : "Выключено: сохраняются видео и материалы курса без расшифровки речи.";
         }
         _courseTranscriptionCheckBox.Checked += (_, _) =>
         {
@@ -152,7 +151,7 @@ public sealed partial class MainWindow
         RefreshCourseTranscriptionOptionHint();
         content.Children.Add(_courseTranscriptionCheckBox);
         content.Children.Add(_courseTranscriptionOptionHint);
-        content.Children.Add(CreateWhisperModelSelector("Качество транскрибации курса"));
+        content.Children.Add(CreateWhisperModelSelector("Качество распознавания речи"));
         content.Children.Add(CreateWhisperModelStatusText());
 
         _courseDownloadButton = PrimaryButton("Скачать весь курс");
@@ -224,18 +223,17 @@ public sealed partial class MainWindow
         content.Children.Add(_courseEtaText);
         content.Children.Add(_courseElapsedText);
 
-        content.Children.Add(SectionHeading("Фоновая транскрибация курса"));
+        content.Children.Add(SectionHeading("Текст уроков"));
         content.Children.Add(MutedText(
-            "После скачивания каждого видео автоматически создаётся текст. " +
-            "Пока обрабатывается один ролик, следующий уже может скачиваться. Готовый TXT получает то же имя и лежит рядом с видео."));
+            "Текст создаётся во время загрузки следующих видео и сохраняется рядом с роликом под тем же именем."));
         _courseTranscriptionStageText = new TextBlock
         {
-            Text = "Фоновая транскрибация — ожидаю первое видео",
+            Text = "Ожидаю первое видео для создания текста",
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap
         };
         _courseTranscriptionCurrentText = MutedText(
-            "После загрузки ролика VideoGrabber автоматически создаст рядом TXT с таким же именем.");
+            "После загрузки текст появится рядом с видео.");
         _courseTranscriptionProgressTrack = new Grid
         {
             Height = 8,
@@ -261,8 +259,8 @@ public sealed partial class MainWindow
         UpdateCourseTranscriptionSelectionUi();
 
         content.Children.Add(MutedText(
-            "VideoGrabber проходит доступные модули и уроки текущего GetCourse-тренинга. " +
-            "Для каждого урока создаётся отдельная папка: Word + HTML страницы, изображения, вложения, найденные видео и TXT-транскрипты."));
+            "Каждый урок сохраняется в отдельную папку: страница, изображения, вложения и видео. " +
+            "При включённой расшифровке там же появится текст речи."));
 
         return Card(content);
     }
@@ -375,7 +373,7 @@ public sealed partial class MainWindow
                         args.IsSuccess ? "Page loaded" : args.WebErrorStatus.ToString());
                     if (!args.IsSuccess)
                     {
-                        _browserHint.Text = "Страница не загрузилась: " + args.WebErrorStatus;
+                        _browserHint.Text = "Страница не загрузилась. Проверьте интернет и адрес сайта, затем откройте её снова.";
                         return;
                     }
                     var completedLease = _browserPages.Capture();
@@ -397,7 +395,7 @@ public sealed partial class MainWindow
         {
             if (initializationLease is not null && !_browserPages.IsCurrent(initializationLease)) return;
             DiagnosticHub.Log.Write("browser.session", "failed", ex.Message);
-            _browserHint.Text = "Браузер недоступен: " + SensitiveDataRedactor.Redact(ex.Message);
+            _browserHint.Text = "Не удалось открыть встроенный браузер. Перезапустите приложение; если ошибка повторится, переустановите полную версию.";
             DestroyBrowser();
         }
         finally { _browserInitializing = false; }
@@ -474,7 +472,7 @@ public sealed partial class MainWindow
                         {
                             _verifiedClearHls.TryRemove(responseUri.AbsoluteUri, out _);
                             RemoveMediaCandidatesReferencing(responseUri, lease, sender);
-                            _browserHint.Text = "Обнаружен защищённый видеопоток. Его сохранение не поддерживается.";
+                            _browserHint.Text = "Видео защищено от копирования. Его скачивание не поддерживается.";
                             DiagnosticHub.Log.Write("browser.hls", "blocked", "HLS " + responseUri.IdnHost + " via WebResourceResponseReceived");
                             return;
                         }

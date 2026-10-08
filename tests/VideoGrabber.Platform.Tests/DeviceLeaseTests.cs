@@ -107,6 +107,21 @@ public sealed class DeviceLeaseTests
             claim.Type.Contains("remaining", StringComparison.OrdinalIgnoreCase)
             || claim.Type.Contains("credit", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(jwt.Claims, claim => claim.Type == "device_id" && claim.Value == device.DeviceId.ToString("D"));
+        // Validate the actual API response with the Windows verifier, not a second JWT-only test validator.
+        var published = await account.Client.GetFromJsonAsync<LeasePublicKey[]>("/v1/lease-keys");
+        var keys = published!.ToDictionary(item => item.KeyId, item =>
+        {
+            using var verifierKey = ECDsa.Create(new ECParameters
+            {
+                Curve = ECCurve.NamedCurves.nistP256,
+                Q = new ECPoint { X = Base64UrlEncoder.DecodeBytes(item.X), Y = Base64UrlEncoder.DecodeBytes(item.Y) }
+            });
+            return verifierKey.ExportSubjectPublicKeyInfoPem();
+        });
+        var accepted = VideoGrabber.Core.Licensing.LeaseVerifier.Validate(
+            lease, keys, account.Id, device.DeviceId, f.Clock.GetUtcNow(), f.Clock.GetUtcNow());
+        Assert.Equal(account.Id, accepted.AccountId);
+        Assert.Contains("edit", accepted.Features);
     }
 
     [Fact]

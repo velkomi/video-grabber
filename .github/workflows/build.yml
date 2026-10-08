@@ -74,10 +74,18 @@ jobs:
         shell: pwsh
         run: |
           node --check .\src\VideoGrabber.Platform.Api\wwwroot\web\app.js
+          node --check .\src\VideoGrabber.Platform.Api\wwwroot\web\diagnostics.js
+          node --check .\src\VideoGrabber.Platform.Api\wwwroot\web\scene-actions.js
           Copy-Item .\src\VideoGrabber.Platform.Api\wwwroot\web\hero-three.js "$env:RUNNER_TEMP\hero-three.mjs"
           Copy-Item .\src\VideoGrabber.Platform.Api\wwwroot\web\hero-three.bundle.js "$env:RUNNER_TEMP\hero-three.bundle.mjs"
           node --check "$env:RUNNER_TEMP\hero-three.mjs"
           node --check "$env:RUNNER_TEMP\hero-three.bundle.mjs"
+      - name: Test web regressions and isolated HTTP smoke
+        shell: pwsh
+        run: |
+          node --test tests/web/*.test.cjs tests/web/*.test.mjs
+          python -m unittest discover -s tests/diagnostics -v
+          python scripts/Test-Web.py --serve --mode smoke --output artifacts/qa/ci-web-smoke
       - name: Test Windows regression suites
         shell: pwsh
         run: |

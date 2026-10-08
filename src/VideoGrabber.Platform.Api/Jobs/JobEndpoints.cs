@@ -26,10 +26,13 @@ public static class JobEndpoints
         CreateJob request, HttpContext http, JobStore jobs, DeviceStore devices,
         IAccountStore accounts,
         AdminFeatureOverrideService overrides,
+        IConfiguration configuration,
         PlatformOperationalCounters counters,
         CancellationToken cancellationToken)
     {
         if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
+        if (MediaStoragePolicy.ClientOnly(configuration) && request.Executor == "server_worker")
+            return Results.Conflict(new { code = "desktop_execution_required" });
         try
         {
             var profile = await accounts.ReadAsync(accountId, cancellationToken);
@@ -59,11 +62,13 @@ public static class JobEndpoints
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
 
-            return Results.Ok(await jobs.CreateAsync(
+            var job = await jobs.CreateAsync(
                 accountId,
                 request,
                 adminOverride is true,
-                cancellationToken));
+                cancellationToken);
+            http.Items[RequestTelemetry.JobIdKey] = job.JobId;
+            return Results.Ok(job);
         }
         catch (JobRequestConflictException)
         { return Results.Conflict(new { code = "job_request_conflict" }); }

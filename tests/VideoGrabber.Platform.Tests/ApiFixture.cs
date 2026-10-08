@@ -480,6 +480,8 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_TELEGRAM_BOT_USER_ID", TelegramApiEmulator.BotUserId.ToString());
         builder.UseSetting("VG_TELEGRAM_WORKER_ENABLED", "false");
         builder.UseSetting("VG_DELIVERY_WORKER_ENABLED", "false");
+        // Historical artifact tests deliberately exercise the opt-in legacy mode.
+        builder.UseSetting("VG_MEDIA_STORAGE_MODE", "server_artifacts");
         builder.UseSetting("VG_PAYMENT_RECONCILIATION_ENABLED", "false");
         builder.UseSetting("VG_PAYMENT_SUPPORT_TEXT", "Payment support: support@example.test");
         builder.UseSetting("VG_OPERATIONS_TOKEN", "test-operations-token");
@@ -539,6 +541,8 @@ internal sealed class PlatformApiFactory(
             services.RemoveAll<ITelegramAccountResolver>();
             services.AddSingleton<ITelegramAccountResolver>(
                 _ => TelegramAccountResolver.CreateForTesting(identityDataSource, clock));
+            services.AddHttpClient<VideoGrabber.Platform.Api.Jobs.DirectMediaResolver>()
+                .ConfigurePrimaryHttpMessageHandler(_ => new DirectProbeEmulator());
             services.AddHttpClient("TelegramBotApi")
                 .ConfigurePrimaryHttpMessageHandler(_ => telegramApi);
             services.AddHttpClient("YooKassa")

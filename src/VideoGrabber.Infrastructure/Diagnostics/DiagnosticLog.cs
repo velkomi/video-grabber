@@ -50,6 +50,10 @@ public sealed class DiagnosticLog
                 if (safe.Length > maxMessage) safe = safe[..maxMessage] + " [обрезано]";
                 var line = JsonSerializer.Serialize(new
                 {
+                    schemaVersion = 1, service = "windows", environment = "desktop",
+                    revision = "UNKNOWN", buildVersion = typeof(DiagnosticLog).Assembly.GetName().Version?.ToString() ?? "UNKNOWN",
+                    @event = Clean(stage, 80), outcome = Clean(status, 32),
+                    traceId = Clean(jobId ?? DiagnosticHub.CurrentJobId ?? "application", 80),
                     timestamp = DateTimeOffset.UtcNow,
                     level = debug ? "Debug" : status is "failed" or "error" ? "Error" : "Information",
                     stage = Clean(stage, 80), status = Clean(status, 32),

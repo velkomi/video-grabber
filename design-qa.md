@@ -1,136 +1,76 @@
-# VideoGrabber Public Site — Design QA
+# Current local visual acceptance: typography and materials
 
-## Source visual truth
+# VideoGrabber: типографика, компактные кнопки и натуральные устройства
 
-- Approved concept: `C:\Users\Oleg\Downloads\Изображение ChatGPT 30 сент. 2026 г., 09_53_49.png`
-- Source pixels: **1122 × 1402**
-- Theme/state: dark desktop landing page, signed out
-- Approved art direction: glossy dark UI, blue/violet/pink highlights, smooth volumetric 3D hero, compact "How it works", account synchronization block, four simple pricing cards.
+Локальная доработка по пяти снимкам владельца от 14:08–14:11, 2026-10-07. Существующий HTML/CSS/JS + Three.js стек сохранён. Публикация на VPS и замена Windows-приложения не выполнялись.
 
-## Rendered implementation
+## Результат
 
-- Local final implementation: `D:\CODEX\Temp\vg-obvious3d-final.png`
-- Browser: Microsoft Edge / Chromium, headless with WebGL/SwiftShader enabled
-- Requested browser window: **1122 × 1402**
-- Captured content viewport: **1098 × 1263 CSS px**
-- Implementation screenshot pixels: **1098 × 1263**
-- Local route: `http://127.0.0.1:8881/web/`
-- Scene runtime: self-hosted Three.js **0.186.1**, production tree-shaken bundle built through esbuild **0.28.2**.
+- **Типографика:** Manrope для заголовков, бренда, тарифов и подписей; Onest для основного текста, форм и второстепенных надписей. Обе семьи — variable WOFF2 с кириллицей и латиницей. Восемь subset-файлов, суммарно 145620 байт, размещены локально; браузер не обращается к внешнему шрифтовому CDN. OFL и источник/SHA-256 каждого файла сохранены.
+- **Привязка текста:** названия и подсказки шагов, тарифных переключателей и MP4/MP3/курса нанесены на плоскости, принадлежащие самим 3D-кнопкам. Текст поворачивается и двигается вместе с объектом. Дублирующие экранные подписи скрыты визуально; HTML-кнопки/ссылки, доступные имена и клавиатурный фокус сохранены.
+- **Компактные кнопки:** уменьшены размеры workflow и pricing. Вместо крупных светло-синих прямоугольников — компактные тёмные панели со скруглением, более спокойными материалами и тематическими деталями.
+- **Темы:** MP4 — кадр/киноплёнка со знаком воспроизведения; MP3 — объёмная волновая дорожка; курс — три книги с обложками и страницами. Шаги получили знаки ссылки, вариантов формата и файла. Тарифные переключатели используют существующие эмблемы тарифов.
+- **Устройства:** более тонкий корпус и рамки, 40 скруглённых клавиш, пробел, шарнир и матовые материалы. У телефона и планшета тонкая рамка вокруг экрана. Экранные изображения остаются схематичной иллюстрацией интерфейса, без пользовательских данных.
+- **Тачпад:** устранена первопричина мерцания. Ранее верхняя поверхность тачпада совпадала с поверхностью корпуса. Теперь он геометрически отделён: минимальный зазор 0.009 единицы модели; матовый материал снижает резкие блики. Тест на пересечение падал до изменения и проходит после него.
+- **Обрезание:** прежняя проверка центра подписи не проверяла края карточки. Добавлен контроль полных проекций видимой геометрии: основные объекты hero, орбиты, кнопки и устройства. Отдельный отрицательный тест ловит обрезанный край при центре, остающемся внутри canvas.
 
-## Post-preview.60 finalization implemented in code
+## Визуальные доказательства
 
-The 2026-10-01 finalization keeps the same public architecture and adds the following without replacing the earlier browser evidence below:
+Финальные снимки и журнал находятся в [type-material-final](type-material-final/results.json): desktop 1440×900, responsive 390/700/1050 px. Проверены читаемость и размер кнопок, целые края, отсутствие наложения подписи сайта на планшет, четыре строки основного заголовка, сохранение взаимодействий.
 
-- adaptive `high / balanced / economy` Three.js quality tiers with sustained-frame-time hysteresis instead of a fixed DPR-only policy;
-- canvas QA markers for current quality tier, effective DPR and smoothed frame time;
-- a deterministic self-hosted procedural PMREM environment plus soft nebula sprites so MeshPhysicalMaterial surfaces receive richer reflections/depth without a CDN;
-- economy mode can remove nonessential stars, particles and nebula while retaining the semantic planet/cards/story and every normal HTML action;
-- `?perfDebug=1` exposes browser-local 3D quality, DPR, frame time, LCP, CLS and INP diagnostics; the diagnostics code sends no performance telemetry;
-- display typography prefers local variable system faces (`Segoe UI Variable Display/Text`, `SF Pro Display/Text`) with robust fallbacks instead of adding a font CDN;
-- no approved `.glb/.gltf/.hdr/.exr` asset exists in the repository, so this pass does not invent a Blender model. The public contract remains ready for a later approved GLB art replacement.
+- [Первый экран](type-material-final/hero.png)
+- [Шаги на 390 px](type-material-final/390-workflow.png)
+- [Тарифные переключатели на 700 px](type-material-final/700-pricing.png)
+- [Устройства на 390 px](type-material-final/390-sync.png)
+- [Windows на 700 px](type-material-final/700-windows.png)
+- [Сцена ноутбука в движении](laptop-motion-check.gif), [данные 20 кадров](laptop-motion-evidence.json)
 
-These additions are code/CI scope. They do **not** convert the earlier headless/SwiftShader evidence into a physical iPhone, Android, Retina-GPU or production field-Web-Vitals pass; those remain separate release evidence.
+GIF — выборка реального локального renderer при перемещении указателя. Это не гарантия поведения всех физических GPU и не измерение производительности телефона. Обрезанных моделей в этой выборке: 0/20.
 
-## Primary interactions tested
+## Проверки
 
-- Signed-out state is visible; authenticated dashboard is hidden.
-- All four pricing cards open their own dialog.
-- Pricing dialog title and price match the clicked plan.
-- Paid-plan action while signed out routes the user to sign-in context.
-- Native e-mail validation blocks malformed e-mail before network activity.
-- Application-side e-mail validation returns human-readable copy.
-- Hero parallax reacts to pointer movement.
-- Realtime Three.js geometry initializes successfully on desktop; renderer reports `data-engine="three.js r186"`, canvas is populated and browser console has **0 SEVERE errors**.
-- Geometry is real, not a flat SVG/shader illusion: PBR sphere, physically lit torus orbits and extruded rounded feature cards are rendered by Three.js.
-- Obvious-depth pass: card Z positions are intentionally staggered, focused cards move ~0.62 world units toward the camera, camera parallax is stronger, and scroll adds a subtle cinematic camera move.
-- Planet/orbit motion is deliberately readable: planet ~0.14 rad/s; three orbits rotate at independent stronger rates; back-rim light, rim shell and deterministic depth stars reinforce foreground/background separation.
-- The approved 3D raster remains the instant fallback while Three.js and textures load; with reduced-motion the Three.js runtime is not loaded, while normal narrow/mobile viewports keep animation at a reduced ~30 FPS and lower DPR.
-- Hero feature interaction is driven by real Three.js raycasting over the six card meshes (URL, Video, MP3, Course, Windows, Telegram). Invisible HTML anchors remain only as keyboard/touch activation fallbacks; no visible rectangular hotspot overlay remains.
-- WebGL animation pauses automatically when the hero leaves the viewport or the page is hidden.
-- Pointer raycast changes the actual 3D card material/position/accent; keyboard focus on the invisible fallback links drives the same 3D state without drawing a fake focus rectangle around the scene.
-- Scroll reveal remains progressive; the old rectangular pointer-sheen layer was removed from sections/cards because its box edges were visible on the approved dark background.
-- Reduced-motion was verified in Edge: motion classes stay disabled and the content remains visible.
-- Single-stage scroll storytelling was browser-verified through `hero → workflow → sync → pricing → windows`; the stage fades out before the footer and sends a visibility event so rendering can stop.
-- Geometric raycast browser test found all six hero cards inside canvas bounds: URL, Video, MP3, Course, Windows and Telegram.
-- `?visualTest=1` fixes the story at the hero state and yields a stable GPU visual diff (mean delta well below the acceptance threshold) without relying on byte-identical WebGL screenshots.
-- Main anchors and destinations exist: How it works, Download, Pricing, Account, Windows installer, Portable ZIP, Telegram.
-- Mobile width smoke test passed without horizontal document overflow; a temporary overflow caused by animated background glows was detected and fixed by clipping the root x-axis.
-- Browser console check: **0 SEVERE errors**.
-- Quantified obvious-3D check (latest release gate): temporal motion changed ~50% of canvas pixels, pointer parallax ~80%, feature-card focus ~78%; mobile animation remained active and overflow-free.
+| Проверка | Результат |
+|---|---:|
+| Smoke + E2E, включая реальные 3D-клики, окна и responsive сцены | 33/33 |
+| Node: геометрия, pointer, lifecycle, privacy, bounds | 25/25 |
+| Python: сводки и достоверность evidence | 7/7 |
+| Scoped .NET UX/telemetry | 9/9 |
+| API Release build | 0 warnings, 0 errors |
+| `git diff --check` | passed |
+| Read-only review | найденные P2 устранены |
 
-## Full-view comparison evidence
+Проверка шрифтов использует реальные загруженные FontFace, а не только CSS-название семейства. Перед созданием canvas-текстур ожидается Cyrillic/Latin обеих семей; пустой результат загрузки обозначается как fallback. Проверка границ включает основные hero-модели, а не только кнопки.
 
-The approved concept and browser-rendered implementation were inspected together in the same QA pass.
+Промежуточный E2E обнаружил край ноутбука на 390 px; масштаб скорректирован. Старый .NET assert требовал прежний Segoe UI — он заменён проверкой выбранных владельцем локальных семейств и stylesheet. Проверки кликов/авторизации/доступности не ослаблялись. Неудачные прогоны сохранены отдельно.
 
-### Earlier P1/P2 findings and fixes
+## Основные файлы
 
-1. **[P1] Residual source-copy artifact inside the hero crop**
-   - Earlier implementation showed a faint fragment of the source headline behind the 3D planet.
-   - Fix: recropped the approved hero artwork farther right and regenerated `videograbber-hero.webp` with a feathered edge.
-   - Post-fix evidence: the final local screenshot no longer shows the stray source headline fragment.
+```text
+D:/CODEX/Worktrees/videograbber-unified-20260924/
+  src/VideoGrabber.Platform.Api/wwwroot/web/index.html
+  src/VideoGrabber.Platform.Api/wwwroot/web/styles.css
+  src/VideoGrabber.Platform.Api/wwwroot/web/hero-three.js
+  src/VideoGrabber.Platform.Api/wwwroot/web/hero-three.bundle.js
+  src/VideoGrabber.Platform.Api/wwwroot/assets/fonts/          (новые WOFF2/OFL/CSS/sources)
+  scripts/Test-Web.py
+  tests/web/studio-geometry.test.mjs
+  tests/web/widget-bounds.test.mjs                           (новый)
+  tests/VideoGrabber.Platform.Tests/WebPlanUxTests.cs
+  THIRD_PARTY_NOTICES.md
+  design-qa.md
+```
 
-2. **[P1] Sync illustration contained stale mockup UI**
-   - A generated synchronization raster showed embedded Google/e-mail controls that looked like real interface buttons.
-   - Fix: removed the raster from the production layout entirely. The real Google/e-mail controls remain HTML, while the shared Three.js story scene supplies the sync Web/Windows/Telegram visual state.
-   - Post-fix evidence: no `/assets/videograbber-sync.webp` element is present in the public page.
+Bundle: 633794 байта, SHA-256 `0b905311ae6cab50f7df118e1c55cbe6d3a9c258a174fde1f02dfb95d60e7ac5`. Шрифтовые источники и лицензии: `wwwroot/assets/fonts/sources.json`, `manrope-OFL.txt`, `onest-OFL.txt`.
 
-3. **[P2] Vertical rhythm was much looser than the approved concept**
-   - Earlier implementation pushed pricing far below the first long desktop view.
-   - Fix: reduced hero height/padding, section padding, step icon sizing, synchronization spacing, pricing-card height and feature-list spacing.
-   - Post-fix evidence: the final layout is materially denser and follows the approved composition more closely while retaining responsive web spacing.
+## Как посмотреть и повторить
 
-## Focused region comparison
+Откройте http://127.0.0.1:8892/web/ и обновите страницу. Для проверки компактных шагов — раздел «Как это работает», для мерцания — раздел Windows и движение курсора рядом с моделью.
 
-Focused comparison was necessary for:
+```powershell
+# Из корня репозитория, без установки новых зависимостей:
+node --test tests/web/*.test.cjs tests/web/*.test.mjs
+python -m unittest discover -s tests/diagnostics -v
+python scripts/Test-Web.py --serve --mode all --edge-driver "C:/Users/Oleg/.cache/selenium/msedgedriver/win64/154.0.4258.48/msedgedriver.exe"
+```
 
-- **Hero imagery:** uses the approved raster as fallback/visual continuity, then crossfades to a true standalone Three.js scene with physical materials and real geometry.
-- **Synchronization:** no screenshot/mockup is used. The single Three.js renderer transitions into a dedicated Web/Windows/Telegram synchronization state beside the real HTML sign-in controls.
-- **Pricing:** retains the approved four-card hierarchy, with Unlimited Video marked `Популярный` and Full Course marked `Для курсов`.
-- **Account block:** rewritten to “Вход и синхронизация” and no longer exposes Supabase/Magic Link implementation wording or raw JavaScript errors.
-
-## Required fidelity surfaces
-
-### Fonts and typography
-
-- Large, heavy display hierarchy follows the reference.
-- Main headline uses the same compact, high-contrast visual hierarchy.
-- Small descriptive text remains readable and less dense than the original generated image.
-- Residual difference: exact font family from the generated source is not identifiable; system/Segoe-style fallback is used. This is **P3**.
-
-### Spacing and layout rhythm
-
-- Header, hero, three-step flow, synchronization block and four-column pricing hierarchy match the reference structure.
-- Density was tightened in the final pass.
-- Residual difference: the responsive production page remains somewhat taller than the single generated reference sheet. This is intentional for readability and responsive behavior and is classified **P3**.
-
-### Colors and visual tokens
-
-- Dark navy base, electric blue/violet accents, pink/gold gradient highlights and bright CTA treatment match the approved direction.
-- Featured Unlimited card and course badge preserve the intended hierarchy.
-
-### Image quality and asset fidelity
-
-- The approved hero WebP remains only as an instant fallback/visual continuity asset. Sync, workflow, pricing and Windows visuals are rendered as semantic states of the same Three.js scene rather than separate screenshots.
-- Hero uses self-hosted procedural planet diffuse/bump/emissive maps, MeshPhysicalMaterial, three actual torus meshes, extruded rounded cards and a central VG badge.
-- Three.js is non-blocking: it is dynamically imported after the approved hero image and idle scheduling; unsupported browsers retain the approved image without losing content or controls.
-- Runtime bundle is tree-shaken and source-hash protected so stale 3D bundles are caught by regression tests.
-- No visible source-text contamination remains after final recrop.
-
-### Copy and product content
-
-- “Тарифы без скрытых кредитов” removed; heading is simply “Тарифы”.
-- “Отправить на мой компьютер” removed.
-- Sign-in copy is human-facing and no longer mentions Supabase/Magic Link.
-- Raw `Cannot set properties of null` / `TypeError` is not exposed.
-- Pricing is organized by scenario and uses positive/negative inclusion markers.
-
-## Remaining P3 polish
-
-- Exact source display font could be matched more closely in a later branding pass.
-- Current hero objects are high-quality procedural Three.js geometry. A later art pass can replace selected cards/planet details with bespoke Blender-authored GLB meshes without changing the public UI contract.
-- The post-preview.60 pass adds a procedural self-hosted environment and nebula layer. A bespoke approved HDR/EXR or Blender-authored GLB can still replace selected art later without changing layout or UX.
-- Final page is intentionally taller than the generated concept sheet on some desktop viewports to preserve readable copy and responsive behavior.
-
-## Final result
-
-**passed**
+Изменения остаются в ветке `codex/videograbber-studio-20261007`, без commit/push/публикации. Реальная авторизация, оплата, Windows handoff и физические мобильные GPU не проверялись в этом визуальном этапе. Они не объявляются исправленными результатом UI-тестов.

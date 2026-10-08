@@ -15,6 +15,14 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
     private readonly List<JsonElement> _starTransactions = [];
     public IReadOnlyCollection<TelegramApiRequest> Requests => _requests.ToArray();
     public bool LoseNextDocumentAck { get; set; }
+    public bool LoseNextVideoAck { get; set; }
+    public JsonElement? DirectVideoMetadata { get; set; }
+    public long? DirectVideoDate { get; set; }
+    public bool FailCaptionUpdate { get; set; }
+    public Action? CaptionEditStarted { get; set; }
+    public TaskCompletionSource<bool>? DirectVideoEntered { get; set; }
+    public TaskCompletionSource<bool>? DirectVideoRelease { get; set; }
+    public bool CancelDirectVideoAck { get; set; }
     public bool LoseNextRefundAck { get; set; }
 
     public void SetStarTransactions(params object[] transactions)
@@ -67,6 +75,23 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
             JsonElement[] items;
             lock (_starTransactions) items = _starTransactions.Select(x => x.Clone()).ToArray();
             return Json(new { ok = true, result = new { transactions = items } });
+        }
+        if (path.EndsWith("/sendVideo", StringComparison.Ordinal))
+        {
+            DirectVideoEntered?.TrySetResult(true);
+            if (DirectVideoRelease is not null) await DirectVideoRelease.Task.WaitAsync(cancellationToken);
+            if (CancelDirectVideoAck) throw new OperationCanceledException(cancellationToken);
+            if (LoseNextVideoAck) { LoseNextVideoAck = false; throw new HttpRequestException("synthetic lost direct ACK"); }
+            var result = new Dictionary<string, object?> { ["message_id"] = 88L };
+            if (DirectVideoMetadata is { } metadata) result["video"] = metadata;
+            if (DirectVideoDate is { } date) result["date"] = date;
+            return Json(new { ok = true, result });
+        }
+        if (path.EndsWith("/editMessageCaption", StringComparison.Ordinal))
+        {
+            CaptionEditStarted?.Invoke();
+            if (FailCaptionUpdate) throw new HttpRequestException("synthetic caption update failure with private details");
+            return Json(new { ok = true, result = new { message_id = 88L } });
         }
         if (path.EndsWith("/sendDocument", StringComparison.Ordinal))
         {

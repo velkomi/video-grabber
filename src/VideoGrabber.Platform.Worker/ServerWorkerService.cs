@@ -1,4 +1,7 @@
+using System.Diagnostics;
+using System.Text.Json;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Core.Operations;
 
 namespace VideoGrabber.Platform.Worker;
 
@@ -39,6 +42,15 @@ public sealed class ServerWorkerService(
 
     private async Task RunLeaseAsync(AttemptLease lease, CancellationToken stoppingToken)
     {
+        var start = Stopwatch.GetTimestamp();
+        var trace = lease.JobId.ToString("N");
+        using var activity = PlatformTelemetry.Activities.StartActivity("worker.execute");
+        activity?.SetTag("vg.job_id", trace);
+        void Log(string name, string outcome, Exception? error = null) => logger.LogInformation(
+            "VG_TELEMETRY {DiagnosticEvent}", JsonSerializer.Serialize(PlatformTelemetry.Create(
+                "worker", name, outcome, trace, Stopwatch.GetElapsedTime(start).TotalMilliseconds,
+                error:error, jobId:lease.JobId, attemptId:lease.AttemptId)));
+        Log("job.execute", "started");
         using var operation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         var heartbeat = HeartbeatLoopAsync(lease, operation, stoppingToken);
         AttemptCompletion completion;
@@ -55,19 +67,23 @@ public sealed class ServerWorkerService(
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
+            Log("job.execute", "cancelled");
             operation.Cancel();
             throw;
         }
         catch (UnauthorizedAccessException ex)
         {
+            Log("job.policy", "failed", ex);
             completion = Failed(lease, "review_required", "policy-" + StableReason(ex.Message));
         }
         catch (InvalidDataException ex)
         {
+            Log("job.verification", "failed", ex);
             completion = Failed(lease, "review_required", "verify-" + StableReason(ex.Message));
         }
         catch (Exception ex)
         {
+            Log("job.execute.error", "failed", ex);
             logger.LogWarning("Worker execution failed: {ExceptionType}", ex.GetType().Name);
             completion = Failed(lease, "failed", "worker-failure");
         }
@@ -80,10 +96,16 @@ public sealed class ServerWorkerService(
 
         try
         {
+            Log("job.execute", completion.Outcome);
+            var tags = new TagList { { "outcome", completion.Outcome } };
+            PlatformTelemetry.Jobs.Add(1, tags);
+            PlatformTelemetry.JobDuration.Record(Stopwatch.GetElapsedTime(start).TotalMilliseconds, tags);
             await api.CompleteAsync(completion, stoppingToken).ConfigureAwait(false);
+            Log("job.report", "succeeded");
         }
         catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
         {
+            Log("job.report", "failed", ex);
             logger.LogWarning("Worker completion report failed: {ExceptionType}", ex.GetType().Name);
         }
     }

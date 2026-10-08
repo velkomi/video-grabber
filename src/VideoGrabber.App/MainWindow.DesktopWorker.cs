@@ -27,8 +27,8 @@ public sealed partial class MainWindow
         var panel = Vertical(8);
         panel.Children.Add(SectionHeading("Задания с сайта и Telegram на этом компьютере"));
         panel.Children.Add(MutedText(
-            "Включено по умолчанию после входа в аккаунт: пока VideoGrabber открыт, этот компьютер может принимать явно отправленные ему задания. " +
-            "Обычное скачивание через сайт работает и без приложения. Здесь можно отключить только режим «отправить на этот Windows-компьютер»."));
+            "Пока приложение открыто, оно принимает задания, отправленные именно на этот компьютер. " +
+            "Приём можно отключить. Прямые загрузки на сайте продолжат работать."));
         _desktopWorkerToggle = new ToggleSwitch
         {
             Header = "Принимать задания, отправленные на этот компьютер",
@@ -42,7 +42,7 @@ public sealed partial class MainWindow
         panel.Children.Add(_desktopWorkerToggle);
         _desktopWorkerStatus = MutedText(
             _desktopWorkerToggle.IsOn
-                ? "Приём заданий включён. После входа компьютер отображается online."
+                ? "Приём заданий включён. После входа этот компьютер доступен для отправки заданий."
                 : "Приём заданий на этот компьютер отключён.");
         panel.Children.Add(_desktopWorkerStatus);
         return Card(panel);
@@ -70,7 +70,7 @@ public sealed partial class MainWindow
                 try { if (File.Exists(DesktopWorkerEnrollmentPath)) File.Delete(DesktopWorkerEnrollmentPath); }
                 catch (IOException) { }
                 StopDesktopWorkerLoop();
-                SetDesktopWorkerStatus("Приём заданий отключён. Обычное скачивание через сайт продолжит работать без приложения.");
+                SetDesktopWorkerStatus("Приём заданий отключён. Прямые загрузки на сайте продолжат работать.");
             }
         }
         finally { _desktopWorkerToggleBusy = false; }
@@ -131,7 +131,7 @@ public sealed partial class MainWindow
                         unauthorizedRefreshAttempted = true;
                         try
                         {
-                            SetDesktopWorkerStatus("Сессия истекла. Обновляю вход…");
+                            SetDesktopWorkerStatus("Обновляю вход…");
                             await RefreshManagedSensitiveSessionAsync();
                             continue;
                         }
@@ -141,14 +141,14 @@ public sealed partial class MainWindow
                         }
                     }
                     SetDesktopWorkerStatus(
-                        "Не удалось обновить сессию или устройство отозвано. Войдите в аккаунт заново.");
+                        "Нужно войти снова или подключить этот компьютер в аккаунте.");
                     StopDesktopWorkerLoop();
                     return;
                 }
                 catch (HttpRequestException)
                 {
                     SetDesktopWorkerStatus(
-                        "Сервер недоступен. Задание остаётся waiting_for_worker.");
+                        "Не удалось подключиться. Задание будет ждать этот компьютер.");
                     await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
                     continue;
                 }
@@ -165,9 +165,9 @@ public sealed partial class MainWindow
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SetDesktopWorkerStatus("Desktop worker остановлен: " + ex.Message);
+            SetDesktopWorkerStatus("Приём заданий остановился. Проверьте интернет и перезапустите приложение.");
         }
         finally
         {
@@ -204,8 +204,7 @@ public sealed partial class MainWindow
         CancellationToken cancellationToken)
     {
         SetDesktopWorkerStatus(
-            $"Получено задание: {lease.Work.Kind}, качество {lease.Work.Quality}. " +
-            "Запускаю локальную обработку без передачи файла на сервер.");
+            "Получено задание для этого компьютера. Начинаю обработку; файл останется здесь.");
 
         using var leaseCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeat = DesktopHeartbeatLoopAsync(client, lease, leaseCts);
@@ -234,8 +233,7 @@ public sealed partial class MainWindow
         }
         catch (Exception ex)
         {
-            var safe = VideoGrabber.Core.Security.SensitiveDataRedactor.Redact(ex.Message);
-            SetDesktopWorkerStatus("Локальное задание завершилось с ошибкой: " + safe);
+            SetDesktopWorkerStatus("Не удалось выполнить задание. Проверьте доступ к источнику и повторите его с сайта.");
             try
             {
                 await client.CompleteLocalAsync(
@@ -273,7 +271,7 @@ public sealed partial class MainWindow
             : ResolveInitialDownloadFolder();
 
         SetDesktopWorkerStatus(
-            $"Скачиваю {lease.Work.Kind} в локальную папку VideoGrabber…");
+            lease.Work.Kind == "mp3" ? "Сохраняю MP3 в выбранную папку…" : "Скачиваю видео в выбранную папку…");
 
         var progress = new Progress<DownloadProgress>(value =>
         {
@@ -314,8 +312,8 @@ public sealed partial class MainWindow
 
         SetDesktopWorkerStatus(
             completed.State == "completed"
-                ? "Готово. Файл сохранён локально; на сервер медиа не загружалось."
-                : "Сервер вернул состояние: " + completed.State);
+                ? "Готово. Файл сохранён на этом компьютере."
+                : "Файл готов, но завершение задания пока не подтверждено. Обновите историю на сайте.");
     }
 
     private async Task HandleAutomaticDesktopCourseAsync(
@@ -352,7 +350,7 @@ public sealed partial class MainWindow
             _outputFolderBox.Text = outputDirectory;
 
         SetDesktopWorkerStatus(
-            "Открываю курс в локальном браузере VideoGrabber и запускаю сохранение…");
+            "Открываю курс во встроенном браузере и начинаю скачивание…");
         if (!await NavigateCoursePageAsync(source.Source, cancellationToken))
             throw new InvalidOperationException("Не удалось открыть страницу курса.");
 
@@ -385,8 +383,8 @@ public sealed partial class MainWindow
 
         SetDesktopWorkerStatus(
             completed.State == "completed"
-                ? $"Курс сохранён локально полностью: {completedCount}/{plan.Lessons.Length}."
-                : "Сервер вернул состояние: " + completed.State);
+                ? $"Курс сохранён на этом компьютере. Уроков: {completedCount} из {plan.Lessons.Length}."
+                : "Файл готов, но завершение задания пока не подтверждено. Обновите историю на сайте.");
     }
 
     private async Task HandleLegacyDesktopArtifactAsync(
@@ -395,7 +393,7 @@ public sealed partial class MainWindow
         CancellationToken cancellationToken)
     {
         SetDesktopWorkerStatus(
-            $"Операция {lease.Work.Kind} пока требует выбора готового локального результата.");
+            "Для этого задания выберите готовый файл на компьютере.");
 
         var picker = new FileOpenPicker();
         foreach (var extension in new[] { ".mp4", ".mkv", ".webm", ".mp3", ".m4a", ".wav", ".txt", ".srt" })
@@ -405,18 +403,17 @@ public sealed partial class MainWindow
         if (file is null)
         {
             SetDesktopWorkerStatus(
-                "Файл не выбран. Lease будет освобождён сервером после истечения.");
+                "Файл не выбран. Задание можно будет повторить позже.");
             return;
         }
 
-        var artifact = await client.UploadAsync(
-            lease, file.Path, cancellationToken);
-        var completed = await client.CompleteAsync(
-            lease, artifact, cancellationToken);
+        var evidence = await LocalFileEvidenceAsync(file.Path, cancellationToken);
+        var completed = await client.CompleteLocalAsync(
+            lease, "success", evidence, cancellationToken);
         SetDesktopWorkerStatus(
             completed.State == "completed"
-                ? "Задание завершено и сервер подтвердил артефакт."
-                : "Сервер вернул состояние: " + completed.State);
+                ? "Задание завершено. Файл остался на этом компьютере."
+                : "Файл готов, но завершение задания пока не подтверждено. Обновите историю на сайте.");
     }
 
     private static async Task<string> LocalFileEvidenceAsync(

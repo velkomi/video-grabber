@@ -23,31 +23,33 @@ public sealed partial class MainWindow
     private ScrollViewer BuildInformationPage()
     {
         var body = PageStack();
-        body.Children.Add(PageHeading("ⓘ Информация", "О программе, поддерживаемых источниках и правильном скачивании."));
+        body.Children.Add(PageHeading("О VideoGrabber", "Ваше видео — в ваших руках."));
 
         var about = Vertical(8);
         about.Children.Add(SectionHeading("О программе"));
         about.Children.Add(new TextBlock { Text = "VideoGrabber " + CurrentVersion(), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        about.Children.Add(MutedText("Создано Валерием · Telegram: @Velkoshkin"));
-        about.Children.Add(MutedText("Видео обрабатывается локально. Пароли приложение не читает и не сохраняет. DRM не обходится."));
+        about.Children.Add(MutedText("Создано Валерием"));
+        about.Children.Add(StudioLink("Сайт VideoGrabber ↗", "https://videograbber.srv1902378.hstgr.cloud/web/"));
+        about.Children.Add(StudioLink("Бот @VideoGra_bot ↗", "https://t.me/VideoGra_bot"));
+        about.Children.Add(StudioLink("Разработчик @Velkoshkin ↗", "https://t.me/Velkoshkin"));
+        about.Children.Add(MutedText("Файлы сохраняются и обрабатываются на вашем компьютере. Пароли приложение не читает. Защищённое видео не скачивается."));
         body.Children.Add(Card(about));
 
         var capabilities = Vertical(8);
         capabilities.Children.Add(SectionHeading("Что умеет VideoGrabber"));
-        capabilities.Children.Add(MutedText("• Скачивает отдельные видео с поддерживаемых сайтов и страниц, к которым у пользователя есть доступ."));
-        capabilities.Children.Add(MutedText("• Сохраняет целые курсы и уроки с понятной структурой папок, видео, материалами и вложениями."));
-        capabilities.Children.Add(MutedText("• Позволяет выбирать качество видео, ставить загрузки на паузу, продолжать их и восстанавливать прерванную работу."));
-        capabilities.Children.Add(MutedText("• Создаёт MP3, обрезает и склеивает видео, а также расшифровывает речь в текст прямо на компьютере."));
-        capabilities.Children.Add(MutedText("• Проверяет результат загрузки и помогает повторить только то, что не удалось получить с первого раза."));
-        body.Children.Add(Card(capabilities));
+        capabilities.Children.Add(MutedText("• Видео с поддерживаемых сайтов: качество на выбор, пауза и продолжение загрузки."));
+        capabilities.Children.Add(MutedText("• Курсы GetCourse: уроки, видео и вложения в отдельных папках."));
+        capabilities.Children.Add(MutedText("• MP3, обрезка и склейка видео, расшифровка речи в текст."));
+        capabilities.Children.Add(MutedText("• Проверка готовых файлов и повтор незавершённых загрузок."));
+        body.Children.Add(Details("Видео, MP3 и курсы", capabilities));
 
         var surfaces = Vertical(8);
-        surfaces.Children.Add(SectionHeading("Сайт, Windows и дополнительные возможности"));
-        surfaces.Children.Add(MutedText("• Обычное публичное видео можно скачать прямо на сайте VideoGrabber: Windows-приложение открывать не нужно."));
-        surfaces.Children.Add(MutedText("• Windows VideoGrabber нужен для полного курса GetCourse, закрытых страниц с входом, локального редактора и случаев, когда вы хотите сохранять результат сразу в выбранную папку компьютера."));
-        surfaces.Children.Add(MutedText("• В основном окне сначала показан простой загрузчик. MP3, курсы, отдельные видео со страниц и транскрибация находятся ниже в блоке «Дополнительные возможности» — его можно развернуть и снова свернуть."));
-        surfaces.Children.Add(MutedText("• После входа приложение по умолчанию принимает задания, которые вы явно отправили именно на этот компьютер. Это можно отключить в разделе «Аккаунт». Обычное скачивание через сайт от этого не зависит."));
-        body.Children.Add(Card(surfaces));
+        surfaces.Children.Add(SectionHeading("Сайт, Windows и Telegram"));
+        surfaces.Children.Add(MutedText("• Сайт сохраняет готовые публичные MP4/WebM по прямой ссылке. Telegram принимает небольшие готовые MP4."));
+        surfaces.Children.Add(MutedText("• Для других ссылок, MP3, закрытых уроков и целых курсов используйте Windows-приложение."));
+        surfaces.Children.Add(MutedText("• MP3, курсы и видео со страниц находятся в «Дополнительных возможностях»."));
+        surfaces.Children.Add(MutedText("• Открытое приложение принимает задания, отправленные именно на этот компьютер. Отключить приём можно в «Аккаунте»."));
+        body.Children.Add(Details("Где пользоваться VideoGrabber", surfaces));
 
 #if VIDEOGRABBER_MANAGED
         var plans = Vertical(10);
@@ -85,44 +87,49 @@ public sealed partial class MainWindow
             Foreground = TextBrush
         });
         plans.Children.Add(MutedText(
-            "Максимальный тариф: отдельные видео без лимита, MP3, редактор, транскрибация и скачивание полного курса GetCourse с локальной структурой и автоматическим TXT-транскриптом рядом с каждым видео."));
+            "Видео без лимита, MP3, редактор, расшифровка речи и целые курсы GetCourse. Текст уроков можно сохранять рядом с видео."));
         plans.Children.Add(MutedText(
-            "Если функция не входит в текущий тариф, кнопка остаётся нажимаемой: VideoGrabber покажет объяснение и предложит подходящий тариф. Никакое списание не происходит без перехода на сайт и подтверждения оплаты."));
+            "Если функция не входит в тариф, приложение предложит подходящий. Оплата требует вашего подтверждения на сайте."));
         var plansButton = PrimaryButton("Тарифы и оплата на сайте");
         plansButton.Click += (_, _) => OpenPricingPage();
         plans.Children.Add(plansButton);
-        body.Children.Add(Card(plans));
+        body.Children.Add(Details("Тарифы и возможности", plans));
 #endif
 
         var controlsHelp = Vertical(8);
-        controlsHelp.Children.Add(SectionHeading("Почему кнопка нажимается, но действие не начинается"));
+        controlsHelp.Children.Add(SectionHeading("Пауза и отмена"));
         controlsHelp.Children.Add(MutedText(
-            "• «Пауза» нажимается всегда. Если операции ещё нет, появится подсказка, когда её использовать. Во время работы она временно приостанавливает процесс и превращается в «Продолжить»."));
+            "• «Пауза» приостанавливает работу. Нажмите «Продолжить», чтобы возобновить её."));
         controlsHelp.Children.Add(MutedText(
-            "• «Отменить всё» при отсутствии активной работы показывает пояснение. Во время операции она останавливает текущую работу, не удаляя уже готовые локальные файлы."));
+            "• «Отменить всё» останавливает работу. Готовые файлы остаются на компьютере."));
         controlsHelp.Children.Add(MutedText(
-            "• Тарифные функции не выглядят сломанными или навсегда выключенными: при нехватке доступа открывается окно с причиной, возможностями тарифов и переходом к выбору тарифа."));
+            "• Если тариф не подходит, приложение объяснит ограничение и предложит другой."));
         controlsHelp.Children.Add(MutedText(
-            "• Если для действия сначала нужен файл, найденное видео, активная очередь или открытый курс, VideoGrabber объясняет этот шаг вместо молчаливого отказа."));
-        body.Children.Add(Card(controlsHelp));
+            "• Если нужен файл или открытый урок, появится подсказка с нужным шагом."));
+        body.Children.Add(Details("Кнопки и управление", controlsHelp));
 
         var getCourse = Vertical(8);
         getCourse.Children.Add(SectionHeading("Как скачать с GetCourse"));
         getCourse.Children.Add(MutedText("1. Вставьте ссылку на урок и нажмите «Открыть во встроенном браузере»."));
-        getCourse.Children.Add(MutedText("2. Если сайт просит вход, введите логин и пароль прямо на странице GetCourse. VideoGrabber пароль не получает."));
+        getCourse.Children.Add(MutedText("2. Войдите на странице GetCourse, если урок закрытый. VideoGrabber пароль не получает."));
         getCourse.Children.Add(MutedText("3. Дождитесь списка «Видео 01, Видео 02…». Запускать каждое видео вручную не требуется."));
-        getCourse.Children.Add(MutedText("4. Для отдельного видео выберите нужное качество. Для всего курса есть отдельный предел: до 360p, до 480p, до 720p или лучшее доступное; если точной высоты нет, берётся ближайшая доступная ниже предела."));
-        getCourse.Children.Add(MutedText("5. Нажмите «Скачать выбранное видео» или «Скачать все найденные». Перед загрузкой VideoGrabber автоматически проверит, что видео доступно и готово к сохранению."));
-        getCourse.Children.Add(MutedText("6. «Скачать весь курс» проходит модули и уроки, сохраняет документы, изображения, вложения и видео, перед запуском сверяет уже скачанное, а в конце выполняет полную проверку и автоматически повторяет пропуски. Кнопка «Пауза» не отменяет работу и превращается в «Продолжить»."));
+        getCourse.Children.Add(MutedText("4. Выберите качество видео. Для всего курса задайте предел: 360p, 480p, 720p или лучшее доступное. Если нужного качества нет, берётся ближайшее ниже предела."));
+        getCourse.Children.Add(MutedText("5. Нажмите «Скачать выбранное видео» или «Скачать все найденные»."));
+        getCourse.Children.Add(MutedText("6. «Скачать весь курс» сохраняет уроки, вложения и видео по папкам. Готовые файлы проверяются, пропуски повторяются. Работу можно поставить на паузу и продолжить."));
         getCourse.Children.Add(MutedText("Если видео не определяется сразу, запустите его на странице на несколько секунд — VideoGrabber попробует найти его повторно."));
-        body.Children.Add(Card(getCourse));
+        body.Children.Add(Details("Как скачать курс", getCourse));
 
         var limits = Vertical(8);
-        limits.Children.Add(SectionHeading("Авторизация и ограничения"));
-        limits.Children.Add(MutedText("Для закрытых уроков используйте встроенный InPrivate-браузер. Cookies передаются только для выбранной загрузки и затем сбрасываются."));
-        limits.Children.Add(MutedText("DRM, ключи шифрования и обход ограничений доступа не поддерживаются. Если сайт запрещает сохранение или выдаёт зашифрованный поток, VideoGrabber его блокирует."));
-        body.Children.Add(Card(limits));
+        limits.Children.Add(SectionHeading("Вход и ограничения"));
+        limits.Children.Add(MutedText("Для закрытых уроков войдите во встроенном браузере. Данные входа используются только для выбранной загрузки и затем сбрасываются."));
+        limits.Children.Add(MutedText("Скачивайте материалы, к которым у вас есть доступ. Видео с защитой от копирования не поддерживается."));
+        body.Children.Add(Details("Ограничения", limits));
 
+        return PageScrollViewer(body);
+    }
+
+    private FrameworkElement BuildAppearanceCard()
+    {
         var appearance = Vertical(8);
         appearance.Children.Add(SectionHeading("Оформление"));
         _themeBox = new ComboBox { Header = "Тема приложения", HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -131,14 +138,13 @@ public sealed partial class MainWindow
         _themeBox.Items.Add(ComboItem("Тёмная", "dark"));
         _themeBox.SelectionChanged += (_, _) => ThemeSelectionChanged();
         appearance.Children.Add(_themeBox);
-        appearance.Children.Add(MutedText("Тема встроенной страницы сайта определяется самим сайтом; VideoGrabber не вмешивается в стили чужого плеера."));
-        body.Children.Add(Card(appearance));
-        return new ScrollViewer { Content = body };
+        appearance.Children.Add(MutedText("Оформление открытого сайта остаётся таким, каким его сделал сам сайт."));
+        return Card(appearance);
     }
 
     private void InitializeTheme()
     {
-        var mode = AppThemeSettings.Load(ThemeSettingsPath);
+        var mode = File.Exists(ThemeSettingsPath) ? AppThemeSettings.Load(ThemeSettingsPath) : AppThemeMode.Dark;
         _themeApplying = true;
         _themeBox.SelectedIndex = mode switch { AppThemeMode.Light => 1, AppThemeMode.Dark => 2, _ => 0 };
         _themeApplying = false;
@@ -169,19 +175,21 @@ public sealed partial class MainWindow
 
     private static void ApplyDarkPalette()
     {
-        RootBackgroundBrush.Color = ColorHelper.FromArgb(255, 17, 24, 39);
-        CardBrush.Color = ColorHelper.FromArgb(255, 31, 41, 55);
-        CardBorderBrush.Color = ColorHelper.FromArgb(255, 55, 65, 81);
-        TextBrush.Color = ColorHelper.FromArgb(255, 243, 244, 246);
-        MutedBrush.Color = ColorHelper.FromArgb(255, 203, 213, 225);
-        ProgressTrackBrush.Color = ColorHelper.FromArgb(255, 55, 65, 81);
-        AuthorBackgroundBrush.Color = ColorHelper.FromArgb(255, 30, 58, 95);
+        StudioLinkBrush.Color = ColorHelper.FromArgb(255, 97, 168, 255);
+        RootBackgroundBrush.Color = ColorHelper.FromArgb(255, 6, 11, 23);
+        CardBrush.Color = ColorHelper.FromArgb(255, 12, 24, 48);
+        CardBorderBrush.Color = ColorHelper.FromArgb(255, 42, 64, 99);
+        TextBrush.Color = ColorHelper.FromArgb(255, 247, 249, 255);
+        MutedBrush.Color = ColorHelper.FromArgb(255, 169, 183, 211);
+        ProgressTrackBrush.Color = ColorHelper.FromArgb(255, 42, 64, 99);
+        AuthorBackgroundBrush.Color = ColorHelper.FromArgb(255, 18, 40, 74);
         AuthorBorderBrush.Color = ColorHelper.FromArgb(255, 59, 130, 246);
-        BadgeBrush.Color = ColorHelper.FromArgb(255, 30, 58, 95);
+        BadgeBrush.Color = ColorHelper.FromArgb(255, 18, 40, 74);
     }
 
     private static void ApplyLightPalette()
     {
+        StudioLinkBrush.Color = ColorHelper.FromArgb(255, 24, 91, 173);
         RootBackgroundBrush.Color = ColorHelper.FromArgb(255, 245, 247, 251);
         CardBrush.Color = ColorHelper.FromArgb(255, 255, 255, 255);
         CardBorderBrush.Color = ColorHelper.FromArgb(255, 216, 224, 234);

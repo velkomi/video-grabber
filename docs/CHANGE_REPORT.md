@@ -2,6 +2,7 @@
 
 | Версия / дата | Результат | Файлы и компоненты | Ответственный | Реализация | Проверка | Ссылки | Ограничения |
 |---|---|---|---|---|---|---|---|
+| 0.1.10-preview.61-rc.1 / 2026-10-08 | Studio-интерфейсы, Windows auth, восстановление WebGL, Telegram-меню и полный контакт разработчика | Windows, Web, Mini App, API, Telegram, telemetry, tests | Oleg | Codex | Свежие проверки и пакеты: docs/releases/preview61.md | RELEASE_NOTES.md | preview; ручная приёмка нового OAuth и реального Telegram-видео ожидается |
 | 0.1.8 / 2026-09-08 | Живой прогресс загрузки и проверенный переносимый Windows-релиз | Downloader, WinUI, tests, release ZIP | Oleg | Codex | 21 тест; локальная сборка; ручная загрузка Fathom; GitHub Actions | релиз | без цифровой подписи; без DRM-обхода |
 | 0.1.8-docs.1 / 2026-09-09 | Полная публичная инструкция и оптимизация CI | README, GitHub metadata/workflow, release records | Oleg | Codex | Release build; 21/21 tests; PowerShell syntax; GitHub Actions pending | pending | бинарник не изменён |
 | 0.1.8-ci.1 / 2026-09-09 | Актуальные Node.js 24 Actions, закреплённые по commit SHA | GitHub workflow | Oleg | Codex | GitHub API verified commits; workflow pending | pending | бинарник не изменён |

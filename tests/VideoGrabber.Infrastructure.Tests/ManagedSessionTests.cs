@@ -6,11 +6,28 @@ using System.Text.Json;
 using VideoGrabber.Core.Licensing;
 using VideoGrabber.Infrastructure.Licensing;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Infrastructure.Diagnostics;
 
 namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class ManagedSessionTests
 {
+    [Fact]
+    public async Task Rejected_offline_lease_is_not_reported_as_an_expired_online_session()
+    {
+        var root = TempRoot();
+        try
+        {
+            var cache = new OfflineAccessCache(new WindowsSessionStore(root, "lease.bin"), Guid.NewGuid(), Guid.NewGuid());
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() => cache.SaveAsync(
+                new SignedOfflineLease("invalid", "unknown"), new Dictionary<string, string>(),
+                DateTimeOffset.UtcNow, CancellationToken.None));
+            Assert.Equal("offline_lease_invalid", error.Message);
+            Assert.IsType<UnauthorizedAccessException>(error.InnerException);
+            Assert.False(File.Exists(Path.Combine(root, "lease.bin")));
+        }
+        finally { SafeDelete(root); }
+    }
     [Fact]
     public async Task Session_store_roundtrips_with_current_user_protection_and_no_plaintext_backup()
     {
@@ -142,6 +159,19 @@ public sealed class ManagedSessionTests
         Assert.Equal("refresh-token", session.RefreshToken);
         Assert.True(handler.StartSeen);
         Assert.True(handler.ConsumeSeen);
+        Assert.Equal(2, handler.Correlations.Count);
+        Assert.Matches("^[a-f0-9]{32}$", handler.Correlations[0]);
+        Assert.Equal(handler.Correlations[0], handler.Correlations[1]);
+        var ownEvents = Directory.GetFiles(DiagnosticHub.Log.DirectoryPath, "vg-*.jsonl")
+            .SelectMany(File.ReadLines).Select(line => JsonDocument.Parse(line))
+            .Where(json => json.RootElement.GetProperty("traceId").GetString() == handler.Correlations[0])
+            .Select(json => json.RootElement.Clone()).ToArray();
+        Assert.Contains(ownEvents, e => e.GetProperty("event").GetString() == "auth.desktop.callback");
+        Assert.Contains(ownEvents, e => e.GetProperty("event").GetString() == "auth.desktop.handoff"
+            && e.GetProperty("outcome").GetString() == "succeeded");
+        var diagnosticText = JsonSerializer.Serialize(ownEvents);
+        foreach (var secret in new[] { "access-token", "refresh-token", "handoff-code", "state-123" })
+            Assert.DoesNotContain(secret, diagnosticText);
     }
 
     [Fact]
@@ -297,12 +327,14 @@ public sealed class ManagedSessionTests
 
     private sealed class BrowserFlowHandler : HttpMessageHandler
     {
+        public List<string> Correlations { get; } = [];
         public Uri? ReturnUri { get; private set; }
         public bool StartSeen { get; private set; }
         public bool ConsumeSeen { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Correlations.Add(request.Headers.GetValues("X-Correlation-Id").Single());
             if (request.RequestUri!.AbsolutePath == "/v1/auth/desktop/start")
             {
                 var begin = await request.Content!.ReadFromJsonAsync<DesktopSignInStartRequest>(

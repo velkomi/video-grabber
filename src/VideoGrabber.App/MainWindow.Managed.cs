@@ -13,7 +13,7 @@ public sealed partial class MainWindow
 {
 #if VIDEOGRABBER_MANAGED
     private const string AppProductName = "VideoGrabber.Managed";
-    private const string AppDisplayName = "VideoGrabber Managed";
+    private const string AppDisplayName = "VideoGrabber";
 #else
     private const string AppProductName = "VideoGrabber";
     private const string AppDisplayName = "VideoGrabber";
@@ -37,8 +37,12 @@ public sealed partial class MainWindow
     private readonly SemaphoreSlim _managedQueueWriteLock = new(1, 1);
 #endif
 
-    private static string AppDataRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppProductName);
+    private static string AppDataRoot =>
+#if VIDEOGRABBER_PRESENTATION_PROBE
+        Path.Combine(StudioProbeRoot, "appdata");
+#else
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppProductName);
+#endif
 
     private void InitializeManagedServices()
     {

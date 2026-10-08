@@ -103,7 +103,7 @@ public sealed class WebPlanUxTests
         Assert.Contains("Всё из Unlimited Video", html);
         Assert.Contains("Скачать установщик", html);
         Assert.Contains("Portable ZIP", html);
-        Assert.Contains("/assets/videograbber-hero.webp", html);
+        Assert.Contains("/assets/videograbber-studio-hero.webp", html);
         Assert.Contains("hero-art-shell", html);
         Assert.Contains("id=\"hero-three\"", html);
         Assert.Contains("id=\"story-stage\"", html);
@@ -115,7 +115,7 @@ public sealed class WebPlanUxTests
         Assert.Contains("/web/vendor/ScrollTrigger-3.15.0.min.js", html);
         Assert.DoesNotContain("src=\"/web/hero-three.js\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("src=\"/web/hero-three.bundle.js\"", html, StringComparison.Ordinal);
-        Assert.Contains("import(\"/web/hero-three.bundle.js\")", js);
+        Assert.Matches("import\\(\"/web/hero-three\\.bundle\\.js\\?v=[^\"]+\"\\)", js);
         Assert.Contains("requestIdleCallback", js);
         Assert.Contains("matchMedia(\"(prefers-reduced-motion: reduce)\")", js);
         Assert.Contains("canvas.hidden = true", js);
@@ -133,7 +133,7 @@ public sealed class WebPlanUxTests
             $"source-sha256:{heroSourceHash}",
             heroBundleText,
             StringComparison.Ordinal);
-        Assert.Contains("videograbber-planet-map.webp", heroBundleText, StringComparison.Ordinal);
+        Assert.Contains("videograbber:studio-model", heroBundleText, StringComparison.Ordinal);
         Assert.Contains("videograbber:hero-accent", heroBundleText, StringComparison.Ordinal);
         Assert.Contains("'0.28.2'", web3dBuilder, StringComparison.Ordinal);
         Assert.Contains("'0.186.1'", web3dBuilder, StringComparison.Ordinal);
@@ -211,15 +211,17 @@ public sealed class WebPlanUxTests
         Assert.Contains("id=\"perf-debug\"", html, StringComparison.Ordinal);
         Assert.Contains("data-quality", html, StringComparison.Ordinal);
         Assert.Contains("perf-debug", styles, StringComparison.Ordinal);
-        Assert.Contains("Segoe UI Variable Display", styles, StringComparison.Ordinal);
+        Assert.Contains("Manrope", styles, StringComparison.Ordinal);
+        Assert.Contains("Onest", styles, StringComparison.Ordinal);
+        Assert.Contains("/assets/fonts/fonts.css", html, StringComparison.Ordinal);
         Assert.Contains("videograbber:story-visibility", js);
-        Assert.Contains("start: \"top 96%\"", js);
+        Assert.Contains("const visible = !motion.matches", js);
         Assert.Contains("startPercent: 42", js, StringComparison.Ordinal);
         Assert.Contains("startPercent: 72", js, StringComparison.Ordinal);
-        Assert.Contains("start: \"top \" + definition.startPercent", js, StringComparison.Ordinal);
-        Assert.Contains("innerHeight * (definition.startPercent / 100)", js, StringComparison.Ordinal);
+        Assert.Contains("start: () => \"top \" + readingLine(definition)", js, StringComparison.Ordinal);
+        Assert.Contains("innerHeight * definition.startPercent / 100", js, StringComparison.Ordinal);
         Assert.Contains("@media (prefers-reduced-motion: reduce) and (min-width: 721px)", styles, StringComparison.Ordinal);
-        Assert.Contains("inset: -10% 0 2% -12%", styles, StringComparison.Ordinal);
+        Assert.Contains("inset: 0", styles, StringComparison.Ordinal);
         Assert.Contains("inset: 3% 0 -4% 0", styles, StringComparison.Ordinal);
         Assert.DoesNotContain("setupHeroWebGL", js, StringComparison.Ordinal);
         Assert.Contains("setupHeroFeatureFocus", js);
@@ -228,22 +230,22 @@ public sealed class WebPlanUxTests
         Assert.Contains("new THREE.ExtrudeGeometry", heroThree);
         Assert.Contains("new THREE.MeshPhysicalMaterial", heroThree);
         Assert.Contains("new THREE.Raycaster", heroThree);
-        Assert.Contains("intersectObjects(pickTargets, false)", heroThree);
+        Assert.Contains("intersectObjects(visiblePickTargets, false)", heroThree);
         Assert.Contains("body.userData.feature", heroThree);
         Assert.Contains("label.userData.feature", heroThree);
         Assert.Contains("canvas.width = 1350", heroThree);
         Assert.Contains("context.scale(1.5, 1.5)", heroThree);
         Assert.Contains("texture.anisotropy", heroThree);
         Assert.Contains("pointer-events: none", styles);
-        Assert.Contains("inset: -10% -15% 2% -12%", styles);
+        Assert.Contains(".pricing-grid { display: grid", styles);
         Assert.Contains("canvas.dataset.engine", heroThree);
         Assert.Contains("THREE.REVISION", heroThree);
         Assert.Contains("renderer.setAnimationLoop", heroThree);
         Assert.Contains("./vendor/three.module.js", heroThree);
         Assert.DoesNotContain("https://", heroThree, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("videograbber-planet-map.webp", heroThree);
-        Assert.Contains("videograbber-planet-bump.png", heroThree);
-        Assert.Contains("videograbber-planet-emissive.webp", heroThree);
+        Assert.Contains("createStudioPlayObject", heroThree);
+        Assert.Contains("roundedTriangle", heroThree);
+        Assert.Contains("new THREE.PMREMGenerator", heroThree);
         Assert.Contains("videograbber:hero-accent", heroThree);
         Assert.Contains("const storyTargets", heroThree);
         Assert.Contains("videograbber:story-state", heroThree);
@@ -286,8 +288,8 @@ public sealed class WebPlanUxTests
         Assert.Contains("pointer.x * 0.18", heroThree);
         Assert.Contains("scrollProgress * 0.20", heroThree);
         Assert.Contains("new THREE.MeshStandardMaterial", heroThree);
-        Assert.Contains("new THREE.PointLight(0x9b65ff", heroThree);
-        Assert.Contains("opacity: .035", styles);
+        Assert.Contains("new THREE.PointLight(0xf1d5b6", heroThree);
+        Assert.Contains(".hero-visual.three-ready .hero-art", styles);
         Assert.DoesNotContain("Интерактивная 3D-сцена", html, StringComparison.Ordinal);
         Assert.DoesNotContain("windows-orb", html, StringComparison.Ordinal);
         Assert.DoesNotContain("sync-art", html, StringComparison.Ordinal);
@@ -359,7 +361,7 @@ public sealed class WebPlanUxTests
     }
 
     [Fact]
-    public void Web_download_defaults_to_browser_and_uses_server_worker()
+    public void Web_download_defaults_to_direct_links_and_windows_execution()
     {
         var root = FindRepoRoot();
         var html = File.ReadAllText(Path.Combine(
@@ -375,9 +377,10 @@ public sealed class WebPlanUxTests
         Assert.Contains("value=\"browser\" selected", html);
         Assert.Contains("/assets/videograbber-icon.png", html);
         Assert.Contains("/assets/videograbber-icon.png", mini);
-        Assert.Contains(
-            "executor: target === \"browser\" ? \"server_worker\" : \"desktop_worker\"",
-            js);
+        Assert.Contains("/v1/direct-downloads", js);
+        Assert.Contains("executor: \"desktop_worker\"", js);
+        Assert.Contains("desktop_execution_required", js);
+        Assert.Contains("MediaStoragePolicy.ClientOnly(configuration)", jobs);
         Assert.Contains("downloadJobResult", js);
         Assert.Contains(
             "/v1/jobs/\" + encodeURIComponent(jobId) + \"/download-link",
