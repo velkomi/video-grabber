@@ -7,7 +7,7 @@
   <title>VideoGrabber — скачивайте видео проще</title>
   <meta name="description" content="VideoGrabber помогает скачивать видео, MP3 и полные курсы. Работает на сайте, в Windows и Telegram.">
   <link rel="icon" type="image/png" href="/assets/videograbber-icon.png">
-  <link rel="stylesheet" href="/web/styles.css?v=unified-studio-20261008">
+  <link rel="stylesheet" href="/web/styles.css?v=jobs-collapse-20261008">
   <link rel="stylesheet" href="/assets/fonts/fonts.css">
   <link rel="stylesheet" href="/assets/promotions.css?v=referrals-20261008">
   <script src="/assets/promotions.js?v=referrals-20261008" defer></script>
@@ -217,12 +217,17 @@
         </div>
 
         <div class="dashboard-grid lower">
-          <section class="panel">
-            <div class="panel-title"><div><p class="eyebrow">Очередь</p><h3>Последние задания</h3></div><button id="refresh-jobs" class="text-button" type="button">Обновить</button></div>
-            <p id="jobs-count" class="field-note" aria-live="polite"></p>
-            <ul id="jobs-list" class="job-list" aria-label="Последние задания"></ul>
-            <div class="job-history-actions"><button id="jobs-more" class="text-button" type="button" hidden>Показать ещё 5</button><button id="jobs-collapse" class="text-button" type="button" hidden>Свернуть до 5</button></div>
-          </section>
+          <details id="jobs-history" class="panel jobs-history">
+            <summary class="jobs-history-summary">
+              <span><span class="eyebrow">Очередь</span><span class="jobs-history-title">Последние задания</span></span>
+              <span class="jobs-history-arrow" aria-hidden="true"></span>
+            </summary>
+            <div class="jobs-history-body">
+              <div class="jobs-history-toolbar"><p id="jobs-count" class="field-note" aria-live="polite"></p><button id="refresh-jobs" class="text-button" type="button">Обновить</button></div>
+              <ul id="jobs-list" class="job-list" aria-label="Последние задания"></ul>
+              <div class="job-history-actions"><button id="jobs-more" class="text-button" type="button" hidden>Показать ещё 5</button><button id="jobs-collapse" class="text-button" type="button" hidden>Свернуть до 5</button></div>
+            </div>
+          </details>
           <section class="panel">
             <div class="panel-title"><div><p class="eyebrow">Устройства</p><h3>Windows VideoGrabber</h3></div></div>
             <div id="devices-list" class="device-list"></div>
