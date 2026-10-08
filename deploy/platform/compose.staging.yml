@@ -182,6 +182,8 @@ services:
       Security__AllowedOrigins__0: https://${VG_STAGE_HOST:?}
       VG_PAYMENT_CATALOG_PATH: ${VG_PAYMENT_CATALOG_PATH:-/etc/videograbber/payment-catalog.json}
       VG_PAYMENT_RECONCILIATION_ENABLED: "false"
+      VG_REFERRALS_ENABLED: ${VG_REFERRALS_ENABLED:-false}
+      VG_REFERRALS_PUBLIC_ORIGIN: ${VG_REFERRALS_PUBLIC_ORIGIN:-https://videograbber.srv1902378.hstgr.cloud}
       VG_DELIVERY_WORKER_ENABLED: "true"
       VG_ARTIFACT_UPLOAD_ROOT: /var/lib/videograbber/jobs/uploads
       VG_RETENTION_ROOT: /var/lib/videograbber/jobs

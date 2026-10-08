@@ -33,6 +33,10 @@ const state = {
   paymentProducts: null,
   refreshing: null
 };
+const promotions = window.VideoGrabberPromotions;
+const promotionController = promotions.createController(api, promotions.referralCode);
+let promotionPayment = null;
+let promotionForm = null;
 
 function setStatus(selector, text, kind = "") {
   const node = $(selector);
@@ -767,10 +771,22 @@ async function loadDashboard() {
   } catch {} // Account information remains usable when Telegram's metadata service is unavailable.
   renderDevices();
   renderJobs();
+  try {
+    await promotionController.load();
+    promotions.renderSummary($("#referral-card"), promotionController);
+  } catch {
+    $("#referral-card").hidden = false;
+    $("#referral-card").textContent = "Бонусы временно недоступны. Обновите аккаунт позже.";
+  }
   setTimeout(() => window.ScrollTrigger?.refresh?.(), 0);
 }
 
 function signedOut(message = "") {
+  promotionController.reset();
+  $("#referral-card").replaceChildren();
+  $("#referral-card").hidden = true;
+  if ($("#promotion-dialog").open) $("#promotion-dialog").close();
+  promotionPayment = null;
   visibleJobCount = 5;
   sessionStorage.removeItem(keys.directIntent);
   $("#signed-out").hidden = false;
@@ -1111,6 +1127,33 @@ async function refreshJobs() {
 }
 
 async function createCheckout(product) {
+  if (!promotionController.disabled) {
+    promotionPayment = product;
+    $("#promotion-product").textContent = planName(product.planId) + " · " + promotions.money(product.prices.yookassa);
+    $("#promotion-recurring").checked = false;
+    $("#promotion-recurring").disabled = !product.recurringAllowed;
+    $("#promotion-payment-error").textContent = "";
+    promotionForm = promotions.mountCheckout($("#promotion-checkout"), promotionController,
+      () => ({ sku: product.sku, provider: "yookassa", recurring: $("#promotion-recurring").checked }),
+      ready => { $("#promotion-pay").disabled = !ready; });
+    $("#promotion-recurring").onchange = () => promotionForm.synchronize();
+    $("#promotion-close").onclick = () => $("#promotion-dialog").close();
+    $("#promotion-pay").onclick = async () => {
+      if (!promotionPayment) return;
+      $("#promotion-pay").disabled = true;
+      try { await sendCheckout(promotionPayment, $("#promotion-recurring").checked); }
+      catch (error) { $("#promotion-payment-error").textContent = /расчёт/u.test(error.message) ? error.message : promotions.userError(error); }
+      finally { $("#promotion-pay").disabled = false; }
+    };
+    $("#promotion-dialog").showModal();
+    return;
+  }
+  try { await sendCheckout(product, true); }
+  catch { setStatus("#job-status", "Сейчас не удалось открыть оплату. Попробуйте ещё раз позже.", "error"); }
+}
+
+async function sendCheckout(product, recurring) {
+  const fields = promotionController.paymentFields({ sku: product.sku, provider: "yookassa", recurring });
   try {
     const checkout = await api("/v1/payments", {
       method: "POST",
@@ -1118,8 +1161,8 @@ async function createCheckout(product) {
       body: JSON.stringify({
         sku: product.sku,
         provider: "yookassa",
-        idempotencyKey: crypto.randomUUID(),
-        recurring: true
+        ...fields,
+        recurring
       })
     });
     if (checkout.redirectUri) {
@@ -1131,12 +1174,14 @@ async function createCheckout(product) {
       "Не удалось открыть страницу оплаты. Попробуйте ещё раз позже.",
       "error"
     );
-  } catch {
+    throw new Error("checkout_unavailable");
+  } catch (error) {
     setStatus(
       "#job-status",
       "Сейчас не удалось открыть оплату. Попробуйте ещё раз позже.",
       "error"
     );
+    throw error;
   }
 }
 
@@ -1154,6 +1199,7 @@ async function logout() {
       });
     }
   } finally {
+    promotionController.clearIntent();
     clearSession();
     signedOut();
   }

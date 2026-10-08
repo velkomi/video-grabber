@@ -23,7 +23,8 @@ public sealed class BotCommandHandler(
     StarsPaymentAdapter stars,
     PaymentStore payments,
     TimeProvider clock,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    PromotionStore? promotions = null)
 {
     public async Task HandleAsync(TelegramUpdate update, CancellationToken cancellationToken)
     {
@@ -53,6 +54,12 @@ public sealed class BotCommandHandler(
 
         if (command is "/start" or "/help")
         {
+            if (command == "/start" && args.StartsWith("ref_", StringComparison.Ordinal)
+                && string.Equals(chatType, "private", StringComparison.OrdinalIgnoreCase))
+            {
+                await ClaimReferralAsync(chatId, accountId, args[4..], cancellationToken);
+                return;
+            }
             await bot.SendMessageAsync(new BotMessage(chatId, HelpText(),
                 string.Equals(chatType, "private", StringComparison.OrdinalIgnoreCase) ? MenuMarkup() : null), cancellationToken);
             return;
@@ -60,7 +67,8 @@ public sealed class BotCommandHandler(
 
         if (command is "/account" or "/balance" or "/link" or "/devices" or "/destinations" or "/admin"
             or "/media" or "/jobs" or "/download" or "/course" or "/mp3" or "/trim" or "/join" or "/transcribe"
-            or "/subscription" or "/settings" or "/buy" or "/payments" or "/paysupport" or "/menu" or "/hide")
+            or "/subscription" or "/settings" or "/buy" or "/payments" or "/paysupport" or "/menu" or "/hide"
+            or "/referral" or "/bonus" or "/promo")
         {
             if (!string.Equals(chatType, "private", StringComparison.OrdinalIgnoreCase))
             {
@@ -71,6 +79,15 @@ public sealed class BotCommandHandler(
 
         switch (command)
         {
+            case "/referral":
+            case "/bonus":
+                await SendReferralAsync(chatId, accountId, command == "/referral", cancellationToken);
+                return;
+            case "/promo":
+                await bot.SendMessageAsync(new BotMessage(chatId,
+                    "Введите промокод в разделе «Подписка» приложения бота. Перед оплатой проверьте расчёт скидки и бонусов. " +
+                    "В Telegram оплата — только Stars; промокод и бонусы доступны для разовой оплаты без автопродления.", MiniAppMarkup()), cancellationToken);
+                return;
             case "/menu":
                 await bot.SendMessageAsync(new BotMessage(chatId,
                     "Пришлите ссылку на видео или выберите действие.", MenuMarkup()), cancellationToken);
@@ -140,6 +157,62 @@ public sealed class BotCommandHandler(
                 await bot.SendMessageAsync(new BotMessage(chatId,
                     "Неизвестная команда. Используйте /help."), cancellationToken);
                 return;
+        }
+    }
+
+    private async Task ClaimReferralAsync(long chatId, Guid accountId, string code, CancellationToken cancellationToken)
+    {
+        string message;
+        try
+        {
+            if (promotions is null) throw new PromotionDisabledException();
+            var accepted = await promotions.ClaimAsync(accountId, code, cancellationToken);
+            message = accepted
+                ? "Приглашение сохранено. Другу — 10% на первую разовую оплату подписки. Свяжите общий аккаунт через /link перед оплатой."
+                : "Приглашение недоступно для этого аккаунта.";
+        }
+        catch (PromotionDisabledException) { message = "Приглашения и бонусы пока недоступны. Остальные функции бота работают."; }
+        catch (Exception error) when (error is PromotionUnavailableException or PromotionConflictException or ArgumentException)
+        { message = "Приглашение недоступно для этого аккаунта. Проверьте /account или привяжите аккаунт через /link."; }
+        await bot.SendMessageAsync(new BotMessage(chatId, message + "\n\nПришлите ссылку на видео или выберите действие. Справка: /help.", MenuMarkup()), cancellationToken);
+    }
+
+    private async Task SendReferralAsync(long chatId, Guid accountId, bool includeInvitation, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (promotions is null) throw new PromotionDisabledException();
+            var summary = await promotions.SummaryAsync(accountId, cancellationToken);
+            var balance = summary.Balances.Length == 0 ? "Бонусов пока нет."
+                : string.Join("\n", summary.Balances.Select(row =>
+                    $"Доступно: {PaymentAmountLabel(new Money(row.AvailableMinor, row.Currency))} · " +
+                    $"Ожидает: {PaymentAmountLabel(new Money(row.PendingMinor, row.Currency))}" +
+                    (row.ReservedMinor > 0 ? $" · В счетах: {PaymentAmountLabel(new Money(row.ReservedMinor, row.Currency))}" : "") +
+                    (row.DebtMinor > 0 ? " · Возврат уменьшит будущие бонусы" : "")));
+            var text = "Бонусы VideoGrabber\n" + balance + "\n\n" +
+                "Доступны через 14 дней, действуют 365 дней. Бонусы не выводятся; RUB и Stars учитываются отдельно. " +
+                "Скидки и бонусы вместе — до 30% цены разовой оплаты.";
+            JsonElement? markup = MiniAppMarkup();
+            if (includeInvitation)
+            {
+                text += $"\n\nПриглашено: {summary.Invited} · Оплатили: {summary.Paid}\n" +
+                    "Другу — 10% на первую разовую оплату подписки; вам — 10% от оплаченной суммы.";
+                if (summary.TelegramLink.IsAbsoluteUri && summary.TelegramLink.Scheme == Uri.UriSchemeHttps
+                    && summary.TelegramLink.Host == "t.me" && string.IsNullOrEmpty(summary.TelegramLink.UserInfo))
+                {
+                    text += "\nСсылка приглашения: " + summary.TelegramLink.AbsoluteUri;
+                    markup = UrlMarkup("Поделиться приглашением", new Uri("https://t.me/share/url?url=" + Uri.EscapeDataString(summary.TelegramLink.AbsoluteUri)));
+                }
+            }
+            await bot.SendMessageAsync(new BotMessage(chatId, text, markup), cancellationToken);
+        }
+        catch (PromotionDisabledException)
+        {
+            await bot.SendMessageAsync(new BotMessage(chatId, "Приглашения и бонусы пока недоступны. Остальные функции бота работают."), cancellationToken);
+        }
+        catch (Exception error) when (error is PromotionUnavailableException or PromotionConflictException)
+        {
+            await bot.SendMessageAsync(new BotMessage(chatId, "Чтобы открыть бонусы и приглашения, свяжите общий аккаунт через /link."), cancellationToken);
         }
     }
 
@@ -471,7 +544,7 @@ public sealed class BotCommandHandler(
            "/media — MP3, редактор и текст\n/jobs — очередь\n\n" +
            "Аккаунт:\n/account — профиль\n/subscription — тариф и лимиты\n" +
            "/devices — компьютеры\n/settings — приложение бота\n/link — привязать аккаунт\n\n" +
-           "Платежи:\n/payments — история и поддержка\n\n" +
+           "Платежи:\n/payments — история и поддержка\n/referral — пригласить друга\n/bonus — бонусный баланс\n/promo — промокод в приложении\n\n" +
            "/menu — вернуть кнопки\n/hide — скрыть кнопки\n/help — эта справка.";
 
     private static string PlanLabel(AccessSnapshot access)

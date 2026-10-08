@@ -1,6 +1,7 @@
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Npgsql;
 using VideoGrabber.Platform.Contracts;
 using VideoGrabber.Platform.Core.Payments;
@@ -10,19 +11,21 @@ namespace VideoGrabber.Platform.Persistence;
 public sealed class PaymentConflictException : Exception;
 public sealed class PaymentDisabledException : Exception;
 
-public sealed class PaymentStore
+public sealed partial class PaymentStore
 {
     private readonly CreditLedger _ledger;
     private readonly NpgsqlDataSource _dataSource;
     private readonly TimeProvider _clock;
     private readonly PaymentCatalog? _catalog;
     private readonly Action<string>? _fault;
+    private readonly PromotionStore? _promotions;
 
     public PaymentStore(
         CreditLedger ledger,
         TimeProvider clock,
-        PaymentCatalog? catalog = null)
-        : this(ledger, clock, catalog, null)
+        PaymentCatalog? catalog = null,
+        PromotionStore? promotions = null)
+        : this(ledger, clock, catalog, null, promotions)
     {
     }
 
@@ -30,21 +33,24 @@ public sealed class PaymentStore
         CreditLedger ledger,
         TimeProvider clock,
         PaymentCatalog? catalog,
-        Action<string>? fault)
+        Action<string>? fault,
+        PromotionStore? promotions)
     {
         _ledger = ledger;
         _dataSource = ledger.DataSource;
         _clock = clock;
         _catalog = catalog;
         _fault = fault;
+        _promotions = promotions;
     }
 
     public static PaymentStore CreateForTesting(
         CreditLedger ledger,
         TimeProvider clock,
         PaymentCatalog catalog,
-        Action<string>? fault = null)
-        => new(ledger, clock, catalog, fault);
+        Action<string>? fault = null,
+        PromotionStore? promotions = null)
+        => new(ledger, clock, catalog, fault, promotions);
 
     public string Environment
         => Catalog.Environment;
@@ -60,17 +66,14 @@ public sealed class PaymentStore
         if (accountId == Guid.Empty)
             throw new ArgumentException("Account is required.", nameof(accountId));
         var catalog = Catalog;
-        var product = catalog.RequireProduct(
-            request.Sku, request.Provider, request.Recurring);
-        var price = product.Prices[request.Provider];
-        PaymentProjection.ValidateMoney(
-            new Money(price.MinorUnits, price.Currency));
         var requestHash = PaymentProjection.RequestHash(request);
         var now = _clock.GetUtcNow();
 
         await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.ReadCommitted, cancellationToken);
+        if (_promotions is not null)
+            await _promotions.LockPaymentAccountsAsync(connection, transaction, accountId, Guid.Empty, cancellationToken);
         await LockAccountAsync(
             connection, transaction, accountId, cancellationToken);
 
@@ -103,16 +106,24 @@ public sealed class PaymentStore
             await reader.DisposeAsync();
         }
 
+        // Existing reservations use their frozen terms even if the catalog changes.
+        var product = catalog.RequireProduct(request.Sku, request.Provider, request.Recurring);
+        var price = product.Prices[request.Provider];
+        PaymentProjection.ValidateMoney(new Money(price.MinorUnits, price.Currency));
         var paymentIdNew = Guid.NewGuid();
+        var payable = _promotions is not null
+            ? await _promotions.PreparePaymentAsync(connection, transaction, accountId, paymentIdNew, request, product, cancellationToken)
+            : new Money(price.MinorUnits, price.Currency);
+        if (_promotions is null && request.QuoteId is not null) throw new PromotionDisabledException();
         var invoicePayload = "ord_" + Base64Url(
             RandomNumberGenerator.GetBytes(24));
         await using var insert = new NpgsqlCommand("""
             insert into licensing.payments(
               payment_id,account_id,provider,environment,sku,catalog_version,
               expected_minor,expected_currency,recurring,idempotency_key,
-              request_hash,invoice_payload,state,created_at,updated_at)
+              request_hash,invoice_payload,state,created_at,updated_at,product_snapshot)
             values(@payment,@account,@provider,@environment,@sku,@catalog,
-              @minor,@currency,@recurring,@key,@hash,@payload,'pending',@now,@now)
+              @minor,@currency,@recurring,@key,@hash,@payload,'pending',@now,@now,@snapshot)
             """, connection, transaction);
         insert.Parameters.AddWithValue("payment", paymentIdNew);
         insert.Parameters.AddWithValue("account", accountId);
@@ -120,8 +131,9 @@ public sealed class PaymentStore
         insert.Parameters.AddWithValue("environment", catalog.Environment);
         insert.Parameters.AddWithValue("sku", request.Sku);
         insert.Parameters.AddWithValue("catalog", catalog.Version);
-        insert.Parameters.AddWithValue("minor", price.MinorUnits);
-        insert.Parameters.AddWithValue("currency", price.Currency);
+        insert.Parameters.AddWithValue("minor", payable.MinorUnits);
+        insert.Parameters.AddWithValue("currency", payable.Currency);
+        insert.Parameters.AddWithValue("snapshot", NpgsqlTypes.NpgsqlDbType.Jsonb, JsonSerializer.Serialize(product));
         insert.Parameters.AddWithValue("recurring", request.Recurring);
         insert.Parameters.AddWithValue("key", request.IdempotencyKey);
         insert.Parameters.AddWithValue("hash", requestHash);
@@ -145,6 +157,8 @@ public sealed class PaymentStore
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.ReadCommitted, cancellationToken);
 
+        if (_promotions is not null)
+            await _promotions.LockPaymentAccountsAsync(connection, transaction, payment.AccountId, payment.PaymentId, cancellationToken);
         await LockAccountAsync(
             connection, transaction, payment.AccountId, cancellationToken);
         var row = await ReadPaymentForUpdateAsync(
@@ -154,9 +168,10 @@ public sealed class PaymentStore
         if (row.AccountId != payment.AccountId
             || !string.Equals(row.Provider, payment.Provider, StringComparison.Ordinal))
             throw new PaymentConflictException();
-        if (!catalog.Products.TryGetValue(row.Sku, out var product)
-            || !product.Prices.TryGetValue(row.Provider, out var price))
+        var product = row.ProductSnapshot;
+        if (product is null && !catalog.Products.TryGetValue(row.Sku, out product))
             throw new PaymentConflictException();
+        var price = new CatalogPrice(row.ExpectedMinor, row.ExpectedCurrency);
         try
         {
             PaymentProjection.ValidateVerified(
@@ -221,19 +236,29 @@ public sealed class PaymentStore
         switch (payment.Status)
         {
             case "pending":
-                await SetPaymentStateAsync(
-                    connection, transaction, payment.PaymentId,
-                    "pending", now, cancellationToken);
+                if (row.State is "pending" or "reconcile_required")
+                    await SetPaymentStateAsync(connection,transaction,payment.PaymentId,"pending",now,cancellationToken);
                 break;
             case "canceled":
                 if (row.State is not ("succeeded" or "refunded"))
+                {
+                    if (_promotions is not null)
+                        await _promotions.CancelAsync(connection, transaction, payment.PaymentId, cancellationToken);
                     await SetPaymentStateAsync(
                         connection, transaction, payment.PaymentId,
                         "canceled", now, cancellationToken);
+                }
                 break;
             case "succeeded":
                 if (row.State != "refunded")
                 {
+                    if (_promotions is not null && row.State != "succeeded")
+                    {
+                        await using var first = new NpgsqlCommand("select first_purchase_at is null from licensing.accounts where account_id=@a", connection, transaction);
+                        first.Parameters.AddWithValue("a",payment.AccountId);
+                        var firstPurchase = (bool)(await first.ExecuteScalarAsync(cancellationToken))!;
+                        await _promotions.SuccessAsync(connection,transaction,payment,product,firstPurchase,cancellationToken);
+                    }
                     await ApplyPurchaseGrantAsync(
                         connection, transaction, row, product, payment, now,
                         cancellationToken);
@@ -243,8 +268,11 @@ public sealed class PaymentStore
                 }
                 break;
             case "refunded":
+                if (_promotions is not null)
+                    await _promotions.RefundAsync(connection,transaction,payment.PaymentId,eventKey,row.ExpectedMinor,row.ExpectedMinor,true,cancellationToken);
                 await ApplyRefundProjectionAsync(
                     connection, transaction, row, now, cancellationToken);
+                await CancelRefundedSubscriptionAsync(connection,transaction,row.PaymentId,now,cancellationToken);
                 await SetPaymentStateAsync(
                     connection, transaction, payment.PaymentId,
                     "refunded", now, cancellationToken);
@@ -345,7 +373,7 @@ public sealed class PaymentStore
         await using var command = new NpgsqlCommand("""
             select payment_id,account_id,provider,environment,sku,
                    expected_minor,expected_currency,recurring,state,
-                   provider_payment_id,invoice_payload
+                   provider_payment_id,invoice_payload,product_snapshot
             from licensing.payments
             where invoice_payload=@payload
             """, connection);
@@ -364,7 +392,7 @@ public sealed class PaymentStore
         await using var command = new NpgsqlCommand("""
             select payment_id,account_id,provider,environment,sku,
                    expected_minor,expected_currency,recurring,state,
-                   provider_payment_id,invoice_payload
+                   provider_payment_id,invoice_payload,product_snapshot
             from licensing.payments
             where payment_id=@payment
             """, connection);
@@ -431,7 +459,7 @@ public sealed class PaymentStore
         await using var command = new NpgsqlCommand("""
             select payment_id,account_id,provider,environment,sku,
                    expected_minor,expected_currency,recurring,state,
-                   provider_payment_id,invoice_payload
+                   provider_payment_id,invoice_payload,product_snapshot
             from licensing.payments
             where provider=@provider and state in ('pending','refund_pending','reconcile_required')
             order by updated_at,payment_id
@@ -646,7 +674,7 @@ public sealed class PaymentStore
         await using var command = new NpgsqlCommand("""
             select payment_id,account_id,provider,environment,sku,catalog_version,
                    expected_minor,expected_currency,recurring,state,
-                   provider_payment_id,invoice_payload
+                   provider_payment_id,invoice_payload,product_snapshot
             from licensing.payments
             where payment_id=@payment
             for update
@@ -678,7 +706,8 @@ public sealed class PaymentStore
             reader.GetBoolean(8),
             reader.GetString(9),
             reader.IsDBNull(10) ? null : reader.GetString(10),
-            reader.IsDBNull(11) ? null : reader.GetString(11));
+            reader.IsDBNull(11) ? null : reader.GetString(11),
+            reader.IsDBNull(12) ? null : JsonSerializer.Deserialize<CatalogProduct>(reader.GetString(12)));
 
     private static PaymentIntentRecord ReadIntent(NpgsqlDataReader reader)
         => new(
@@ -691,7 +720,8 @@ public sealed class PaymentStore
             reader.GetBoolean(7),
             reader.GetString(8),
             reader.IsDBNull(9) ? null : reader.GetString(9),
-            reader.IsDBNull(10) ? null : reader.GetString(10));
+            reader.IsDBNull(10) ? null : reader.GetString(10))
+        { ProductSnapshot = reader.IsDBNull(11) ? null : JsonSerializer.Deserialize<CatalogProduct>(reader.GetString(11)) };
 
     private static async Task LockAccountAsync(
         NpgsqlConnection connection,
@@ -724,7 +754,8 @@ public sealed class PaymentStore
         bool Recurring,
         string State,
         string? ProviderPaymentId,
-        string? InvoicePayload)
+        string? InvoicePayload,
+        CatalogProduct? ProductSnapshot)
     {
         public PaymentView ToView()
             => new(
@@ -745,4 +776,7 @@ public sealed record PaymentIntentRecord(
     bool Recurring,
     string State,
     string? ProviderPaymentId,
-    string? InvoicePayload);
+    string? InvoicePayload)
+{
+    public CatalogProduct? ProductSnapshot { get; init; }
+}

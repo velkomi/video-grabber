@@ -1,5 +1,6 @@
 const $ = (selector) => document.querySelector(selector);
 const state = { csrf: "", profile: null, access: null };
+const accountRefreshListeners = new Set();
 let readyResolve;
 let readyReject;
 const ready = new Promise((resolve, reject) => {
@@ -257,7 +258,18 @@ function renderCapabilities(capabilities) {
     lock.textContent = "";
   }
 }
+function onAccountRefresh(handler) {
+  accountRefreshListeners.add(handler);
+  return () => accountRefreshListeners.delete(handler);
+}
 async function loadAll() {
+  const version = state.loadVersion = (state.loadVersion || 0) + 1;
+  const notify = async phase => {
+    const event = { phase, version, accountId: phase === "loaded" ? state.profile?.accountId : null };
+    await Promise.allSettled([...accountRefreshListeners].map(handler => handler(event)));
+  };
+  await notify("loading");
+  if (version !== state.loadVersion) return;
   setStatus("Обновляю данные…");
   const [profile, access, identities, devices, capabilities, destinations] = await Promise.all([
     api("/v1/me"),
@@ -267,12 +279,14 @@ async function loadAll() {
     api("/v1/capabilities"),
     api("/v1/destinations")
   ]);
+  if (version !== state.loadVersion) return;
   renderProfile(profile, access);
   renderIdentities(identities);
   renderDevices(devices);
   renderCapabilities(capabilities);
   renderDestinations(destinations);
-  setStatus("Данные обновлены.", "success");
+  await notify("loaded");
+  if (version === state.loadVersion) setStatus("Данные обновлены.", "success");
 }
 
 async function establishSession() {
@@ -357,6 +371,8 @@ function currentAccess() { return state.access; }
 window.VideoGrabberApi = {
   api,
   loadAll,
+  onAccountRefresh,
+  currentAccountId: () => state.profile?.accountId || null,
   setStatus,
   ready,
   currentAccess,

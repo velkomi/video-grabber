@@ -2,6 +2,7 @@
 
 | Версия / дата | Результат | Файлы и компоненты | Ответственный | Реализация | Проверка | Ссылки | Ограничения |
 |---|---|---|---|---|---|---|---|
+| 0.1.10-preview.62-rc.1 / 2026-10-08 | Реферальные ссылки, внутренний бонусный баланс, промокоды и обработка возвратов | API, PostgreSQL 064/065, Web, Mini App, Windows, Telegram | Oleg | Codex | Изолированные SQL/API/браузерные тесты; Windows ZIP/installer | RELEASE_NOTES.md; docs/platform/referrals-activation.md | preview; production и установленная версия проверяются при публикации; реальная платёжная операция отдельно |
 | 0.1.10-preview.61-rc.1 / 2026-10-08 | Studio-интерфейсы, Windows auth, восстановление WebGL, Telegram-меню и полный контакт разработчика | Windows, Web, Mini App, API, Telegram, telemetry, tests | Oleg | Codex | Свежие проверки и пакеты: docs/releases/preview61.md | RELEASE_NOTES.md | preview; ручная приёмка нового OAuth и реального Telegram-видео ожидается |
 | 0.1.8 / 2026-09-08 | Живой прогресс загрузки и проверенный переносимый Windows-релиз | Downloader, WinUI, tests, release ZIP | Oleg | Codex | 21 тест; локальная сборка; ручная загрузка Fathom; GitHub Actions | релиз | без цифровой подписи; без DRM-обхода |
 | 0.1.8-docs.1 / 2026-09-09 | Полная публичная инструкция и оптимизация CI | README, GitHub metadata/workflow, release records | Oleg | Codex | Release build; 21/21 tests; PowerShell syntax; GitHub Actions pending | pending | бинарник не изменён |

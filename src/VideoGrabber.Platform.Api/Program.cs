@@ -14,6 +14,7 @@ using VideoGrabber.Platform.Api.Access;
 using VideoGrabber.Platform.Api.Auth;
 using VideoGrabber.Platform.Api.Jobs;
 using VideoGrabber.Platform.Api.Payments;
+using VideoGrabber.Platform.Api.Promotions;
 using VideoGrabber.Platform.Api.Operations;
 using VideoGrabber.Platform.Api.Telegram;
 using VideoGrabber.Platform.Contracts;
@@ -142,6 +143,9 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
     options.Level = CompressionLevel.Fastest);
 builder.Services.AddRateLimiter(options =>
 {
+    options.AddPolicy("promotions", http => RateLimitPartition.GetFixedWindowLimiter(
+        http.User.FindFirst("account_id")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit=30, Window=TimeSpan.FromMinutes(1), QueueLimit=0 }));
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddFixedWindowLimiter("auth", limiter =>
     {
@@ -195,6 +199,11 @@ builder.Services.AddSingleton(sp =>
     return CreditLedger.CreateOwned(ledgerDsn, sp.GetRequiredService<TimeProvider>());
 });
 builder.Services.AddSingleton<JobStore>();
+builder.Services.AddSingleton(sp => new PromotionOptions(
+    string.Equals(sp.GetRequiredService<IConfiguration>()["VG_REFERRALS_ENABLED"],"true",StringComparison.OrdinalIgnoreCase),
+    sp.GetRequiredService<IConfiguration>()["VG_REFERRALS_PUBLIC_ORIGIN"] ?? "https://videograbber.srv1902378.hstgr.cloud",
+    sp.GetRequiredService<IConfiguration>()["VG_TELEGRAM_BOT_USERNAME"] ?? "VideoGra_bot"));
+builder.Services.AddSingleton<PromotionStore>();
 builder.Services.AddSingleton<BrowserDownloadTicketService>();
 builder.Services.AddSingleton<PaymentStore>(sp =>
 {
@@ -206,7 +215,8 @@ builder.Services.AddSingleton<PaymentStore>(sp =>
     return new PaymentStore(
         sp.GetRequiredService<CreditLedger>(),
         sp.GetRequiredService<TimeProvider>(),
-        catalog);
+        catalog,
+        sp.GetRequiredService<PromotionStore>());
 });
 builder.Services.AddSingleton<SubscriptionStore>();
 builder.Services.AddSingleton<SubscriptionService>();
@@ -399,8 +409,8 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseRouting();
-app.UseRateLimiter();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 app.Use(async (context, next) =>
 {
@@ -429,6 +439,7 @@ app.MapDestinationEndpoints();
 app.MapDeliveryEndpoints();
 app.MapRetentionEndpoints();
 app.MapPaymentEndpoints();
+app.MapPromotionEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapYooKassaWebhookEndpoints();
 app.MapJobEndpoints();

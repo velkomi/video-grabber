@@ -6,7 +6,8 @@ public sealed record PurchaseRequest(
     string Sku,
     string Provider,
     Guid IdempotencyKey,
-    bool Recurring);
+    bool Recurring,
+    Guid? QuoteId = null);
 
 public sealed record PaymentCheckout(
     Guid PaymentId,
@@ -30,6 +31,12 @@ public sealed record RefundRequest(
     Guid PaymentId,
     Guid IdempotencyKey,
     string Reason);
+
+public sealed record VerifiedRefund(string Provider, string Environment, string RefundId, string ProviderPaymentId,
+    Guid PaymentId, Guid AccountId, Money Amount, DateTimeOffset OccurredAt)
+{
+    public VerifiedPayment? OriginalPayment { get; init; }
+}
 
 public sealed record PaymentView(
     Guid PaymentId,

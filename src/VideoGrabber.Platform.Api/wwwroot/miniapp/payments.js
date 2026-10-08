@@ -1,6 +1,12 @@
 const $ = (selector) => document.querySelector(selector);
 
 let catalog = null;
+const promotions = window.VideoGrabberPromotions;
+const promotionController = promotions.createController(api, promotions.referralCode);
+let promotionForm = null;
+let billingVersion = 0;
+let billingAccountId = null;
+let accountRefreshSeen = false;
 
 function api(path, options) {
   if (!window.VideoGrabberApi) throw new Error("Mini App session ещё не готова");
@@ -31,6 +37,7 @@ function updateRecurring() {
   const checkbox = $("#payment-recurring");
   checkbox.disabled = !product?.recurringAllowed;
   if (checkbox.disabled) checkbox.checked = false;
+  promotionForm?.synchronize();
 }
 
 function productLabel(product) {
@@ -40,8 +47,10 @@ function productLabel(product) {
 function subscriptionLabel(state) {
   return { active: "Активна", cancelled: "Автопродление отключено", canceled: "Автопродление отключено", expired: "Завершена", pending: "Ожидает подтверждения", past_due: "Нужна оплата" }[state] || "Проверяем подписку";
 }
-async function loadProducts() {
-  catalog = await api("/v1/payment-products?surface=telegram");
+async function loadProducts(version = billingVersion) {
+  const next = await api("/v1/payment-products?surface=telegram");
+  if (version !== billingVersion) return;
+  catalog = next;
   const select = $("#payment-product");
   const buy = $("#payment-buy");
   const availability = $("#payment-availability");
@@ -68,7 +77,7 @@ async function loadProducts() {
     select.append(placeholder);
   }
   const primaryReady = window.VideoGrabberApi.isPrimaryAccount();
-  buy.disabled = !hasProducts || !primaryReady;
+  buy.disabled = true;
   if (!primaryReady) {
     availability.className = "notice error";
     availability.textContent = "Перед оплатой свяжите аккаунт через команду /link в чате с ботом.";
@@ -81,10 +90,12 @@ async function loadProducts() {
   }
 }
 
-async function refreshSubscriptions() {
+async function refreshSubscriptions(version = billingVersion) {
+  if (version !== billingVersion) return;
   const host = $("#subscription-list");
   host.replaceChildren();
   const rows = await api("/v1/subscriptions");
+  if (version !== billingVersion) return;
   if (!rows.length) {
     host.textContent = "Активных подписок пока нет.";
     return;
@@ -135,6 +146,7 @@ async function refreshPayments() {
 $("#payment-product").addEventListener("change", updateRecurring);
 
 $("#payment-buy").addEventListener("click", async () => {
+  const version = billingVersion;
   const product = selectedProduct();
   if (!product) {
     status("Выберите доступный тариф.", "error");
@@ -143,6 +155,9 @@ $("#payment-buy").addEventListener("click", async () => {
   const recurring = $("#payment-recurring").checked;
   const intent = paymentIntentKey(product.sku, recurring);
   try {
+    const fields = promotionController.disabled
+      ? { idempotencyKey: intent.value }
+      : promotionController.paymentFields({ sku: product.sku, provider: "stars", recurring });
     status("Открываем оплату…");
     const checkout = await api("/v1/payments", {
       method: "POST",
@@ -150,10 +165,11 @@ $("#payment-buy").addEventListener("click", async () => {
       body: JSON.stringify({
         sku: product.sku,
         provider: "stars",
-        idempotencyKey: intent.value,
+        ...fields,
         recurring
       })
     });
+    if (version !== billingVersion) return;
     if (!checkout.redirectUri)
       throw new Error("Не удалось открыть оплату. Попробуйте позже.");
 
@@ -182,16 +198,58 @@ $("#payment-buy").addEventListener("click", async () => {
   }
 });
 
+function clearBilling() {
+  billingVersion++;
+  promotionController.reset();
+  catalog = null;
+  promotionForm = null;
+  for (const selector of ["#referral-card", "#promotion-checkout", "#subscription-list", "#payment-history"])
+    $(selector).replaceChildren();
+  $("#referral-card").hidden = true;
+  $("#promotion-checkout").hidden = true;
+  $("#payment-buy").disabled = true;
+  $("#payment-product").disabled = true;
+}
+
+async function refreshBilling(event) {
+  if (event.phase === "loading") { clearBilling(); return; }
+  accountRefreshSeen = true;
+  clearBilling();
+  billingAccountId = event.accountId;
+  const version = billingVersion;
+  const current = () => version === billingVersion && billingAccountId === window.VideoGrabberApi.currentAccountId();
+  try {
+    await loadProducts(version);
+    if (!current()) return;
+    await promotionController.load();
+    if (!current()) return;
+    promotions.renderSummary($("#referral-card"), promotionController);
+    if (!promotionController.disabled) {
+      promotionForm = promotions.mountCheckout($("#promotion-checkout"), promotionController,
+        () => ({ sku: selectedProduct()?.sku, provider: "stars", recurring: $("#payment-recurring").checked }),
+        ready => { if (current()) $("#payment-buy").disabled = !ready || !selectedProduct() || !window.VideoGrabberApi.isPrimaryAccount(); });
+    } else $("#payment-buy").disabled = !selectedProduct() || !window.VideoGrabberApi.isPrimaryAccount();
+    await refreshPayments();
+    await refreshSubscriptions(version);
+  } catch (error) {
+    if (!current()) return;
+    $("#payment-buy").disabled = true;
+    status("Оплата временно недоступна. Обновите данные или попробуйте позже.", "error");
+  }
+}
+
+$("#payment-recurring").addEventListener("change", () => promotionForm?.synchronize());
+
 async function boot() {
   for (let attempt = 0; attempt < 50 && !window.VideoGrabberApi; attempt++)
     await new Promise((resolve) => setTimeout(resolve, 100));
   if (!window.VideoGrabberApi) return;
+  window.VideoGrabberApi.onAccountRefresh(refreshBilling);
   try {
     await window.VideoGrabberApi.ready;
-    await loadProducts();
-    await refreshPayments();
-    await refreshSubscriptions();
+    if (!accountRefreshSeen) await refreshBilling({ phase: "loaded", accountId: window.VideoGrabberApi.currentAccountId() });
   } catch (error) {
+    $("#payment-buy").disabled = true;
     status("Оплата временно недоступна. Попробуйте позже.", "error");
   }
 }

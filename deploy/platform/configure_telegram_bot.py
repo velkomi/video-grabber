@@ -22,6 +22,9 @@ BOT_COMMANDS = [
     {"command": "account", "description": "Мой аккаунт"},
     {"command": "settings", "description": "Открыть Mini App"},
     {"command": "subscription", "description": "Тариф и лимиты"},
+    {"command": "referral", "description": "Пригласить друга"},
+    {"command": "bonus", "description": "Бонусный баланс"},
+    {"command": "promo", "description": "Как применить промокод"},
     {"command": "help", "description": "Как пользоваться ботом"},
     {"command": "hide", "description": "Скрыть кнопки меню"},
 ]

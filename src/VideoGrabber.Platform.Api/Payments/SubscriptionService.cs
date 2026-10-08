@@ -18,6 +18,14 @@ public sealed class SubscriptionService(
             State = "canceled"
         };
 
+    public async Task ApplyVerifiedFullRefundAsync(VerifiedRefund refund,CancellationToken cancellationToken)
+    {
+        var subscription=await subscriptions.ReadByOriginAsync(refund.PaymentId,cancellationToken);
+        if (subscription is null) return;
+        await subscriptions.ApplyTerminalAdjustmentAsync(subscription.SubscriptionId,
+            "refund:"+refund.RefundId,"refund",refund.OccurredAt,cancellationToken);
+    }
+
     public async Task<SubscriptionView?> ProjectInitialAsync(
         VerifiedPayment payment,
         CancellationToken cancellationToken)
@@ -25,7 +33,7 @@ public sealed class SubscriptionService(
         var intent = await payments.ReadIntentAsync(
             payment.PaymentId, cancellationToken).ConfigureAwait(false)
             ?? throw new KeyNotFoundException("Payment was not found.");
-        var product = payments.Catalog.RequireProduct(
+        var product = intent.ProductSnapshot ?? payments.Catalog.RequireProduct(
             intent.Sku, intent.Provider, intent.Recurring);
         return await subscriptions.ProjectInitialPaymentAsync(
             intent, product.PlanId, payment, cancellationToken).ConfigureAwait(false);

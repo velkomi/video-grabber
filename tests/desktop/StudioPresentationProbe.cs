@@ -44,6 +44,14 @@ public sealed partial class MainWindow
         {
             Directory.CreateDirectory(StudioProbeRoot);
             await Task.Delay(800);
+            if (Environment.GetEnvironmentVariable("VIDEOGRABBER_PROBE_REFERRALS") == "1")
+            {
+                _managedReferralsCard.Visibility = Visibility.Visible;
+                RenderManagedReferrals(new VideoGrabber.Platform.Contracts.ReferralSummary("QAONLYCODE",
+                    new Uri("https://example.test/web/?ref=QAONLYCODE"), new Uri("https://t.me/example_bot?start=ref_QAONLYCODE"),3,1,
+                    [new("RUB",13500,22500,0,0),new("XTR",27,45,0,0)],
+                    [new("reward",new(13500,"RUB"),DateTimeOffset.UtcNow,DateTimeOffset.UtcNow.AddDays(14),DateTimeOffset.UtcNow.AddDays(379))]));
+            }
             await CaptureStudioProbeAsync("initial-page.png");
             foreach (var width in new[] { 1268, 1100, 960, 930, 800, 640 })
             {
@@ -63,6 +71,15 @@ public sealed partial class MainWindow
                     current.ChangeView(null, 0, null, true);
                     await Task.Delay(100);
                     await CaptureStudioProbeAsync($"{page}-{width}.png");
+                    if (page == "account" && Environment.GetEnvironmentVariable("VIDEOGRABBER_PROBE_REFERRALS") == "1")
+                    {
+                        var offset = _managedReferralsCard.TransformToVisual((UIElement)current.Content).TransformPoint(new Windows.Foundation.Point(0,0)).Y;
+                        current.ChangeView(null,offset,null,true);
+                        await Task.Delay(100);
+                        await CaptureStudioProbeAsync($"referrals-{width}.png");
+                        if (!_managedReferralsCard.IsLoaded || _managedReferralsCard.ActualWidth<200)
+                            throw new InvalidOperationException("Referral account card was not rendered.");
+                    }
                     var buttons = Descendants(current).OfType<Button>()
                         .Where(b => b.ActualWidth > 0 && b.Visibility == Visibility.Visible).ToArray();
                     var bot = Descendants(_accountPage).OfType<HyperlinkButton>()

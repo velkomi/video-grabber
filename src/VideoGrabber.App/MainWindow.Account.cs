@@ -76,6 +76,9 @@ public sealed partial class MainWindow
         var paymentsCard = BuildManagedPaymentsCard();
         _signedInAccountSections.Add(paymentsCard);
         body.Children.Add(paymentsCard);
+        var referralsCard = BuildManagedReferralsCard();
+        _signedInAccountSections.Add(referralsCard);
+        body.Children.Add(referralsCard);
 
         _accountDevicesPanel = Vertical(8);
         _accountDevicesPanel.Children.Add(SectionHeading("Компьютеры"));
@@ -209,12 +212,14 @@ public sealed partial class MainWindow
 
     private void SetManagedSignedOut(string message)
     {
+        Interlocked.Increment(ref _managedReferralsGeneration);
         _managedAccessSnapshot = null;
         SetAccountStatus(message);
         AccountUi(() =>
         {
             _accountActions.Visibility = Visibility.Collapsed;
             foreach (var section in _signedInAccountSections) section.Visibility = Visibility.Collapsed;
+            _managedReferralsPanel.Children.Clear();
             _accountProfileText.Text = "Вы ещё не вошли.";
             _accountProvidersText.Text = "Способы входа появятся после входа в аккаунт.";
             _accountAccessText.Text = "Войдите, чтобы увидеть доступные возможности.";
@@ -226,6 +231,7 @@ public sealed partial class MainWindow
 
     private async Task LoadManagedAccountAsync()
     {
+        Interlocked.Increment(ref _managedReferralsGeneration);
         if (string.IsNullOrWhiteSpace(_managedAccessToken))
         {
             SetManagedSignedOut("Сначала войдите в аккаунт.");
@@ -255,6 +261,7 @@ public sealed partial class MainWindow
             {
                 _accountActions.Visibility = Visibility.Visible;
                 foreach (var section in _signedInAccountSections) section.Visibility = Visibility.Visible;
+                _managedReferralsCard.Visibility = Visibility.Collapsed;
                 _accountProfileText.Text = profile.Blocked ? "Аккаунт заблокирован. Обратитесь в поддержку." : "Аккаунт активен.";
                 _accountProvidersText.Text = "Привязанные способы входа: " +
                     (profile.LinkedProviders.Length == 0 ? "нет" : string.Join(", ", profile.LinkedProviders.Select(FriendlyProviderName))) +
@@ -269,6 +276,7 @@ public sealed partial class MainWindow
             SetOperationControls(false);
             await RefreshManagedPaymentProductsAsync();
             await RefreshManagedSubscriptionsAsync();
+            await RefreshManagedReferralsAsync();
             operation.Complete();
         }
         catch (UnauthorizedAccessException)

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Npgsql;
 using VideoGrabber.Platform.Api.Telegram;
 using VideoGrabber.Platform.Contracts;
+using VideoGrabber.Platform.Core.Payments;
 using VideoGrabber.Platform.Persistence;
 
 namespace VideoGrabber.Platform.Api.Payments;
@@ -24,9 +25,9 @@ public sealed class StarsPaymentAdapter(
             .ConfigureAwait(false);
         var checkout = await payments.BeginAsync(accountId, request, cancellationToken)
             .ConfigureAwait(false);
-        var product = payments.Catalog.RequireProduct(
-            request.Sku, "stars", request.Recurring);
-        var price = product.Prices["stars"];
+        var intent = await payments.ReadIntentAsync(checkout.PaymentId,cancellationToken)
+            ?? throw new PaymentConflictException();
+        var price = new CatalogPrice(intent.Amount.MinorUnits,intent.Amount.Currency);
         var title = request.Sku.Length <= 32 ? request.Sku : request.Sku[..32];
         var uri = await bot.CreateInvoiceAsync(
             payerId,

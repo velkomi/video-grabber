@@ -62,6 +62,27 @@
   </section>
 
   <div id="admin-console" hidden>
+    <section class="card" aria-labelledby="promotions-title">
+      <div class="card-head"><h2 id="promotions-title">Промокоды</h2><button id="promotions-refresh" class="button quiet small" type="button">Обновить</button></div>
+      <p class="note">Шаблоны скидок: 10%, 15% и 20%. Это варианты настройки, а не готовые действующие коды. Скидка предназначена для первой разовой оплаты; бонусы и скидка вместе — до 30% цены.</p>
+      <form id="promotion-form">
+        <div class="grid two">
+          <label>Код<input id="promo-code" autocomplete="off" maxlength="64" pattern="[A-Za-z0-9_-]+" required></label>
+          <label>Скидка<select id="promo-discount"><option value="10">10%</option><option value="15">15%</option><option value="20">20%</option></select></label>
+          <label>Валюта<select id="promo-currency"><option value="RUB">RUB — копейки</option><option value="XTR">XTR — целые Stars</option></select></label>
+          <label>SKU тарифа (необязательно)<input id="promo-sku" autocomplete="off" maxlength="80"><span class="note">Пусто — подходящие платные подписки.</span></label>
+          <label>Начало, UTC<input id="promo-starts" type="datetime-local" required></label>
+          <label>Окончание, UTC<input id="promo-ends" type="datetime-local" required></label>
+          <label>Всего применений<input id="promo-max-uses" type="number" min="1" step="1" required></label>
+          <label>На один аккаунт<input id="promo-per-account" type="number" min="1" step="1" value="1" required></label>
+          <label>Бюджет скидок в минимальных единицах<input id="promo-budget" type="number" min="1" step="1" required><span class="note">Для RUB: 100 единиц = 1 ₽. Для XTR: 1 единица = 1 Star.</span></label>
+        </div>
+        <label class="promo-active-label"><input id="promo-active" type="checkbox">Разрешить новые применения после сохранения</label>
+        <button id="promotion-save" class="button primary" type="submit">Сохранить с подтверждённой 2FA</button>
+      </form>
+      <p id="promotions-status" class="status" role="status" aria-live="polite"></p>
+      <div id="promotions-list"></div>
+    </section>
     <section class="card">
       <div class="card-head">
         <div><p class="eyebrow">КЛИЕНТ</p><h2>Найти аккаунт</h2></div>
@@ -163,6 +184,7 @@
     </section>
   </div>
 </main>
-<script type="module" src="/admin/admin.js"></script>
+<script src="/admin/promotions.js?v=referrals-20261008"></script>
+<script type="module" src="/admin/admin.js?v=referrals-20261008"></script>
 </body>
 </html>

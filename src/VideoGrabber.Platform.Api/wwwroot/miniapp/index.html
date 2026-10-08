@@ -8,6 +8,8 @@
   <link rel="icon" type="image/png" href="/assets/videograbber-icon.png">
   <link rel="stylesheet" href="/assets/fonts/fonts.css">
   <link rel="stylesheet" href="/miniapp/styles.css?v=unified-studio-20261008">
+  <link rel="stylesheet" href="/assets/promotions.css?v=referrals-20261008">
+  <script src="/assets/promotions.js?v=referrals-20261008"></script>
 </head>
 <body>
 <div class="app-shell">
@@ -129,12 +131,14 @@
 
     <section id="billing-panel" role="tabpanel" aria-labelledby="tab-billing-panel" tabindex="0" class="tab-panel" data-tab-panel hidden>
       <section id="payments" class="card">
+        <section id="referral-card" class="promotion-card" aria-label="Приглашения и бонусы" hidden></section>
         <div class="card-title"><span class="card-icon">★</span><h2>Подписка</h2></div>
         <p class="muted">Выберите тариф и оплатите Telegram Stars. Доступ появится после подтверждения оплаты.</p>
         <div id="payment-availability" class="notice"></div>
         <label for="payment-product">Тариф</label>
         <select id="payment-product"></select>
         <label class="switch-row"><span>Продлевать автоматически</span><input id="payment-recurring" type="checkbox"></label>
+        <div id="promotion-checkout" class="promotion-checkout" hidden></div>
         <button id="payment-buy" class="button primary" type="button">Оплатить Stars</button>
         <div id="payment-history" class="list"></div>
       </section>
@@ -149,8 +153,8 @@
   </main>
 </div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<script type="module" src="/miniapp/app.js?v=unified-studio-20261008"></script>
+<script type="module" src="/miniapp/app.js?v=referrals-20261008"></script>
 <script type="module" src="/miniapp/media.js?v=unified-studio-20261008"></script>
-<script type="module" src="/miniapp/payments.js?v=unified-studio-20261008"></script>
+<script type="module" src="/miniapp/payments.js?v=referrals-20261008"></script>
 </body>
 </html>

@@ -12,6 +12,10 @@
   --danger: #ff6b6b;
 }
 * { box-sizing: border-box; }
+.promo-active-label { display:flex; align-items:center; gap:10px; }
+.promo-active-label input { width:20px; height:20px; min-height:20px; margin:0; }
+.promotion-admin-row { border-top:1px solid var(--line); padding:12px 0; overflow-wrap:anywhere; }
+.promotion-admin-row .button { margin:6px 8px 0 0; }
 body { margin: 0; background: radial-gradient(circle at 20% 0%, #12233f 0, var(--bg) 36%); color: var(--text); min-height: 100vh; }
 button, input, textarea, select { font: inherit; }
 .topbar {

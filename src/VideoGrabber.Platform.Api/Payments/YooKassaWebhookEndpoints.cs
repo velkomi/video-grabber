@@ -35,6 +35,15 @@ public static class YooKassaWebhookEndpoints
         var providerId = id.GetString()!;
         try
         {
+            if (notification.TryGetProperty("event",out var eventName) && eventName.ValueKind==JsonValueKind.String
+                && eventName.GetString()=="refund.succeeded")
+            {
+                var refund=await adapter.ReadVerifiedRefundAsync(providerId,cancellationToken);
+                var refunded=await payments.ApplyVerifiedRefundAsync(refund,cancellationToken);
+                if (refunded.Status=="refunded")
+                    await subscriptions.ApplyVerifiedFullRefundAsync(refund,cancellationToken);
+                return Results.Ok();
+            }
             var verified = await adapter.ReadVerifiedAsync(
                 providerId, cancellationToken).ConfigureAwait(false);
             await payments.ApplyAsync(
@@ -64,5 +73,7 @@ public static class YooKassaWebhookEndpoints
         {
             return Results.BadRequest(new { code = "invalid_yookassa_object_id" });
         }
+        catch (InvalidDataException)
+        { return Results.BadRequest(new {code="invalid_yookassa_object"}); }
     }
 }

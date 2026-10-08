@@ -17,6 +17,8 @@ let currentAccountId = null;
 let mfaEnrolled = false;
 let mfaExpiresAt = 0;
 let mfaTimerHandle = null;
+const promotionAdmin = window.VideoGrabberAdminPromotions.attach(document, api,
+  () => !!adminToken() && mfaExpiresAt > Date.now());
 
 function baseToken() {
   return sessionStorage.getItem("vg_web_access") || "";
@@ -55,7 +57,9 @@ async function api(path, options = {}, mode = "admin") {
       const body = await response.json();
       detail = body.detail || body.code || "";
     } catch {}
-    throw new Error("HTTP " + response.status + (detail ? " · " + detail : ""));
+    const error = new Error("HTTP " + response.status + (detail ? " · " + detail : ""));
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return null;
   return response.json();
@@ -94,6 +98,7 @@ function showConsole() {
   $("mfa-card").hidden = true;
   $("admin-console").hidden = false;
   startMfaTimer();
+  promotionAdmin.load();
 }
 
 function startMfaTimer() {

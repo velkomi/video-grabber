@@ -183,6 +183,8 @@ public static class PaymentProjection
             request.Provider,
             request.IdempotencyKey.ToString("D"),
             request.Recurring ? "1" : "0");
+        // Preserve the existing hash for requests from clients without promotion quotes.
+        if (request.QuoteId is Guid quote) canonical += "\n" + quote.ToString("D");
         return Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(
                 System.Text.Encoding.UTF8.GetBytes(canonical)))

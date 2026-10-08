@@ -78,6 +78,12 @@ public static class PaymentEndpoints
         }
         catch (PaymentDisabledException)
         { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+        catch (PromotionDisabledException)
+        { return Results.Json(new { code="promotions_disabled" }, statusCode:503); }
+        catch (PromotionConflictException)
+        { return Results.Conflict(new { code="promotion_conflict" }); }
+        catch (PromotionUnavailableException e)
+        { return Results.BadRequest(new {code=e.Code}); }
         catch (PaymentConflictException)
         { return Results.Conflict(new { code = "payment_idempotency_conflict" }); }
         catch (KeyNotFoundException)

@@ -379,7 +379,23 @@ public sealed class IdentityLinkService : IAsyncDisposable
         await using var connection = await _adminDataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.ReadCommitted, cancellationToken);
+        foreach (var id in new[] { request.SourceAccountId,request.TargetAccountId }.Order())
+        {
+            await using var moneyLock=new NpgsqlCommand("select pg_advisory_xact_lock(hashtextextended(@a,20260918))",connection,transaction);
+            moneyLock.Parameters.AddWithValue("a",id.ToString("D"));await moneyLock.ExecuteNonQueryAsync(cancellationToken);
+        }
         var accounts = await LockMergeAccountsAsync(connection, transaction, request, cancellationToken);
+        await using (var financial=new NpgsqlCommand("""
+            select exists(select 1 from licensing.bonus_lots where account_id=@source)
+                or exists(select 1 from licensing.promotion_payments where referrer_id=@source)
+                or exists(select 1 from licensing.promotion_payments where account_id=@source and state in ('reserved','succeeded','refunded'))
+                or exists(select 1 from licensing.promotion_payments where account_id=@target and state='reserved')
+            """,connection,transaction))
+        {
+            financial.Parameters.AddWithValue("source",request.SourceAccountId);
+            financial.Parameters.AddWithValue("target",request.TargetAccountId);
+            if ((bool)(await financial.ExecuteScalarAsync(cancellationToken))!) throw new FinancialMergeRequiresReconciliationException();
+        }
         if (accounts.Count != 2 || accounts.Any(account => account.Blocked || account.MergedInto is not null))
             throw new FinancialMergeRequiresReconciliationException();
         if (await HasActiveReservationsAsync(connection, transaction, request, cancellationToken))

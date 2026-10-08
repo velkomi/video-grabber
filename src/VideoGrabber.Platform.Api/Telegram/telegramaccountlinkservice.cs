@@ -247,12 +247,13 @@ public sealed class TelegramAccountLinkService : IAsyncDisposable
 
         await using (var blockSource = new NpgsqlCommand("""
             update licensing.accounts
-            set blocked_at=coalesce(blocked_at,@now)
+            set blocked_at=coalesce(blocked_at,@now),merged_into=@target
             where account_id=@source
             """, connection, transaction))
         {
             blockSource.Parameters.AddWithValue("now", now);
             blockSource.Parameters.AddWithValue("source", sourceAccountId);
+            blockSource.Parameters.AddWithValue("target", targetAccountId);
             await blockSource.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -281,6 +282,8 @@ public sealed class TelegramAccountLinkService : IAsyncDisposable
         var checks = new[]
         {
             "select exists(select 1 from licensing.payments where account_id=@source)",
+            "select exists(select 1 from licensing.bonus_lots where account_id=@source)",
+            "select exists(select 1 from licensing.promotion_payments where referrer_id=@source)",
             "select exists(select 1 from licensing.subscriptions where account_id=@source)",
             "select exists(select 1 from licensing.devices where account_id=@source and revoked_at is null)",
             "select exists(select 1 from licensing.delivery_destinations where account_id=@source and revoked_at is null)",
@@ -338,7 +341,7 @@ public sealed class TelegramAccountLinkService : IAsyncDisposable
         foreach (var account in new[] { source, target }.OrderBy(x => x))
         {
             await using var command = new NpgsqlCommand(
-                "select pg_advisory_xact_lock(hashtextextended(@account,20260922))",
+                "select pg_advisory_xact_lock(hashtextextended(@account,20260918)); select pg_advisory_xact_lock(hashtextextended(@account,20260922))",
                 connection, transaction);
             command.Parameters.AddWithValue("account", account.ToString("D"));
             await command.ExecuteNonQueryAsync(cancellationToken);

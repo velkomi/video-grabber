@@ -16,6 +16,7 @@ public sealed class YooKassaEmulator : HttpMessageHandler
 {
     private readonly ConcurrentQueue<YooKassaRequest> _requests = new();
     private readonly ConcurrentDictionary<string, JsonElement> _payments = new();
+    private readonly ConcurrentDictionary<string, JsonElement> _refunds = new();
     private readonly ConcurrentDictionary<string, string> _createKeys = new();
     private int _paymentCounter;
     private int _refundCounter;
@@ -31,6 +32,7 @@ public sealed class YooKassaEmulator : HttpMessageHandler
     {
         _payments[id] = JsonSerializer.SerializeToElement(value);
     }
+    public void SetRefund(string id,object value) => _refunds[id]=JsonSerializer.SerializeToElement(value);
 
     public JsonElement ReadPayment(string id)
         => _payments.TryGetValue(id, out var value)
@@ -82,6 +84,13 @@ public sealed class YooKassaEmulator : HttpMessageHandler
         }
 
         const string paymentPrefix = "/v3/payments/";
+        const string refundPrefix = "/v3/refunds/";
+        var refundIndex=path.IndexOf(refundPrefix,StringComparison.Ordinal);
+        if (request.Method==HttpMethod.Get && refundIndex>=0)
+        {
+            var refundId=Uri.UnescapeDataString(path[(refundIndex+refundPrefix.Length)..]);
+            return _refunds.TryGetValue(refundId,out var refund) ? Json(refund) : new HttpResponseMessage(HttpStatusCode.NotFound);
+        }
         var index = path.IndexOf(paymentPrefix, StringComparison.Ordinal);
         if (request.Method == HttpMethod.Get && index >= 0)
         {

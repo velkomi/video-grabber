@@ -43,6 +43,15 @@ public sealed class SubscriptionStore(
             IsolationLevel.ReadCommitted, cancellationToken);
         await LockAccountAsync(connection, transaction, intent.AccountId, cancellationToken);
 
+        // Callback projection is separate from payment settlement. Re-read under
+        // the shared money lock so a delayed success cannot revive a refund.
+        await using (var origin=new NpgsqlCommand("select state from licensing.payments where payment_id=@p and account_id=@a",connection,transaction))
+        {
+            origin.Parameters.AddWithValue("p",intent.PaymentId);origin.Parameters.AddWithValue("a",intent.AccountId);
+            if ((string?)await origin.ExecuteScalarAsync(cancellationToken)!="succeeded")
+            { await transaction.CommitAsync(cancellationToken);return null; }
+        }
+
         var existing = await ReadByOriginForUpdateAsync(
             connection, transaction, intent.PaymentId, cancellationToken);
         if (existing is not null)
@@ -668,7 +677,7 @@ public sealed class SubscriptionStore(
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
-            "select pg_advisory_xact_lock(hashtextextended(@account,20260919))",
+            "select pg_advisory_xact_lock(hashtextextended(@account,20260918)); select pg_advisory_xact_lock(hashtextextended(@account,20260919))",
             connection, transaction);
         command.Parameters.AddWithValue("account", accountId.ToString("D"));
         await command.ExecuteNonQueryAsync(cancellationToken);

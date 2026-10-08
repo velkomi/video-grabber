@@ -53,9 +53,9 @@ public sealed class YooKassaPaymentAdapter(
         var returnUri = ReturnUri();
         var checkout = await payments.BeginAsync(
             accountId, request, cancellationToken).ConfigureAwait(false);
-        var product = payments.Catalog.RequireProduct(
-            request.Sku, "yookassa", request.Recurring);
-        var price = product.Prices["yookassa"];
+        var stored = await payments.ReadIntentAsync(checkout.PaymentId,cancellationToken)
+            ?? throw new PaymentConflictException();
+        var price = new CatalogPrice(stored.Amount.MinorUnits,stored.Amount.Currency);
         if (price.Currency != "RUB")
             throw new InvalidOperationException("YooKassa catalog price must be RUB.");
 
@@ -173,7 +173,7 @@ public sealed class YooKassaPaymentAdapter(
             ?? throw new KeyNotFoundException("Unknown YooKassa order.");
         if (intent.Provider != "yookassa")
             throw new PaymentConflictException();
-        var product = payments.Catalog.RequireProduct(
+        var product = intent.ProductSnapshot ?? payments.Catalog.RequireProduct(
             intent.Sku, "yookassa", intent.Recurring);
         if (intent.ProviderPaymentId is { Length: > 0 }
             && intent.ProviderPaymentId != providerPaymentId)
@@ -230,6 +230,28 @@ public sealed class YooKassaPaymentAdapter(
             occurred,
             savedMethod,
             paidThrough);
+    }
+
+    public async Task<VerifiedRefund> ReadVerifiedRefundAsync(string refundId,CancellationToken cancellationToken)
+    {
+        ValidateProviderId(refundId);
+        using var request=Request(HttpMethod.Get,"refunds/"+Uri.EscapeDataString(refundId),Credentials(),null);
+        using var response=await clients.CreateClient("YooKassa").SendAsync(request,cancellationToken);
+        if (response.StatusCode==HttpStatusCode.NotFound) throw new KeyNotFoundException();
+        if ((int)response.StatusCode==429 || response.StatusCode is HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout)
+            throw new HttpRequestException("yookassa_retryable",null,response.StatusCode);
+        response.EnsureSuccessStatusCode();
+        using var body=JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var root=body.RootElement;
+        if (RequiredString(root,"id")!=refundId || RequiredString(root,"status")!="succeeded") throw new PaymentConflictException();
+        var charge=RequiredString(root,"payment_id");
+        var paid=await ReadVerifiedAsync(charge,cancellationToken);
+        if (paid.Status!="succeeded" || !root.TryGetProperty("amount",out var amount) || amount.ValueKind!=JsonValueKind.Object
+            || RequiredString(amount,"currency")!=paid.Amount.Currency) throw new PaymentConflictException();
+        var refund=ParseRub(RequiredString(amount,"value"));
+        if (refund.MinorUnits<=0 || refund.MinorUnits>paid.Amount.MinorUnits) throw new PaymentConflictException();
+        return new VerifiedRefund("yookassa",paid.Environment,refundId,charge,paid.PaymentId,paid.AccountId,refund,clock.GetUtcNow())
+        { OriginalPayment=paid };
     }
 
     public async Task<YooKassaRenewalCheckout> CreateRecurringRenewalAsync(
