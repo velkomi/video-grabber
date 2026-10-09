@@ -19,3 +19,4 @@
 | 0.1.10-preview.60-rc.1 / 2026-09-29 | Эксклюзивный owner-admin, очистка пользовательской терминологии, release anti-rollback | API/Admin, Windows UI, Web, deploy | Oleg | Codex | API/App builds, PostgreSQL owner integration test | RELEASE_NOTES.md | preview |
 | post-preview.60 / 2026-10-01 | Настоящий Three.js hero, Raycaster, единый GSAP story-stage, deterministic visual QA | Public Web, Three.js, GSAP, deployment smoke | Oleg | Codex | GitHub Actions + browser/design QA recorded in design-qa.md | design-qa.md | physical-device/field-vitals evidence отдельно |
 
+`2026-10-10` — support/security server rollout: encrypted guest form, Mini App/bot entry points, bounded owner notifications, auth fixes and Report-Only headers. Codex implementation/fresh review; owner @Velkoshkin. Telegram receipt verified, SMTP/native GUI pending. See docs/releases/support-security-20261010.md.
