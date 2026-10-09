@@ -15,7 +15,7 @@ public sealed class SupportMailTransport(SupportOptions options, IConfiguration 
         var host = configuration["VG_SUPPORT_SMTP_HOST"]!;
         var port = int.TryParse(configuration["VG_SUPPORT_SMTP_PORT"], out var parsed) ? parsed : 587;
         var recipient = configuration["VG_SUPPORT_EMAIL_OWNER"] ?? "velkoshkin@gmail.com";
-        if (!SupportOptions.ValidEmail(recipient) || port is not (465 or 587))
+        if (!SupportOptions.ValidEmail(recipient) || port is < 1 or > 65535)
             return new("confirmed_failure", "smtp_configuration_invalid");
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress("VideoGrabber", configuration["VG_SUPPORT_SMTP_FROM"]!));
