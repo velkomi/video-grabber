@@ -12,7 +12,7 @@ namespace VideoGrabber.Platform.Tests;
 
 public sealed class SupportRequestTests
 {
-    private static async Task<string> SolveAsync(HttpClient client)
+    internal static async Task<string> SolveAsync(HttpClient client)
     {
         using var response = await client.GetAsync("/v1/support/challenge");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

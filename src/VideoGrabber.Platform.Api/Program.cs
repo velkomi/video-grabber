@@ -167,7 +167,9 @@ builder.Services.AddRateLimiter(options =>
     VideoGrabber.Platform.Api.Security.ClientRateLimitPolicies.ConfigureAuthPolicies(options);
 });
 builder.Services.AddHttpClient();
-builder.Services.AddHttpClient("TelegramBotApi").RemoveAllLoggers();
+builder.Services.AddHttpClient("TelegramBotApi")
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
+    .RemoveAllLoggers();
 builder.Services.AddHttpClient("SupabaseAuth").RemoveAllLoggers();
 builder.Services.AddHttpClient("YooKassa").RemoveAllLoggers();
 builder.Services.AddHttpClient("OperationsAlerts").RemoveAllLoggers();
@@ -336,6 +338,10 @@ builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportOptions>(
 builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportDataProtector>();
 builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportChallengeService>();
 builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportStore>();
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.ISupportNotificationTransport, VideoGrabber.Platform.Api.Support.SupportTelegramTransport>();
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.ISupportNotificationTransport, VideoGrabber.Platform.Api.Support.SupportMailTransport>();
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportNotificationWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<VideoGrabber.Platform.Api.Support.SupportNotificationWorker>());
 var app = builder.Build();
 
 app.UseForwardedHeaders();

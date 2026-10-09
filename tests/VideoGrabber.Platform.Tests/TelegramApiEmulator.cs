@@ -24,6 +24,8 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
     public TaskCompletionSource<bool>? DirectVideoRelease { get; set; }
     public bool CancelDirectVideoAck { get; set; }
     public bool LoseNextRefundAck { get; set; }
+    public bool LoseNextMessageAck { get; set; }
+    public HttpStatusCode? MessageStatusCode { get; set; }
 
     public void SetStarTransactions(params object[] transactions)
     {
@@ -51,6 +53,12 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
         _requests.Enqueue(new TelegramApiRequest(request.Method.Method, path, body));
         if (path.EndsWith("/getChat", StringComparison.Ordinal))
             return HandleGetChat(body);
+        if (path.EndsWith("/sendMessage", StringComparison.Ordinal))
+        {
+            if (MessageStatusCode is { } status) return new HttpResponseMessage(status);
+            if (LoseNextMessageAck) { LoseNextMessageAck = false; throw new HttpRequestException("synthetic lost message ACK"); }
+            return Json(new { ok = true, result = new { message_id = 1L, chat = new { id = ReadLong(body, "chat_id") } } });
+        }
         if (path.EndsWith("/getChatMember", StringComparison.Ordinal))
             return HandleGetChatMember(body);
         if (path.EndsWith("/answerCallbackQuery", StringComparison.Ordinal))
