@@ -575,16 +575,37 @@ label { display: grid; gap: 7px; color: #c9d4e8; font-size: 13px; }
 .download-lead { color: var(--muted); max-width: 680px; font-size: 16px; }
 .download-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
 
-footer {
-  min-height: 116px;
+.site-footer {
   border-top: 1px solid rgba(129, 154, 203, .16);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 26px;
+  display: grid;
+  grid-template-columns: minmax(230px, 1fr) minmax(0, 3fr);
+  align-items: start;
+  gap: 48px;
+  padding: 42px 0 38px;
 }
+.site-footer .footer-brand { align-self: start; font-size: 26px; }
 .footer-brand span { display: grid; gap: 1px; }
-.footer-brand small { color: var(--muted-2); font-size: 10px; font-weight: 500; }
+.footer-brand small { color: var(--muted); font-size: 11px; font-weight: 500; margin-top: 4px; }
+.site-footer .footer-columns {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  gap: 24px;
+  min-width: 0;
+}
+.footer-column { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+.footer-column h2 { margin: 0 0 8px; color: #91baff; font-family: "Manrope", "Onest", sans-serif; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.site-footer .footer-column a { display: inline-flex; align-items: center; min-height: 28px; max-width: 100%; line-height: 1.55; font-size: 14px; color: var(--muted); }
+.site-footer .footer-column a:hover { color: var(--text); }
+@media (max-width: 1040px) {
+  .site-footer { grid-template-columns: 1fr; gap: 30px; }
+}
+@media (max-width: 640px) {
+  .site-footer .footer-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 20px; }
+  .footer-column { gap: 4px; }
+  .site-footer .footer-column a { min-height: 44px; }
+  .footer-column h2 { margin-bottom: 2px; }
+}
 
 .plan-dialog {
   width: min(560px, calc(100vw - 30px));
@@ -724,8 +745,7 @@ footer {
   .pricing-head > p { margin-top: 12px; }
   .form-row { grid-template-columns: 1fr; }
   .download-card { grid-template-columns: 1fr; }
-  footer { align-items: flex-start; flex-direction: column; padding: 28px 0; }
-  footer nav { flex-wrap: wrap; gap: 16px; }
+  .site-footer { padding: 28px 0; }
 }
 
 @media (max-width: 460px) {
