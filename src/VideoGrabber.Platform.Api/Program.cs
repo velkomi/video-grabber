@@ -337,6 +337,7 @@ builder.Services.AddSingleton(sp => new ConsentStore(sp.GetRequiredService<Credi
 builder.Services.AddSingleton(new VideoGrabber.Platform.Api.ProductInformation.DocumentCatalog(
     builder.Configuration["VG_DOCUMENTS_PATH"] ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "info", "content.json")));
 builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportOptions>();
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportGuestIdentity>();
 builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportDataProtector>();
 builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportChallengeService>();
 builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportStore>();

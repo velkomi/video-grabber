@@ -87,6 +87,12 @@ async function submit(event) {
       body:JSON.stringify({...body,altcha:String(proof),website:String(fields.website || '')})});
     const result = await response.json().catch(()=>({}));
     if (!response.ok) {
+      if (response.status === 403 && result.code === 'csrf_required') {
+        const refreshed = await fetch('/v1/support/config',{credentials:'same-origin',cache:'no-store',headers:headers()});
+        if (refreshed.ok) config = await refreshed.json();
+        status('Защита формы обновлена. Нажмите «Отправить вопрос» ещё раз.','error');
+        return;
+      }
       status(supportError(response.status,result.code),'error');
       if (response.status === 403) widget?.reset?.();
       return;

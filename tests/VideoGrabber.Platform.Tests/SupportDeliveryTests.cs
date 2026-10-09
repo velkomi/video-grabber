@@ -152,4 +152,18 @@ public sealed class SupportDeliveryTests
         Assert.Equal(expectedAttempts, f.TelegramApi.Requests.Count(request => request.Path.EndsWith("/sendMessage", StringComparison.Ordinal)));
         Assert.Equal(expectedState, await StateAsync(f, ticket, "telegram"));
     }
+
+    [Fact]
+    public async Task Telegram_retry_after_preserves_attempt_until_server_delay_passes()
+    {
+        await using var f = await ApiFixture.StartAsync(); f.SupportEnabled=true; await f.RestartAsync();
+        f.TelegramApi.MessageStatusCode=HttpStatusCode.TooManyRequests; f.TelegramApi.MessageRetryAfter=120;
+        var ticket=await SubmitAsync(f); var worker=f.Service<SupportNotificationWorker>();
+        await worker.RunOnceAsync(CancellationToken.None);
+        f.Clock.Advance(TimeSpan.FromSeconds(60)); await worker.RunOnceAsync(CancellationToken.None);
+        Assert.Single(f.TelegramApi.Requests, x=>x.Path.EndsWith("/sendMessage"));
+        f.TelegramApi.MessageStatusCode=null; f.Clock.Advance(TimeSpan.FromSeconds(61));
+        await worker.RunOnceAsync(CancellationToken.None);
+        Assert.Equal("delivered",await StateAsync(f,ticket,"telegram"));
+    }
 }

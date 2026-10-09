@@ -13,12 +13,20 @@ public static class SupportEndpoints
 
     public static void MapSupportEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapGet("/v1/support/config", (HttpContext http, SupportOptions options) =>
+        routes.MapGet("/v1/support/config", (HttpContext http, SupportOptions options, SupportGuestIdentity guest) =>
         {
             http.Response.Headers.CacheControl = "no-store";
+            guest.CallerKey(http);
+            var csrf = http.Request.Cookies["vg_csrf"];
+            if (http.Request.Cookies.ContainsKey("vg_session") && string.IsNullOrEmpty(csrf))
+            {
+                csrf = Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+                http.Response.Cookies.Append("vg_csrf", csrf, new CookieOptions
+                { HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, Path = "/", MaxAge = TimeSpan.FromHours(8) });
+            }
             return Results.Ok(new
             { enabled = options.Ready, topics = SupportOptions.Topics, messageMinLength = 20, messageMaxLength = 4000,
-              csrfToken = http.Request.Cookies.TryGetValue("vg_csrf", out var csrf) ? csrf : null });
+              csrfToken = csrf });
         })
             .RequireRateLimiting("auth-config");
         routes.MapGet("/v1/support/challenge", (SupportOptions options, SupportChallengeService challenges) =>

@@ -15,7 +15,7 @@ public static class ClientRateLimitPolicies
         AddCallerPolicy(options, "support-challenge", 6);
         AddCallerPolicy(options, "support-submit", 10);
         AddCallerPolicy(options, "csp-report", 10);
-        options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        var concurrency = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         {
             var path = context.Request.Path.Value ?? "";
             if (path == "/v1/security/csp-report")
@@ -29,11 +29,23 @@ public static class ClientRateLimitPolicies
                 { PermitLimit = 32, QueueLimit = 0 });
             return RateLimitPartition.GetNoLimiter("other");
         });
+        var supportIpCeiling = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        {
+            var path = context.Request.Path.Value ?? "";
+            if (!path.StartsWith("/v1/support/", StringComparison.Ordinal)) return RateLimitPartition.GetNoLimiter("other");
+            var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            return RateLimitPartition.GetFixedWindowLimiter(path + ":" + ip, _ => new FixedWindowRateLimiterOptions
+            { PermitLimit = path.EndsWith("challenge", StringComparison.Ordinal) ? 60 : 120,
+              Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true });
+        });
+        options.GlobalLimiter = PartitionedRateLimiter.CreateChained(concurrency, supportIpCeiling);
     }
 
     private static void AddCallerPolicy(RateLimiterOptions options, string name, int permits)
         => options.AddPolicy(name, context => RateLimitPartition.GetFixedWindowLimiter(
-            CallerKey(context), _ => new FixedWindowRateLimiterOptions
+            name.StartsWith("support-", StringComparison.Ordinal)
+                ? context.RequestServices.GetRequiredService<VideoGrabber.Platform.Api.Support.SupportGuestIdentity>().CallerKey(context)
+                : CallerKey(context), _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = permits,
                 Window = TimeSpan.FromMinutes(1),

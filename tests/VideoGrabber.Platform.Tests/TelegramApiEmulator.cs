@@ -26,6 +26,7 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
     public bool LoseNextRefundAck { get; set; }
     public bool LoseNextMessageAck { get; set; }
     public HttpStatusCode? MessageStatusCode { get; set; }
+    public int? MessageRetryAfter { get; set; }
 
     public void SetStarTransactions(params object[] transactions)
     {
@@ -55,7 +56,8 @@ public sealed class TelegramApiEmulator : HttpMessageHandler
             return HandleGetChat(body);
         if (path.EndsWith("/sendMessage", StringComparison.Ordinal))
         {
-            if (MessageStatusCode is { } status) return new HttpResponseMessage(status);
+            if (MessageStatusCode is { } status) return new HttpResponseMessage(status)
+            { Content = new StringContent(JsonSerializer.Serialize(new { ok=false, parameters=new { retry_after=MessageRetryAfter } })) };
             if (LoseNextMessageAck) { LoseNextMessageAck = false; throw new HttpRequestException("synthetic lost message ACK"); }
             return Json(new { ok = true, result = new { message_id = 1L, chat = new { id = ReadLong(body, "chat_id") } } });
         }

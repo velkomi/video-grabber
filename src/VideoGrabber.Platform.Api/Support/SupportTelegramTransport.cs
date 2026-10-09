@@ -31,10 +31,25 @@ public sealed class SupportTelegramTransport(IHttpClientFactory clients, Telegra
             if (!response.IsSuccessStatusCode)
             {
                 var status = (int)response.StatusCode;
+                if (status == 429)
+                {
+                    var delay = (int)Math.Ceiling(response.Headers.RetryAfter?.Delta?.TotalSeconds ?? 30);
+                    try
+                    {
+                        using var rejected = JsonDocument.Parse(await ReadBoundedAsync(response.Content, deadline.Token));
+                        if (rejected.RootElement.TryGetProperty("parameters", out var parameters)
+                            && parameters.ValueKind == JsonValueKind.Object
+                            && parameters.TryGetProperty("retry_after", out var retry) && retry.ValueKind == JsonValueKind.Number
+                            && retry.TryGetInt32(out var seconds)) delay = seconds;
+                    }
+                    catch (Exception ex) when (ex is JsonException or InvalidDataException) { }
+                    if (delay is < 1 or > 86400) return new("confirmed_failure", "telegram_retry_delay_invalid");
+                    return new("confirmed_failure", "telegram_http_429", true, delay);
+                }
                 return status >= 500 ? new("unknown", "telegram_ack_unknown")
                     : new("confirmed_failure", "telegram_http_" + status, status == 429);
             }
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(deadline.Token));
+            using var json = JsonDocument.Parse(await ReadBoundedAsync(response.Content, deadline.Token));
             var root = json.RootElement;
             if (root.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True
                 && root.TryGetProperty("result", out var result)
@@ -46,5 +61,17 @@ public sealed class SupportTelegramTransport(IHttpClientFactory clients, Telegra
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException or JsonException)
         { return new("unknown", "telegram_ack_unknown"); }
+    }
+
+    private static async Task<byte[]> ReadBoundedAsync(HttpContent content, CancellationToken ct)
+    {
+        await using var stream = await content.ReadAsStreamAsync(ct);
+        using var output = new MemoryStream(); var buffer = new byte[1024]; int count;
+        while ((count = await stream.ReadAsync(buffer, ct)) > 0)
+        {
+            if (output.Length + count > 16384) throw new InvalidDataException("Telegram acknowledgement exceeds limit.");
+            output.Write(buffer,0,count);
+        }
+        return output.ToArray();
     }
 }
