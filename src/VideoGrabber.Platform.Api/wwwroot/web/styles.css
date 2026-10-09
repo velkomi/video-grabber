@@ -831,3 +831,4 @@ a:focus-visible, button:focus-visible { outline: 2px solid #8dcaff; outline-offs
 .mac-note { display: flex; align-items: flex-start; flex-direction: column; gap: 9px; margin: 22px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
 .mac-badge { color: #c4d9fa; border: 1px solid rgba(118,151,211,.25); border-radius: 99px; padding: 3px 11px; font-weight: 650; font-size: 12px; }
 .mac-note a { color: #8fc3ff; text-decoration: underline; text-underline-offset: 4px; }
+.rights-confirmation{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding:10px 0;line-height:1.5;cursor:pointer}.rights-confirmation input[type=checkbox]{width:18px;height:18px;min-height:18px;padding:0;margin:3px 0 0;flex:0 0 18px;accent-color:#268aff}.rights-confirmation span{min-width:0}.rights-confirmation[hidden]{display:none!important}

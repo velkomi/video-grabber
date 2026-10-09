@@ -9,6 +9,36 @@ namespace VideoGrabber.Platform.Tests;
 
 public sealed class BotMenuAndLinkTests
 {
+    [Theory]
+    [InlineData("/contacts")]
+    [InlineData("Контакты")]
+    public async Task Contacts_offer_owner_site_and_support_without_payment_or_private_data(string command)
+    {
+        using var fixture = new Fixture();
+        await fixture.SendAsync(command);
+        var message = fixture.LastMessage();
+        Assert.Contains("velkoshkin@gmail.com", message.GetProperty("text").GetString());
+        var urls = message.GetProperty("reply_markup").GetProperty("inline_keyboard").EnumerateArray()
+            .SelectMany(row => row.EnumerateArray()).Select(button => button.GetProperty("url").GetString());
+        Assert.Contains("https://valery.srv1902378.hstgr.cloud/", urls);
+        Assert.Contains("https://t.me/Velkoshkin", urls);
+        Assert.DoesNotContain(fixture.Api.Requests, request => request.Path.EndsWith("/sendVideo") || request.Path.EndsWith("/sendInvoice"));
+    }
+
+    [Theory]
+    [InlineData("/documents")]
+    [InlineData("Документы")]
+    public async Task Documents_use_configured_site_origin_and_offer_separate_pages(string command)
+    {
+        using var fixture = new Fixture();
+        await fixture.SendAsync(command);
+        var buttons = fixture.LastMessage().GetProperty("reply_markup").GetProperty("inline_keyboard").EnumerateArray()
+            .SelectMany(row => row.EnumerateArray()).ToArray();
+        Assert.Contains(buttons, button => button.GetProperty("url").GetString()=="https://videograbber.example.test/info/?document=privacy");
+        Assert.Contains(buttons, button => button.GetProperty("url").GetString()=="https://videograbber.example.test/info/?document=terms");
+        Assert.DoesNotContain(buttons, button => button.GetProperty("url").GetString()!.Contains("token="));
+    }
+
     [Fact]
     public async Task Menu_can_be_hidden_and_restored_without_opening_the_mini_app()
     {

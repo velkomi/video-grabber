@@ -60,6 +60,8 @@ public static class ReservationEndpoints
         HttpContext http,
         CreditLedger ledger,
         DeviceStore devices,
+        ConsentStore consents,
+        VideoGrabber.Platform.Api.ProductInformation.DocumentCatalog documents,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(http.User.FindFirst("account_id")?.Value, out var accountId))
@@ -70,6 +72,15 @@ public static class ReservationEndpoints
                 (request.DeviceId is not Guid deviceId ||
                  !await devices.IsActiveAsync(accountId, deviceId, cancellationToken)))
                 return Results.Conflict(new { code = "registered_device_required" });
+            if (request.Operation == "course_download")
+            {
+                ProductDocument terms;
+                try { terms=documents.Read().Single(d=>d.Id=="terms"); }
+                catch(Exception e) when(e is IOException or System.Text.Json.JsonException or KeyNotFoundException or InvalidOperationException)
+                {return Results.Json(new{code="documents_unavailable"},statusCode:503);}
+                if(!await consents.HasCourseRightsAsync(accountId,request.IntentId,terms,cancellationToken))
+                    return Results.Conflict(new{code="content_rights_confirmation_required"});
+            }
             return Results.Ok(await ledger.ReserveAsync(accountId, request, cancellationToken));
         }
         catch (ReservationConflictException)

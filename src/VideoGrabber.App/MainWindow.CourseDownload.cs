@@ -125,6 +125,7 @@ public sealed partial class MainWindow
             source,
             SelectedCourseQuality(),
             resume ? "resume" : "new");
+        if (!await ConfirmCourseRightsAsync(operation.IntentId)) return;
         try
         {
             await _managedCoordinator.RunAsync(

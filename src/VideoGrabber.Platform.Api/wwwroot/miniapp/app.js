@@ -35,6 +35,8 @@ async function api(path, options = {}) {
 }
 
 function userError(error) {
+  if(error?.message==="content_rights_confirmation_required")return "Подтвердите право сохранить материалы курса.";
+  if(error?.message==="documents_unavailable"||error?.message==="consent_version_or_intent_conflict")return "Обновите условия и повторите действие.";
   if (error?.status === 401) return "Откройте приложение заново через Telegram.";
   if (error?.status === 403) return "Для этого действия недостаточно прав.";
   if (error?.status === 429) return "Слишком много запросов. Попробуйте чуть позже.";

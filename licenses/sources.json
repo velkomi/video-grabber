@@ -1,0 +1,37 @@
+[
+  {
+    "name": "FFmpeg-GPL-3.0.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/f93cd72dde/COPYING.GPLv3",
+    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+  },
+  {
+    "name": "Deno-MIT.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/denoland/deno/v2.9.6/LICENSE.md",
+    "sha256": "f62497fffecc0852960c8d3e6934b9db86d16396e9b604072e923892cae3a588"
+  },
+  {
+    "name": "yt-dlp-Unlicense.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.08.19/LICENSE",
+    "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c"
+  },
+  {
+    "name": "yt-dlp-THIRD-PARTY.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.08.19/THIRD_PARTY_LICENSES.txt",
+    "sha256": "472aefe951c7db35e1657c1d13fd337140511ed6f2b329205105ad441c5a02b7"
+  },
+  {
+    "name": "whisper.cpp-MIT.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/LICENSE",
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d"
+  },
+  {
+    "name": "Whisper-model-MIT.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/openai/whisper/main/LICENSE",
+    "sha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d"
+  },
+  {
+    "name": "Silero-VAD-MIT.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/snakers4/silero-vad/master/LICENSE",
+    "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b"
+  }
+]

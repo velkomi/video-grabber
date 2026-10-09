@@ -585,7 +585,7 @@ function renderCourseHint() {
     browserOption.disabled = false;
     if (kind === "mp3") {
       $("#course-hint").textContent = accessFeature("mp3", state.access.canEdit)
-        ? "MP3 можно подготовить прямо через сайт — Windows-приложение не требуется."
+        ? "MP3 подготавливается в Windows-приложении. Выберите свой компьютер."
         : "MP3 относится к расширенным функциям. Нажмите «Скачать», чтобы увидеть подходящий тариф.";
     } else {
       $("#course-hint").textContent = $("#download-target").value === "browser"
@@ -643,6 +643,7 @@ function renderDevices() {
 }
 
 function renderSelectedDevice() {
+  $("#course-rights-row").hidden = $("#operation").value !== "course_download";
   const target = $("#download-target").value;
   const field = $("#device-field");
   const pill = $("#device-pill");
@@ -654,7 +655,7 @@ function renderSelectedDevice() {
   if (target === "browser") {
     pill.className = "pill online";
     pill.textContent = "Прямой файл с источника";
-    submit.disabled = false;
+    submit.disabled = jobSubmissionLocked || directRequestInFlight;
     submit.textContent = $("#operation").value === "mp3"
       ? "Скачать MP3"
       : "Скачать";
@@ -667,7 +668,7 @@ function renderSelectedDevice() {
   if (!device) {
     pill.className = "pill offline";
     pill.textContent = "Windows-приложение не выбрано";
-    submit.disabled = false;
+    submit.disabled = jobSubmissionLocked || directRequestInFlight;
     submit.textContent = "Отправить в Windows";
     return;
   }
@@ -677,7 +678,7 @@ function renderSelectedDevice() {
   pill.textContent = online
     ? "Windows online"
     : "Windows offline · можно поставить в очередь";
-  submit.disabled = false;
+  submit.disabled = jobSubmissionLocked || directRequestInFlight;
   submit.textContent = $("#operation").value === "course_download"
     ? "Скачать курс в Windows"
     : "Отправить в Windows";
@@ -888,6 +889,13 @@ async function downloadJobResult(jobId) {
 }
 
 let directRequestInFlight = false;
+let jobSubmissionLocked = false;
+const guardedJobSubmission = window.VideoGrabberDocuments.singleFlight(async event => {
+  jobSubmissionLocked = true;
+  renderSelectedDevice();
+  try { await submitJobInternal(event); }
+  finally { jobSubmissionLocked = false; renderSelectedDevice(); }
+});
 async function directRequestIntent(source) {
   const sourceHash = await sha256Hex(String(state.profile?.accountId || "") + ":" + source);
   let pending;
@@ -899,6 +907,11 @@ async function directRequestIntent(source) {
 }
 
 async function submitJob(event) {
+  event.preventDefault();
+  return guardedJobSubmission(event);
+}
+
+async function submitJobInternal(event) {
   event.preventDefault();
   if (directRequestInFlight) return;
   clearResultActions();
@@ -1017,6 +1030,11 @@ async function submitJob(event) {
       trimDurationMs: null
     };
     job.requestHash = await createJobRequestHash(job);
+    if (kind === "course_download") {
+      const confirmed = $("#course-rights").checked;
+      $("#course-rights").checked = false;
+      await window.VideoGrabberDocuments.confirmCourseRights(api, job.intentId, confirmed);
+    }
 
     const created = await api("/v1/jobs", {
       method: "POST",
@@ -1026,18 +1044,22 @@ async function submitJob(event) {
 
     setStatus(
       "#job-status",
-      target === "browser"
-        ? "Задание принято. VideoGrabber скачивает файл на сервере; Windows-приложение не требуется."
-        : isOnline(state.devices.find((item) => item.deviceId === deviceId) || {})
+      isOnline(state.devices.find((item) => item.deviceId === deviceId) || {})
           ? "Задание отправлено в Windows VideoGrabber."
           : "Задание поставлено в очередь и начнётся, когда Windows VideoGrabber станет online.",
       "success"
     );
     $("#source-url").value = "";
+    $("#course-rights").checked = false;
     await refreshJobs();
     watchJob(created.jobId, target);
   } catch (error) {
     const message =
+      error.message === "content_rights_confirmation_required"
+        ? "Подтвердите, что у вас есть право сохранить материалы курса."
+        : error.message === "documents_unavailable" || error.message === "consent_version_or_intent_conflict"
+          ? "Не удалось подтвердить актуальные условия. Обновите страницу и повторите действие."
+        :
       error.message === "access_unavailable"
         ? "Лимит тарифа исчерпан или операция не входит в тариф."
         : error.message === "job_source_unavailable"

@@ -48,9 +48,14 @@ public sealed class BotCommandHandler(
             || !TryChat(message, out var chatId, out var chatType)
             || !TryText(message, out var text))
             return;
-        var accountId = await telegramAccounts.ResolveAsync(userId, clock.GetUtcNow(), cancellationToken);
         var (command, args) = ParseCommand(text);
         if (command.Length == 0) return;
+        if (command is "/contacts" or "/documents")
+        {
+            await SendProductInformationAsync(chatId, command == "/contacts", cancellationToken);
+            return;
+        }
+        var accountId = await telegramAccounts.ResolveAsync(userId, clock.GetUtcNow(), cancellationToken);
 
         if (command is "/start" or "/help")
         {
@@ -468,6 +473,7 @@ public sealed class BotCommandHandler(
                 new[] { new { text = "Аккаунт" }, new { text = "Тариф" } },
                 new[] { new { text = "Очередь" }, new { text = "Компьютеры" } },
                 new[] { new { text = "Привязать аккаунт" }, new { text = "Помощь" } },
+                new[] { new { text = "Контакты" }, new { text = "Документы" } },
                 new[] { new { text = "Приложение" }, new { text = "Скрыть меню" } }
             },
             resize_keyboard = true,
@@ -507,6 +513,36 @@ public sealed class BotCommandHandler(
     private bool TryMiniAppUrl(out Uri uri)
         => TryHttpsUrl(configuration["VG_TELEGRAM_MINIAPP_URL"], "/miniapp/", out uri);
 
+    private async Task SendProductInformationAsync(long chatId, bool contacts, CancellationToken token)
+    {
+        var rows = new List<object>();
+        string text;
+        if (contacts)
+        {
+            text = "Разработчик VideoGrabber — Валерий Канев.\n\n" +
+                "Вопросы, помощь и предложения: @Velkoshkin\nПочта: velkoshkin@gmail.com";
+            rows.Add(new[] { new { text = "Написать в Telegram", url = "https://t.me/Velkoshkin" } });
+            if (TryHttpsUrl(configuration["VG_OWNER_WEBSITE_URL"] ?? "https://valery.srv1902378.hstgr.cloud/", "/", out var website))
+                rows.Add(new[] { new { text = "Сайт Валерия", url = website.AbsoluteUri } });
+        }
+        else text = "Условия, конфиденциальность и помощь — на отдельных страницах. " +
+            "Сохраняйте только свои материалы или контент, который автор разрешил скачивать.";
+        var hasSite = TryHttpsUrl(configuration["VG_PLATFORM_PUBLIC_URL"], "/", out var site);
+        if (!hasSite) hasSite = TryMiniAppUrl(out site);
+        if (hasSite)
+        {
+            var documents = contacts ? new[] { ("contacts", "Все контакты") }
+                : new[] { ("help", "Как пользоваться"), ("terms", "Условия использования"),
+                    ("privacy", "Конфиденциальность"), ("consent", "Отдельное согласие"),
+                    ("subscription", "Подписка и возвраты"), ("referrals", "Приглашения и бонусы"),
+                    ("components", "Компоненты и лицензии") };
+            foreach (var (id, title) in documents)
+                rows.Add(new[] { new { text = title, url = new Uri(site, "/info/?document=" + id).AbsoluteUri } });
+        }
+        await bot.SendMessageAsync(new BotMessage(chatId, text,
+            rows.Count == 0 ? null : JsonSerializer.SerializeToElement(new { inline_keyboard = rows })), token);
+    }
+
     private Uri AdminLink(string token)
     {
         if (!TryHttpsUrl(configuration["VG_PLATFORM_PUBLIC_URL"], "/", out var baseUri))
@@ -545,6 +581,7 @@ public sealed class BotCommandHandler(
            "Аккаунт:\n/account — профиль\n/subscription — тариф и лимиты\n" +
            "/devices — компьютеры\n/settings — приложение бота\n/link — привязать аккаунт\n\n" +
            "Платежи:\n/payments — история и поддержка\n/referral — пригласить друга\n/bonus — бонусный баланс\n/promo — промокод в приложении\n\n" +
+           "/contacts — связаться с разработчиком\n/documents — условия и данные\n\n" +
            "/menu — вернуть кнопки\n/hide — скрыть кнопки\n/help — эта справка.";
 
     private static string PlanLabel(AccessSnapshot access)
@@ -629,6 +666,8 @@ public sealed class BotCommandHandler(
             "Компьютеры" => "/devices",
             "Привязать аккаунт" => "/link",
             "Помощь" => "/help",
+            "Контакты" => "/contacts",
+            "Документы" => "/documents",
             "Приложение" => "/settings",
             "Скрыть меню" => "/hide",
             _ => null

@@ -113,12 +113,14 @@ async function loadCapabilities() {
 }
 
 function updateExecutors() {
+  $("#media-course-rights-row").hidden = $("#media-operation").value !== "course_download";
   const operation = capabilities?.operations
     ?.find((x) => x.operation === $("#media-operation").value);
   fillSelect($("#media-executor"), operation?.executors || []);
 }
 
 $("#media-operation").addEventListener("change", () => {
+  $("#media-course-rights").checked = false;
   updateExecutors();
   analyzed = null;
   $("#media-options").hidden = true;
@@ -228,6 +230,10 @@ $("#media-create").addEventListener("click", async () => {
       trimDurationMs
     };
     request.requestHash = await canonicalHash(request);
+    if (kind === "course_download") {
+      await window.VideoGrabberDocuments.confirmCourseRights(api, request.intentId, $("#media-course-rights").checked);
+      $("#media-course-rights").checked = false;
+    }
     status("Создаю задание…");
     const job = await api("/v1/jobs", {
       method: "POST",

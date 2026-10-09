@@ -1,0 +1,106 @@
+{
+  "generatedAt": "2026-10-09",
+  "sourceRelease": "0.1.10-preview.63-rc.1",
+  "components": [
+    {
+      "name": "yt-dlp",
+      "version": "2026.08.19",
+      "license": "GPLv3+ for bundled Windows EXE; Unlicense for own source",
+      "sourceUrl": "https://github.com/yt-dlp/yt-dlp",
+      "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+      "bytes": 17840399,
+      "status": "NOTICE_AND_PROVENANCE_REVIEW",
+      "notes": "Verify packed Python/PyInstaller dependencies and their notices."
+    },
+    {
+      "name": "FFmpeg",
+      "version": "N-126435-gf93cd72dde-20260906",
+      "license": "GPL-3.0-or-later (this build)",
+      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-06-13-06",
+      "sha256": "5f0118f94a7e92d01a86ea07ed533dee9cb45789d135a4365e98cefec3ca8847",
+      "bytes": 145876992,
+      "status": "NOTICE_AND_PROVENANCE_REVIEW",
+      "notes": "Exact corresponding source and build/dependency provenance required; not satisfied by homepage link."
+    },
+    {
+      "name": "FFprobe",
+      "version": "N-126435-gf93cd72dde-20260906",
+      "license": "GPL-3.0-or-later (this build)",
+      "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-06-13-06",
+      "sha256": "c845a650062e6c774db15a1ab6393b945768097db405a6dc88ab73f344331520",
+      "bytes": 145665024,
+      "status": "NOTICE_AND_PROVENANCE_REVIEW",
+      "notes": "Same GPL build provenance as FFmpeg."
+    },
+    {
+      "name": "Deno",
+      "version": "2.9.6",
+      "license": "MIT; third-party components separately",
+      "sourceUrl": "https://github.com/denoland/deno",
+      "sha256": "2ff9493dfa356be2975f477025ea770088e9e9cb2c83d983236d13561b96b7a6",
+      "bytes": 97316640,
+      "status": "NOTICE_AND_PROVENANCE_REVIEW",
+      "notes": "Preserve MIT and upstream third-party notices."
+    },
+    {
+      "name": "whisper.cpp",
+      "version": "Version provenance not yet verified",
+      "license": "MIT (project)",
+      "sourceUrl": "https://github.com/ggml-org/whisper.cpp",
+      "sha256": "19b976e037c02c0de712fa26096842d4ebafca03c976b12e8e6123215e7aab58",
+      "bytes": 479232,
+      "status": "NOTICE_AND_PROVENANCE_REVIEW",
+      "notes": "Локальная расшифровка речи. MIT проекта; лицензия и источник сохранены отдельно."
+    },
+    {
+      "name": "Whisper Base model",
+      "version": "ggml-base model hash verified; source provenance pending",
+      "license": "MIT upstream model; provenance requires verification",
+      "sourceUrl": "https://github.com/openai/whisper",
+      "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+      "bytes": 147951465,
+      "status": "NOTICE_AND_PROVENANCE_REVIEW",
+      "notes": "Model source/conversion provenance must match the bundled hash."
+    },
+    {
+      "name": "Silero VAD",
+      "version": "6.2.0 filename; source provenance pending",
+      "license": "MIT upstream project",
+      "sourceUrl": "https://github.com/snakers4/silero-vad",
+      "sha256": "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+      "bytes": 885098,
+      "status": "NOTICE_AND_PROVENANCE_REVIEW",
+      "notes": "GGML conversion/build provenance pending."
+    },
+    {
+      "name": "Three.js",
+      "version": "See shipped version/source files",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/mrdoob/three.js",
+      "sha256": "9052042d676cb0fdc1ddfefe193053f34b7ac0513a616fdac4535d49987812ea",
+      "bytes": 662772,
+      "status": "SHIPPED_NOTICE",
+      "notes": "Upstream notice and local version/source files retained."
+    },
+    {
+      "name": "GSAP",
+      "version": "See shipped version/source files",
+      "license": "GSAP Standard License",
+      "sourceUrl": "https://gsap.com/standard-license/",
+      "sha256": "92bb9a96476f983d212a2bc4f54c889039c1696dd4461d40a736860938570fbb",
+      "bytes": 72927,
+      "status": "SHIPPED_NOTICE",
+      "notes": "Upstream notice and local version/source files retained."
+    },
+    {
+      "name": "Onest/Manrope fonts",
+      "version": "See shipped version/source files",
+      "license": "SIL OFL1.1",
+      "sourceUrl": "https://fonts.google.com/",
+      "sha256": "5910e1b96d9eda3f03940c136bc607431dc6d5fcdccda1e329a0ffa64b60c28c",
+      "bytes": 2724,
+      "status": "SHIPPED_NOTICE",
+      "notes": "Upstream notice and local version/source files retained."
+    }
+  ]
+}

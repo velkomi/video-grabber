@@ -1255,7 +1255,7 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    private static Border BuildAuthorCard(out Action<bool> setCompact)
+    private Border BuildAuthorCard(out Action<bool> setCompact)
     {
         var content = Vertical(2);
         var author = new TextBlock
@@ -1306,6 +1306,9 @@ public sealed partial class MainWindow : Window
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(telegramLink, "AuthorTelegramLink");
         ToolTipService.SetToolTip(telegramLink, "Создано Валерием · @Velkoshkin в Telegram");
         content.Children.Add(telegramLink);
+        var contactLink = StudioLink("Сайт и контакты ↗", ProductInformationUrl("contacts"));
+        contactLink.MinHeight = 32;
+        content.Children.Add(contactLink);
 
         var card = new Border
         {
@@ -1321,6 +1324,7 @@ public sealed partial class MainWindow : Window
         {
             author.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
             handle.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+            contactLink.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
             card.Padding = compact ? new Thickness(4) : new Thickness(10, 10, 10, 6);
             telegramContent.ColumnSpacing = compact ? 0 : 10;
             telegramContent.HorizontalAlignment = compact ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;

@@ -74,6 +74,7 @@ public sealed class ApiFixture : IAsyncDisposable
 
     public bool PromotionsEnabled { get; set; }
     public string? PaymentCatalogPath { get; set; }
+    public string? ProductDocumentsPath { get; set; }
     public NpgsqlDataSource Database { get; }
     public string TestDatabaseConnectionString
     {
@@ -386,7 +387,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, _operationsDataSource, Clock, Broker, TelegramApi, YooKassaApi, Logs, PromotionsEnabled, PaymentCatalogPath);
+        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, _operationsDataSource, Clock, Broker, TelegramApi, YooKassaApi, Logs, PromotionsEnabled, PaymentCatalogPath, ProductDocumentsPath);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -421,7 +422,7 @@ internal sealed class PlatformApiFactory(
     BrokerEmulator broker,
     TelegramApiEmulator telegramApi,
     YooKassaEmulator yooKassaApi,
-    ConcurrentQueue<string> logs, bool promotionsEnabled, string? catalogPath) : WebApplicationFactory<Program>
+    ConcurrentQueue<string> logs, bool promotionsEnabled, string? catalogPath, string? documentsPath) : WebApplicationFactory<Program>
 {
     internal const string TestSessionKey = "test-only-videograbber-session-signing-key-2026";
     private static readonly string TestLeasePrivateKey = CreateTestLeasePrivateKey();
@@ -506,6 +507,7 @@ internal sealed class PlatformApiFactory(
         builder.UseSetting("VG_ARTIFACT_UPLOAD_MAX_BYTES", (64L * 1024 * 1024).ToString());
         builder.UseSetting("VG_REFERRALS_ENABLED", promotionsEnabled ? "true" : "false");
         builder.UseSetting("VG_PAYMENT_CATALOG_PATH", catalogPath ?? Path.Combine(FindRepoRoot(), "tests", "VideoGrabber.Platform.Tests", "Fixtures", "payment-catalog.test.json"));
+        if (documentsPath is not null) builder.UseSetting("VG_DOCUMENTS_PATH", documentsPath);
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<NpgsqlDataSource>();

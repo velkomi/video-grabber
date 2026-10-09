@@ -642,3 +642,6 @@
 ### Добавлено
 
 - первый публичный выпуск VideoGrabber для Windows x64.
+
+## 0.1.10-preview.64-rc.1
+- Add versioned product information, owner contacts and consent/course-rights safeguards across web, native and Telegram.

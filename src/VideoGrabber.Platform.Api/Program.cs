@@ -143,6 +143,9 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options =>
     options.Level = CompressionLevel.Fastest);
 builder.Services.AddRateLimiter(options =>
 {
+    options.AddPolicy("consents", http => RateLimitPartition.GetFixedWindowLimiter(
+        http.User.FindFirst("account_id")?.Value ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit=20, Window=TimeSpan.FromMinutes(1), QueueLimit=0 }));
     options.AddPolicy("promotions", http => RateLimitPartition.GetFixedWindowLimiter(
         http.User.FindFirst("account_id")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
         _ => new FixedWindowRateLimiterOptions { PermitLimit=30, Window=TimeSpan.FromMinutes(1), QueueLimit=0 }));
@@ -318,6 +321,9 @@ var allowedOrigins = builder.Configuration.GetSection("Security:AllowedOrigins")
         .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
     .ToHashSet(StringComparer.Ordinal);
 
+builder.Services.AddSingleton(sp => new ConsentStore(sp.GetRequiredService<CreditLedger>(), sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton(new VideoGrabber.Platform.Api.ProductInformation.DocumentCatalog(
+    builder.Configuration["VG_DOCUMENTS_PATH"] ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "info", "content.json")));
 var app = builder.Build();
 
 app.UseResponseCompression();
@@ -440,6 +446,7 @@ app.MapDeliveryEndpoints();
 app.MapRetentionEndpoints();
 app.MapPaymentEndpoints();
 app.MapPromotionEndpoints();
+VideoGrabber.Platform.Api.ProductInformation.InformationEndpoints.MapInformationEndpoints(app);
 VideoGrabber.Platform.Api.ClientUpdates.ClientReleaseEndpoints.MapClientReleaseEndpoints(app);
 app.MapSubscriptionEndpoints();
 app.MapYooKassaWebhookEndpoints();

@@ -28,6 +28,8 @@ public static class JobEndpoints
         AdminFeatureOverrideService overrides,
         IConfiguration configuration,
         PlatformOperationalCounters counters,
+        ConsentStore consents,
+        VideoGrabber.Platform.Api.ProductInformation.DocumentCatalog documents,
         CancellationToken cancellationToken)
     {
         if (!TryAccount(http, out var accountId)) return Results.Unauthorized();
@@ -48,6 +50,16 @@ public static class JobEndpoints
                 && (request.DeviceId is not Guid deviceId
                     || !await devices.IsActiveAsync(accountId, deviceId, cancellationToken)))
                 return Results.Conflict(new { code = "registered_device_required" });
+
+            if (request.Kind == "course_download")
+            {
+                ProductDocument terms;
+                try { terms = documents.Read().Single(d => d.Id == "terms"); }
+                catch (Exception e) when (e is IOException or System.Text.Json.JsonException or InvalidOperationException or KeyNotFoundException)
+                { return Results.Json(new { code = "documents_unavailable" }, statusCode: 503); }
+                if (!await consents.HasCourseRightsAsync(accountId, request.IntentId, terms, cancellationToken))
+                    return Results.Conflict(new { code = "content_rights_confirmation_required" });
+            }
 
             var feature = FeatureFor(request.Kind);
             var adminOverride = feature is null

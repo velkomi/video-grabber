@@ -35,6 +35,7 @@ public sealed partial class MainWindow
         about.Children.Add(MutedText("Файлы сохраняются и обрабатываются на вашем компьютере. Пароли приложение не читает. Защищённое видео не скачивается."));
         body.Children.Add(Card(about));
         body.Children.Add(BuildClientUpdateCard());
+        body.Children.Add(BuildProductInformationCard());
 
         var capabilities = Vertical(8);
         capabilities.Children.Add(SectionHeading("Что умеет VideoGrabber"));
@@ -123,7 +124,7 @@ public sealed partial class MainWindow
         var limits = Vertical(8);
         limits.Children.Add(SectionHeading("Вход и ограничения"));
         limits.Children.Add(MutedText("Для закрытых уроков войдите во встроенном браузере. Данные входа используются только для выбранной загрузки и затем сбрасываются."));
-        limits.Children.Add(MutedText("Скачивайте материалы, к которым у вас есть доступ. Видео с защитой от копирования не поддерживается."));
+        limits.Children.Add(MutedText("Сохраняйте собственные материалы или контент, который автор разрешил скачивать. Доступ к курсу сам по себе не даёт права копировать его. Видео с защитой от копирования не поддерживается."));
         body.Children.Add(Details("Ограничения", limits));
 
         return PageScrollViewer(body);
