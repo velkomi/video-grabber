@@ -1,0 +1,2 @@
+# Embedded PostgreSQL migration bytes must be identical on Windows and Linux.
+*.sql text eol=lf
