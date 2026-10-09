@@ -6,6 +6,8 @@
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
+    <PackageVersion Include="Altcha" Version="1.1.0" />
+    <PackageVersion Include="MailKit" Version="4.18.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />

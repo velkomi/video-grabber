@@ -49,6 +49,11 @@
         "resolved": "3.1.5",
         "contentHash": "tKi7dSTwP4m5m9eXPM2Ime4Kn7xNf4x4zT9sdLO/G4hZVnQCRiMTWoSZqI/pYTVeI27oPPqHBKYI/DjJ9GsYgA=="
       },
+      "BouncyCastle.Cryptography": {
+        "type": "Transitive",
+        "resolved": "2.7.0",
+        "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
+      },
       "Microsoft.AspNetCore.TestHost": {
         "type": "Transitive",
         "resolved": "10.0.12",
@@ -380,6 +385,15 @@
           "Microsoft.TestPlatform.ObjectModel": "18.9.0"
         }
       },
+      "MimeKit": {
+        "type": "Transitive",
+        "resolved": "4.18.1",
+        "contentHash": "D8AfFVMFVJldWmhQWCziC9nWUN/zayFFBAKpyjVyCeh0tqBiI9jtUVuMrKgWw1EGnCp09msDZldbRvp2jfUehQ==",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "2.7.0",
+          "System.Security.Cryptography.Pkcs": "10.0.0"
+        }
+      },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
         "resolved": "10.0.12",
@@ -393,6 +407,11 @@
           "Microsoft.IdentityModel.JsonWebTokens": "8.19.2",
           "Microsoft.IdentityModel.Tokens": "8.19.2"
         }
+      },
+      "System.Security.Cryptography.Pkcs": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "UPWqLSygJlFerRi9XNIuM0a1VC8gHUIufyP24xQ0sc+XimqUAEcjpOz9DhKpyDjH+5B/wO3RpC0KpkEeDj/ddg=="
       },
       "xunit.abstractions": {
         "type": "Transitive",
@@ -437,17 +456,19 @@
       "videograbber.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )"
         }
       },
       "videograbber.platform.api": {
         "type": "Project",
         "dependencies": {
+          "Altcha": "[1.1.0, )",
+          "MailKit": "[4.18.1, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
-          "VideoGrabber.Core": "[0.1.10-preview.62-rc.1, )",
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )",
-          "VideoGrabber.Platform.Core": "[0.1.10-preview.62-rc.1, )",
-          "VideoGrabber.Platform.Persistence": "[0.1.10-preview.62-rc.1, )"
+          "VideoGrabber.Core": "[0.1.10-preview.64-rc.1, )",
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )",
+          "VideoGrabber.Platform.Core": "[0.1.10-preview.64-rc.1, )",
+          "VideoGrabber.Platform.Persistence": "[0.1.10-preview.64-rc.1, )"
         }
       },
       "videograbber.platform.contracts": {
@@ -456,15 +477,33 @@
       "videograbber.platform.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )"
         }
       },
       "videograbber.platform.persistence": {
         "type": "Project",
         "dependencies": {
           "Npgsql": "[10.0.3, )",
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )",
-          "VideoGrabber.Platform.Core": "[0.1.10-preview.62-rc.1, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )",
+          "VideoGrabber.Platform.Core": "[0.1.10-preview.64-rc.1, )"
+        }
+      },
+      "Altcha": {
+        "type": "CentralTransitive",
+        "requested": "[1.1.0, )",
+        "resolved": "1.1.0",
+        "contentHash": "lih7SelqJzCSYQwVc2bL6uQeoWVo19iCPzC9xc0o10GbWKeQcRtaxk4/xaccStHGUi91bmLgCPC8nkScApxGMw==",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "2.6.2"
+        }
+      },
+      "MailKit": {
+        "type": "CentralTransitive",
+        "requested": "[4.18.1, )",
+        "resolved": "4.18.1",
+        "contentHash": "EssBsnKHvIcH1QpqqsVUEWAlAHI3dkGXJpKAzSNJ8PGjClNynSo9bRkT68jVZkxhREm0Z51Dwu3127f4WfIiRg==",
+        "dependencies": {
+          "MimeKit": "4.18.1"
         }
       },
       "Microsoft.AspNetCore.Authentication.JwtBearer": {

@@ -12,6 +12,19 @@ public static class ClientRateLimitPolicies
         AddCallerPolicy(options, "auth", 20);
         AddCallerPolicy(options, "auth-config", 60);
         AddCallerPolicy(options, "auth-desktop-poll", 120);
+        AddCallerPolicy(options, "support-challenge", 6);
+        AddCallerPolicy(options, "support-submit", 10);
+        options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        {
+            var path = context.Request.Path.Value ?? "";
+            if (path.StartsWith("/v1/support/", StringComparison.Ordinal))
+                return RateLimitPartition.GetConcurrencyLimiter("support-cap", _ => new ConcurrencyLimiterOptions
+                { PermitLimit = 8, QueueLimit = 0 });
+            if (path.StartsWith("/v1/auth/", StringComparison.Ordinal) || path == "/v1/telegram/session")
+                return RateLimitPartition.GetConcurrencyLimiter("auth-cap", _ => new ConcurrencyLimiterOptions
+                { PermitLimit = 32, QueueLimit = 0 });
+            return RateLimitPartition.GetNoLimiter("other");
+        });
     }
 
     private static void AddCallerPolicy(RateLimiterOptions options, string name, int permits)

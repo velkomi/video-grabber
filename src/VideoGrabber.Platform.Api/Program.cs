@@ -332,6 +332,10 @@ var allowedOrigins = builder.Configuration.GetSection("Security:AllowedOrigins")
 builder.Services.AddSingleton(sp => new ConsentStore(sp.GetRequiredService<CreditLedger>(), sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddSingleton(new VideoGrabber.Platform.Api.ProductInformation.DocumentCatalog(
     builder.Configuration["VG_DOCUMENTS_PATH"] ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "info", "content.json")));
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportOptions>();
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportDataProtector>();
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportChallengeService>();
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportStore>();
 var app = builder.Build();
 
 app.UseForwardedHeaders();
@@ -455,6 +459,7 @@ app.MapDeliveryEndpoints();
 app.MapRetentionEndpoints();
 app.MapPaymentEndpoints();
 app.MapPromotionEndpoints();
+VideoGrabber.Platform.Api.Support.SupportEndpoints.MapSupportEndpoints(app);
 VideoGrabber.Platform.Api.ProductInformation.InformationEndpoints.MapInformationEndpoints(app);
 VideoGrabber.Platform.Api.ClientUpdates.ClientReleaseEndpoints.MapClientReleaseEndpoints(app);
 app.MapSubscriptionEndpoints();

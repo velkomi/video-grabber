@@ -73,6 +73,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     public bool PromotionsEnabled { get; set; }
+    public bool SupportEnabled { get; set; }
     public string? PaymentCatalogPath { get; set; }
     public string? ProductDocumentsPath { get; set; }
     public NpgsqlDataSource Database { get; }
@@ -387,7 +388,7 @@ public sealed class ApiFixture : IAsyncDisposable
     }
 
     private PlatformApiFactory CreateFactory()
-        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, _operationsDataSource, Clock, Broker, TelegramApi, YooKassaApi, Logs, PromotionsEnabled, PaymentCatalogPath, ProductDocumentsPath);
+        => new(_apiDataSource, _identityDataSource, _adminDataSource, _ledgerDataSource, _deviceDataSource, _operationsDataSource, Clock, Broker, TelegramApi, YooKassaApi, Logs, PromotionsEnabled, PaymentCatalogPath, ProductDocumentsPath, SupportEnabled);
 
     private static void ValidateTestTarget(NpgsqlConnectionStringBuilder builder)
     {
@@ -422,7 +423,7 @@ internal sealed class PlatformApiFactory(
     BrokerEmulator broker,
     TelegramApiEmulator telegramApi,
     YooKassaEmulator yooKassaApi,
-    ConcurrentQueue<string> logs, bool promotionsEnabled, string? catalogPath, string? documentsPath) : WebApplicationFactory<Program>
+    ConcurrentQueue<string> logs, bool promotionsEnabled, string? catalogPath, string? documentsPath, bool supportEnabled) : WebApplicationFactory<Program>
 {
     internal const string TestSessionKey = "test-only-videograbber-session-signing-key-2026";
     private static readonly string TestLeasePrivateKey = CreateTestLeasePrivateKey();
@@ -506,6 +507,9 @@ internal sealed class PlatformApiFactory(
             Path.Combine(FindRepoRoot(), ".test-artifacts", "uploads"));
         builder.UseSetting("VG_ARTIFACT_UPLOAD_MAX_BYTES", (64L * 1024 * 1024).ToString());
         builder.UseSetting("VG_REFERRALS_ENABLED", promotionsEnabled ? "true" : "false");
+        builder.UseSetting("VG_SUPPORT_ENABLED", supportEnabled ? "true" : "false");
+        builder.UseSetting("VG_SUPPORT_NOTIFICATIONS_ENABLED", "false");
+        builder.UseSetting("VG_SUPPORT_TELEGRAM_OWNER_ID", "99001");
         builder.UseSetting("VG_PAYMENT_CATALOG_PATH", catalogPath ?? Path.Combine(FindRepoRoot(), "tests", "VideoGrabber.Platform.Tests", "Fixtures", "payment-catalog.test.json"));
         if (documentsPath is not null) builder.UseSetting("VG_DOCUMENTS_PATH", documentsPath);
         builder.ConfigureServices(services =>
