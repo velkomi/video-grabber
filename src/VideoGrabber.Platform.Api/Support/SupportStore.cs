@@ -22,7 +22,7 @@ public sealed class SupportStore(NpgsqlDataSource database, SupportDataProtector
         long senderId, CancellationToken ct)
     {
         if (accountId == Guid.Empty || senderId <= 0) throw new SupportRequestException(401, "support_identity_required");
-        return SubmitCoreAsync(SupportOptions.Validate(request), accountId, "telegram:" + senderId, "telegram", null, ct);
+        return SubmitCoreAsync(SupportOptions.Validate(request, senderId), accountId, "telegram:" + senderId, "telegram", null, ct);
     }
 
     private async Task<SupportAccepted> SubmitCoreAsync(SupportRequest request, Guid? accountId,

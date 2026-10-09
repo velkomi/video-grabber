@@ -204,6 +204,11 @@ services:
       VG_SUPABASE_URL: ${VG_SUPABASE_URL:?}
       VG_SUPABASE_PUBLISHABLE_KEY: ${VG_SUPABASE_PUBLISHABLE_KEY:?}
       VG_OWNER_ADMIN_SUBJECT: ${VG_OWNER_ADMIN_SUBJECT:?exclusive owner subject required}
+      VG_TRUSTED_PROXY_IPS: ${VG_TRUSTED_PROXY_IPS:-}
+      VG_TELEGRAM_ASSERTION_NOT_BEFORE_UTC: ${VG_TELEGRAM_ASSERTION_NOT_BEFORE_UTC:-}
+      VG_SUPPORT_ENABLED: ${VG_SUPPORT_ENABLED:-false}
+      VG_SUPPORT_NOTIFICATIONS_ENABLED: ${VG_SUPPORT_NOTIFICATIONS_ENABLED:-false}
+      VG_SUPPORT_TELEGRAM_OWNER_ID: ${VG_SUPPORT_TELEGRAM_OWNER_ID:-0}
       VG_WINDOWS_DOWNLOAD_PATH: /var/lib/videograbber/downloads/VideoGrabber-Windows.zip
       VG_WINDOWS_SETUP_PATH: /var/lib/videograbber/downloads/VideoGrabber-Setup.exe
       VG_WINDOWS_CHECKSUM_PATH: /var/lib/videograbber/downloads/VideoGrabber-Windows.sha256.txt

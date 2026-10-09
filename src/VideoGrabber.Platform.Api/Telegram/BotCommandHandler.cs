@@ -24,7 +24,9 @@ public sealed class BotCommandHandler(
     PaymentStore payments,
     TimeProvider clock,
     IConfiguration configuration,
-    PromotionStore? promotions = null)
+    PromotionStore? promotions = null,
+    VideoGrabber.Platform.Api.Support.SupportBotService? support = null,
+    BotInputLimiter? inputLimiter = null)
 {
     public async Task HandleAsync(TelegramUpdate update, CancellationToken cancellationToken)
     {
@@ -49,6 +51,8 @@ public sealed class BotCommandHandler(
             || !TryText(message, out var text))
             return;
         var (command, args) = ParseCommand(text);
+        if (inputLimiter is not null && !await inputLimiter.AllowAsync(userId, cancellationToken)) return;
+        if (support is not null && await support.HandleAsync(message, userId, chatId, chatType, text, cancellationToken)) return;
         if (command.Length == 0) return;
         if (command is "/contacts" or "/documents")
         {
@@ -473,7 +477,8 @@ public sealed class BotCommandHandler(
                 new[] { new { text = "Аккаунт" }, new { text = "Тариф" } },
                 new[] { new { text = "Очередь" }, new { text = "Компьютеры" } },
                 new[] { new { text = "Привязать аккаунт" }, new { text = "Помощь" } },
-                new[] { new { text = "Контакты" }, new { text = "Документы" } },
+                new[] { new { text = "Поддержка" }, new { text = "Контакты" } },
+                new[] { new { text = "Документы" } },
                 new[] { new { text = "Приложение" }, new { text = "Скрыть меню" } }
             },
             resize_keyboard = true,
@@ -581,7 +586,7 @@ public sealed class BotCommandHandler(
            "Аккаунт:\n/account — профиль\n/subscription — тариф и лимиты\n" +
            "/devices — компьютеры\n/settings — приложение бота\n/link — привязать аккаунт\n\n" +
            "Платежи:\n/payments — история и поддержка\n/referral — пригласить друга\n/bonus — бонусный баланс\n/promo — промокод в приложении\n\n" +
-           "/contacts — связаться с разработчиком\n/documents — условия и данные\n\n" +
+           "/support — написать в поддержку\n/contacts — связаться с разработчиком\n/documents — условия и данные\n\n" +
            "/menu — вернуть кнопки\n/hide — скрыть кнопки\n/help — эта справка.";
 
     private static string PlanLabel(AccessSnapshot access)
@@ -667,6 +672,7 @@ public sealed class BotCommandHandler(
             "Привязать аккаунт" => "/link",
             "Помощь" => "/help",
             "Контакты" => "/contacts",
+            "Поддержка" => "/support",
             "Документы" => "/documents",
             "Приложение" => "/settings",
             "Скрыть меню" => "/hide",

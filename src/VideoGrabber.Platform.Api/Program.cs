@@ -303,6 +303,8 @@ builder.Services.AddSingleton<TelegramAccountLinkService>();
 builder.Services.AddSingleton<IBotApiClient, BotApiClient>();
 builder.Services.AddSingleton<BotMediaHandler>();
 builder.Services.AddSingleton<BotCommandHandler>();
+builder.Services.AddSingleton<BotInputLimiter>();
+builder.Services.AddSingleton<VideoGrabber.Platform.Api.Support.SupportBotService>();
 builder.Services.AddSingleton<TelegramInboxWorker>();
 builder.Services.AddSingleton<DestinationService>();
 builder.Services.AddSingleton<ArtifactDeliveryService>();
@@ -345,6 +347,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<VideoGrabber.Platf
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+VideoGrabber.Platform.Api.Security.BrowserSecurityHeaders.UseBrowserSecurityHeaders(app);
 app.UseResponseCompression();
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -387,7 +390,8 @@ app.Use(async (context, next) =>
 {
     var isMutation = HttpMethods.IsPost(context.Request.Method) || HttpMethods.IsPut(context.Request.Method)
         || HttpMethods.IsPatch(context.Request.Method) || HttpMethods.IsDelete(context.Request.Method);
-    var csrfExempt = context.Request.Path.Equals("/v1/telegram/session", StringComparison.Ordinal);
+    var csrfExempt = context.Request.Path.Equals("/v1/telegram/session", StringComparison.Ordinal)
+        || context.Request.Path.Equals("/v1/security/csp-report", StringComparison.Ordinal);
     if (isMutation && !csrfExempt && context.Request.Cookies.ContainsKey("vg_session"))
     {
         var cookieToken = context.Request.Cookies["vg_csrf"];
@@ -466,6 +470,7 @@ app.MapRetentionEndpoints();
 app.MapPaymentEndpoints();
 app.MapPromotionEndpoints();
 VideoGrabber.Platform.Api.Support.SupportEndpoints.MapSupportEndpoints(app);
+VideoGrabber.Platform.Api.Security.BrowserSecurityHeaders.MapCspReports(app);
 VideoGrabber.Platform.Api.ProductInformation.InformationEndpoints.MapInformationEndpoints(app);
 VideoGrabber.Platform.Api.ClientUpdates.ClientReleaseEndpoints.MapClientReleaseEndpoints(app);
 app.MapSubscriptionEndpoints();

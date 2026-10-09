@@ -17,6 +17,13 @@ VideoGrabber запускает сторонние инструменты как
 
 ## Studio web interface
 
+## Support form and notifications (2026-10-10)
+
+- ALTCHA .NET1.1.0: MIT, official `altcha-org/altcha-lib-dotnet`, revision `c48002521c862e15cc08c2018378634203e9f925`. Full notice: `licenses/Altcha-1.1.0-MIT.txt`. Used by the API and Windows support client.
+- ALTCHA browser widget3.3.0: MIT; local widget/i18n and full notice: `wwwroot/support/vendor/LICENSE.txt`. No paid CAPTCHA service connected.
+- MailKit4.18.1 and MimeKit4.18.1: MIT, .NET Foundation and Contributors. Full notices: `licenses/MailKit-4.18.1-MIT.txt`, `licenses/MimeKit-4.18.1-MIT.txt`. Server email notification transport.
+- BouncyCastle.Cryptography2.6.2: upstream license retained in `licenses/BouncyCastle-2.6.2-LICENSE.md`; transitive dependency of ALTCHA/MimeKit, API and Windows support client.
+
 - Three.js: MIT; полный текст сохранён в `wwwroot/web/vendor/three.LICENSE.txt`.
 - GSAP/ScrollTrigger3.15.0: GSAP Standard No Charge License; лицензия сохранена в `wwwroot/web/vendor/gsap.LICENSE.txt`. Обычная анимация сайта входит в разрешённое бесплатное использование. Это не MIT; запрет на конкурирующие визуальные конструкторы анимации сохраняется.
 

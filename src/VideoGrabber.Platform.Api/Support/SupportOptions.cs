@@ -16,7 +16,7 @@ public sealed class SupportOptions(IConfiguration configuration)
         && ValidEmail(configuration["VG_SUPPORT_SMTP_FROM"] ?? "");
     public bool Ready => Enabled && (TelegramOwnerId > 0 || MailConfigured);
 
-    public static SupportRequest Validate(SupportRequest request)
+    public static SupportRequest Validate(SupportRequest request, long? verifiedTelegramId = null)
     {
         var topic = request.Topic?.Trim() ?? "";
         var contact = request.Contact?.Trim().Normalize() ?? "";
@@ -24,7 +24,8 @@ public sealed class SupportOptions(IConfiguration configuration)
         if (request.RequestId == Guid.Empty || !Topics.Contains(topic, StringComparer.Ordinal))
             throw new SupportRequestException(400, "invalid_support_topic");
         if (contact.Length is < 5 or > 254 || contact.Any(char.IsControl)
-            || (!ValidEmail(contact) && !Regex.IsMatch(contact, "^@[A-Za-z][A-Za-z0-9_]{4,31}$", RegexOptions.CultureInvariant)))
+            || (!ValidEmail(contact) && !Regex.IsMatch(contact, "^@[A-Za-z][A-Za-z0-9_]{4,31}$", RegexOptions.CultureInvariant)
+                && !(verifiedTelegramId is > 0 && contact == "telegram:" + verifiedTelegramId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))))
             throw new SupportRequestException(400, "invalid_support_contact");
         if (message.Length is < 20 or > 4000 || message.Any(c => char.IsControl(c) && c is not '\n' and not '\r' and not '\t'))
             throw new SupportRequestException(400, "invalid_support_message");

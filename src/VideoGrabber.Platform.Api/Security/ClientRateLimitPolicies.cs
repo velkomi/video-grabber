@@ -14,9 +14,13 @@ public static class ClientRateLimitPolicies
         AddCallerPolicy(options, "auth-desktop-poll", 120);
         AddCallerPolicy(options, "support-challenge", 6);
         AddCallerPolicy(options, "support-submit", 10);
+        AddCallerPolicy(options, "csp-report", 10);
         options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         {
             var path = context.Request.Path.Value ?? "";
+            if (path == "/v1/security/csp-report")
+                return RateLimitPartition.GetConcurrencyLimiter("csp-cap", _ => new ConcurrencyLimiterOptions
+                { PermitLimit = 4, QueueLimit = 0 });
             if (path.StartsWith("/v1/support/", StringComparison.Ordinal))
                 return RateLimitPartition.GetConcurrencyLimiter("support-cap", _ => new ConcurrencyLimiterOptions
                 { PermitLimit = 8, QueueLimit = 0 });

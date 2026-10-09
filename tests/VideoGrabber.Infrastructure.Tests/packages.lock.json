@@ -29,6 +29,11 @@
         "resolved": "3.1.5",
         "contentHash": "tKi7dSTwP4m5m9eXPM2Ime4Kn7xNf4x4zT9sdLO/G4hZVnQCRiMTWoSZqI/pYTVeI27oPPqHBKYI/DjJ9GsYgA=="
       },
+      "BouncyCastle.Cryptography": {
+        "type": "Transitive",
+        "resolved": "2.6.2",
+        "contentHash": "7oWOcvnntmMKNzDLsdxAYqApt+AjpRpP2CShjMfIa3umZ42UQMvH0tl1qAliYPNYO6vTdcGMqnRrCPmsfzTI1w=="
+      },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
         "resolved": "18.9.0",
@@ -90,19 +95,29 @@
       "videograbber.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )"
         }
       },
       "videograbber.infrastructure": {
         "type": "Project",
         "dependencies": {
+          "Altcha": "[1.1.0, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.0, )",
-          "VideoGrabber.Core": "[0.1.10-preview.62-rc.1, )",
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
+          "VideoGrabber.Core": "[0.1.10-preview.64-rc.1, )",
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )"
         }
       },
       "videograbber.platform.contracts": {
         "type": "Project"
+      },
+      "Altcha": {
+        "type": "CentralTransitive",
+        "requested": "[1.1.0, )",
+        "resolved": "1.1.0",
+        "contentHash": "lih7SelqJzCSYQwVc2bL6uQeoWVo19iCPzC9xc0o10GbWKeQcRtaxk4/xaccStHGUi91bmLgCPC8nkScApxGMw==",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "2.6.2"
+        }
       },
       "System.Security.Cryptography.ProtectedData": {
         "type": "CentralTransitive",

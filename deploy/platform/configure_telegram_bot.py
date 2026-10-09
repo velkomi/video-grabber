@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 
 BOT_COMMANDS = [
+    {"command": "support", "description": "Написать в поддержку"},
     {"command": "contacts", "description": "Контакты и сайт разработчика"},
     {"command": "documents", "description": "Условия, конфиденциальность и помощь"},
     {"command": "start", "description": "Открыть VideoGrabber"},

@@ -13,8 +13,13 @@ public static class SupportEndpoints
 
     public static void MapSupportEndpoints(this IEndpointRouteBuilder routes)
     {
-        routes.MapGet("/v1/support/config", (SupportOptions options) => Results.Ok(new
-        { enabled = options.Ready, topics = SupportOptions.Topics, messageMinLength = 20, messageMaxLength = 4000 }))
+        routes.MapGet("/v1/support/config", (HttpContext http, SupportOptions options) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(new
+            { enabled = options.Ready, topics = SupportOptions.Topics, messageMinLength = 20, messageMaxLength = 4000,
+              csrfToken = http.Request.Cookies.TryGetValue("vg_csrf", out var csrf) ? csrf : null });
+        })
             .RequireRateLimiting("auth-config");
         routes.MapGet("/v1/support/challenge", (SupportOptions options, SupportChallengeService challenges) =>
         {

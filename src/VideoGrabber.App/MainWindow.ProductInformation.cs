@@ -14,6 +14,9 @@ public sealed partial class MainWindow
     {
         var body = Vertical(8);
         body.Children.Add(SectionHeading("Помощь и документы"));
+        var support = StudioButton("Написать в поддержку", true);
+        support.Click += async (_, _) => await ShowSupportAsync();
+        body.Children.Add(support);
         body.Children.Add(StudioLink("Как пользоваться ↗", ProductInformationUrl("help")));
         body.Children.Add(StudioLink("Условия использования ↗", ProductInformationUrl("terms")));
         body.Children.Add(StudioLink("Конфиденциальность ↗", ProductInformationUrl("privacy")));

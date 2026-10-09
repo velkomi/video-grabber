@@ -23,6 +23,7 @@
     for(const item of doc.sections){const section=document.createElement("section"),h=document.createElement("h3"),p=document.createElement("p");h.textContent=item.title;p.textContent=item.body;section.append(h,p);node("#document-body").append(section);}
     if(id==="contacts"){
       const actions=document.createElement("div");actions.className="contact-actions";
+      const support=document.createElement("button");support.type="button";support.className="button";support.dataset.openSupport="";support.textContent="Написать в поддержку";actions.append(support);
       addLink(actions,"Написать в Telegram",data.contacts.telegram,true);addLink(actions,"Сайт Валерия",data.contacts.website);addLink(actions,"Написать на почту","mailto:"+data.contacts.email);node("#document-extras").append(actions);
     }
     if(id==="components")renderComponents();

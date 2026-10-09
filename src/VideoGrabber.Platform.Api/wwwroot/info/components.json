@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-09",
+  "generatedAt": "2026-10-10",
   "sourceRelease": "0.1.10-preview.63-rc.1",
   "components": [
     {
@@ -101,6 +101,56 @@
       "bytes": 2724,
       "status": "SHIPPED_NOTICE",
       "notes": "Upstream notice and local version/source files retained."
+    },
+    {
+      "name": "ALTCHA .NET",
+      "version": "1.1.0",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/altcha-org/altcha-lib-dotnet",
+      "sha256": "acf2b86dd7e2f5810c27d2f1c83a5bb4677d56b95249988586014fb2e818a695",
+      "bytes": 1069,
+      "status": "SHIPPED_NOTICE",
+      "notes": "API and Windows support client; notice hash, not binary hash."
+    },
+    {
+      "name": "ALTCHA widget",
+      "version": "3.3.0",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/altcha-org/altcha",
+      "sha256": "bee1fb9d9c97d42c12c22332c5250f2fb1ef5c2321f6f82beb23e3b77be50a29",
+      "bytes": 1095,
+      "status": "SHIPPED_NOTICE",
+      "notes": "Website and Mini App support form; notice hash, not binary hash."
+    },
+    {
+      "name": "MailKit",
+      "version": "4.18.1",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/jstedfast/MailKit",
+      "sha256": "35b9fc9bfb7a201a6e0b9e3ce71b639a830a2347d4aea55a2b1affbc487a1fb3",
+      "bytes": 1093,
+      "status": "SHIPPED_NOTICE",
+      "notes": "Server SMTP notifications; notice hash, not binary hash."
+    },
+    {
+      "name": "MimeKit",
+      "version": "4.18.1",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/jstedfast/MimeKit",
+      "sha256": "c613af70a219d1cafd732f2cefd4fca9f1462ac5696f8461108a7d643513f3bf",
+      "bytes": 1094,
+      "status": "SHIPPED_NOTICE",
+      "notes": "Server SMTP notifications; notice hash, not binary hash."
+    },
+    {
+      "name": "BouncyCastle.Cryptography",
+      "version": "2.6.2",
+      "license": "Bouncy Castle license",
+      "sourceUrl": "https://github.com/bcgit/bc-csharp",
+      "sha256": "afc1653b666b64a2386b7b9b914406904f45c20b9571765d8c1121b513313179",
+      "bytes": 1133,
+      "status": "SHIPPED_NOTICE",
+      "notes": "ALTCHA/MimeKit transitive dependency; notice hash, not binary hash."
     }
   ]
 }

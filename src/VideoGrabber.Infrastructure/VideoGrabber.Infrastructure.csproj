@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+    <PackageReference Include="Altcha" />
   </ItemGroup>
 <ItemGroup>
     <ProjectReference Include="../VideoGrabber.Core/VideoGrabber.Core.csproj" />
