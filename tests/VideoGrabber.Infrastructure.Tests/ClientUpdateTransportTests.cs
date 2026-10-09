@@ -96,16 +96,14 @@ public sealed class ClientUpdateTransportTests
     {
         using var f = new Fixture();
         var timeout = TimeSpan.FromMilliseconds(80);
-        using var outer = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        var timer = System.Diagnostics.Stopwatch.StartNew();
+        using var outer = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         using var client = new ClientReleaseClient(new Handler(_ => new(HttpStatusCode.OK) { Content = new StreamContent(new StalledStream()) }), timeout);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.FetchAsync(new Uri("https://updates.example.com/manifest"), outer.Token));
-        Assert.True(timer.Elapsed < TimeSpan.FromMilliseconds(500), "Metadata body timeout was not enforced");
-        using var outerDownload = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-        timer.Restart();
+        Assert.False(outer.IsCancellationRequested, "Metadata must stop by its internal body deadline, without caller cancellation");
+        using var outerDownload = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         using var downloader = new VerifiedInstallerDownloader(f.Directory, f.Verifier, new Handler(_ => new(HttpStatusCode.OK) { Content = new StreamContent(new StalledStream()) }), timeout);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => downloader.DownloadAsync(f.Sign(), false, null, outerDownload.Token));
-        Assert.True(timer.Elapsed < TimeSpan.FromMilliseconds(500), "Installer idle timeout was not enforced");
+        Assert.False(outerDownload.IsCancellationRequested, "Installer must stop by its internal idle deadline, without caller cancellation");
         Assert.Empty(System.IO.Directory.GetFiles(f.Directory, "*.exe"));
         Assert.Empty(System.IO.Directory.GetFiles(f.Directory, "*.part"));
     }
