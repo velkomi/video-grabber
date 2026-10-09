@@ -6,6 +6,7 @@ using VideoGrabber.Core.Licensing;
 using VideoGrabber.Core.Processes;
 using VideoGrabber.Infrastructure.Browser;
 using VideoGrabber.Infrastructure.Licensing;
+using VideoGrabber.Infrastructure.ClientUpdates;
 
 namespace VideoGrabber.App;
 
@@ -47,7 +48,9 @@ public sealed partial class MainWindow
     private void InitializeManagedServices()
     {
 #if VIDEOGRABBER_MANAGED
-        _managedHttp = new HttpClient { BaseAddress = ResolveManagedApiBaseUri() };
+        _managedHttp = new HttpClient(new ClientDirectoryRequestGate(_clientReleaseCache, _clientServiceSelection,
+            BootstrapClientServices, new HttpClientHandler { AllowAutoRedirect = false }))
+            { BaseAddress = _clientServiceSelection.Services.ApiBase };
         var authRoot = Path.Combine(AppDataRoot, "auth");
         _managedSessionStore = new WindowsSessionStore(authRoot, "refresh.bin");
         _managedDeviceKeyStore = new WindowsSessionStore(authRoot, "device-key.bin");
@@ -72,12 +75,9 @@ public sealed partial class MainWindow
                 return _managedAccessToken;
             }));
 
-    private static Uri ResolveManagedApiBaseUri()
+    private Uri ResolveManagedApiBaseUri()
     {
-        var configured = Environment.GetEnvironmentVariable("VIDEOGRABBER_PLATFORM_URL");
-        if (Uri.TryCreate(configured, UriKind.Absolute, out var uri) && IsAllowedManagedApiBase(uri))
-            return EnsureTrailingSlash(uri);
-        return new Uri("https://videograbber.srv1902378.hstgr.cloud/");
+        return _clientServiceSelection.Services.ApiBase;
     }
 
     private static bool IsAllowedManagedApiBase(Uri uri)

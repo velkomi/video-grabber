@@ -7,8 +7,8 @@ namespace VideoGrabber.App;
 
 public sealed partial class MainWindow
 {
-    private const string VideoGrabberPricingUrl =
-        "https://videograbber.srv1902378.hstgr.cloud/web/?from=desktop";
+    private string VideoGrabberPricingUrl =>
+        _activeClientServices.WebsiteBase.AbsoluteUri + "?from=desktop";
     private const string VideoGrabberTelegramUrl =
         "https://t.me/Velkoshkin";
 

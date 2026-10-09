@@ -6,7 +6,8 @@ TestResults/
 artifacts/
 .test-artifacts/
 __pycache__/
-tools/
+tools/*
+!tools/VideoGrabber.ClientReleasePublisher/
 *.user
 *.suo
 *.tmp

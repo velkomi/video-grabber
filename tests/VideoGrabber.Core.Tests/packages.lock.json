@@ -90,7 +90,7 @@
       "videograbber.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.12, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
         }
       },
       "videograbber.platform.contracts": {

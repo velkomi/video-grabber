@@ -142,15 +142,15 @@
       "videograbber.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.12, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
         }
       },
       "videograbber.infrastructure": {
         "type": "Project",
         "dependencies": {
           "System.Security.Cryptography.ProtectedData": "[10.0.0, )",
-          "VideoGrabber.Core": "[0.1.10-preview.12, )",
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.12, )"
+          "VideoGrabber.Core": "[0.1.10-preview.62-rc.1, )",
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
         }
       },
       "videograbber.platform.contracts": {

@@ -72,21 +72,27 @@
           "Microsoft.IdentityModel.Tokens": "8.19.2"
         }
       },
+      "videograbber.core": {
+        "type": "Project",
+        "dependencies": {
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
+        }
+      },
       "videograbber.platform.contracts": {
         "type": "Project"
       },
       "videograbber.platform.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.60-rc.1, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )"
         }
       },
       "videograbber.platform.persistence": {
         "type": "Project",
         "dependencies": {
           "Npgsql": "[10.0.3, )",
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.60-rc.1, )",
-          "VideoGrabber.Platform.Core": "[0.1.10-preview.60-rc.1, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.62-rc.1, )",
+          "VideoGrabber.Platform.Core": "[0.1.10-preview.62-rc.1, )"
         }
       },
       "Npgsql": {

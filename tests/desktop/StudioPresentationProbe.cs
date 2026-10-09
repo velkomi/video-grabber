@@ -44,6 +44,8 @@ public sealed partial class MainWindow
         {
             Directory.CreateDirectory(StudioProbeRoot);
             await Task.Delay(800);
+            var updateScenario = Environment.GetEnvironmentVariable("VIDEOGRABBER_PROBE_UPDATES");
+            if (!string.IsNullOrWhiteSpace(updateScenario)) PrepareClientUpdateProbe(updateScenario);
             if (Environment.GetEnvironmentVariable("VIDEOGRABBER_PROBE_REFERRALS") == "1")
             {
                 _managedReferralsCard.Visibility = Visibility.Visible;
@@ -71,6 +73,16 @@ public sealed partial class MainWindow
                     current.ChangeView(null, 0, null, true);
                     await Task.Delay(100);
                     await CaptureStudioProbeAsync($"{page}-{width}.png");
+                    if (page == "info" && !string.IsNullOrWhiteSpace(updateScenario))
+                    {
+                        var card = (FrameworkElement)VisualTreeHelper.GetParent(_clientUpdateStatus);
+                        var offset = card.TransformToVisual((UIElement)current.Content).TransformPoint(new Windows.Foundation.Point(0, 0)).Y;
+                        current.ChangeView(null, offset, null, true);
+                        await Task.Delay(100);
+                        await CaptureStudioProbeAsync($"updates-{updateScenario}-{width}.png");
+                        if (_clientUpdateNotice.Visibility != Visibility.Visible || _clientUpdateNotice.ActualHeight > _rootHost.ActualHeight - 180)
+                            throw new InvalidOperationException("Update notice is missing or leaves no room for the app.");
+                    }
                     if (page == "account" && Environment.GetEnvironmentVariable("VIDEOGRABBER_PROBE_REFERRALS") == "1")
                     {
                         var offset = _managedReferralsCard.TransformToVisual((UIElement)current.Content).TransformPoint(new Windows.Foundation.Point(0,0)).Y;
@@ -155,6 +167,27 @@ public sealed partial class MainWindow
         encoder.SetPixelData(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
             (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, 96, 96, pixels);
         await encoder.FlushAsync();
+    }
+
+    private void PrepareClientUpdateProbe(string scenario)
+    {
+        using var key = System.Security.Cryptography.RSA.Create(2048);
+        _activeClientServices = BootstrapClientServices;
+        _clientReleaseVerifier = new VideoGrabber.Core.ClientUpdates.ClientReleaseVerifier(
+            new Dictionary<string, string> { ["qa-only"] = key.ExportSubjectPublicKeyInfoPem() });
+        _clientReleaseCache = new VideoGrabber.Infrastructure.ClientUpdates.ClientReleaseCache(
+            Path.Combine(StudioProbeRoot, "qa-update-cache.json"), _clientReleaseVerifier, BootstrapClientServices);
+        var now = DateTimeOffset.UtcNow;
+        var services = scenario == "migration"
+            ? new VideoGrabber.Platform.Contracts.ClientUpdates.ClientServiceEndpoints(new Uri("https://new.example.com/"), new Uri("https://new.example.com/web/"))
+            : BootstrapClientServices;
+        var notes = scenario == "long-note" ? string.Concat(Enumerable.Repeat("Улучшены загрузки и синхронизация. ", 30)) : "Улучшены загрузки и синхронизация.";
+        var artifact = new VideoGrabber.Platform.Contracts.ClientUpdates.ClientUpdateArtifact("999.0.0", new Uri("https://updates.example.com/setup"), 1024, new string('a', 64));
+        var manifest = new VideoGrabber.Platform.Contracts.ClientUpdates.ClientReleaseManifest(1, "videograbber", "preview", 1,
+            now, now.AddDays(1), "videograbber-main", services, new("999.0.0", now, notes, artifact, null));
+        var envelope = VideoGrabber.Core.ClientUpdates.ClientReleaseSigner.Sign(manifest, key, "qa-only");
+        _clientReleaseCache.AcceptChecked(envelope);
+        RenderClientReleaseState(manual: true);
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

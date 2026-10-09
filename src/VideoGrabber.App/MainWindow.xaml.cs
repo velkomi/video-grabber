@@ -88,6 +88,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         AppDiagnostics.Write("MainWindow constructor started");
+        InitializeClientUpdateServices();
         InitializeManagedServices();
         InitializeStudioPresentation();
         _rootHost = new Grid
@@ -114,6 +115,7 @@ public sealed partial class MainWindow : Window
         StartManagedAccountRestore();
 #endif
         InitializeTheme();
+        StartClientUpdateChecks();
 
         Title = AppDisplayName;
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "VideoGrabber.ico");
@@ -146,6 +148,7 @@ public sealed partial class MainWindow : Window
         {
             _windowLifetime.Cancel();
             _logTimer?.Stop();
+            _clientUpdateTimer?.Stop();
             DestroyBrowser(forWindowClose: true);
             _routeProxy?.Dispose();
             _routeProxy = null;
@@ -157,6 +160,7 @@ public sealed partial class MainWindow : Window
     {
         var shell = new Grid();
         shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
+        shell.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         shell.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         _titleBar = new Grid { Padding = new Thickness(18, 0, 18, 0) };
@@ -189,11 +193,14 @@ public sealed partial class MainWindow : Window
         });
         _titleBar.Children.Add(brand);
         shell.Children.Add(_titleBar);
+        var updateNotice = BuildClientUpdateNotice();
+        Grid.SetRow(updateNotice, 1);
+        shell.Children.Add(updateNotice);
 
         var contentArea = new Grid();
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(228) });
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(contentArea, 1);
+        Grid.SetRow(contentArea, 2);
         var sidebar = new Grid { Padding = new Thickness(14, 18, 14, 18) };
         sidebar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });

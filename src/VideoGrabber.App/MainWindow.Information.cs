@@ -29,11 +29,12 @@ public sealed partial class MainWindow
         about.Children.Add(SectionHeading("О программе"));
         about.Children.Add(new TextBlock { Text = "VideoGrabber " + CurrentVersion(), FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         about.Children.Add(MutedText("Создано Валерием"));
-        about.Children.Add(StudioLink("Сайт VideoGrabber ↗", "https://videograbber.srv1902378.hstgr.cloud/web/"));
+        about.Children.Add(StudioLink("Сайт VideoGrabber ↗", _activeClientServices.WebsiteBase.AbsoluteUri));
         about.Children.Add(StudioLink("Бот @VideoGra_bot ↗", "https://t.me/VideoGra_bot"));
         about.Children.Add(StudioLink("Разработчик @Velkoshkin ↗", "https://t.me/Velkoshkin"));
         about.Children.Add(MutedText("Файлы сохраняются и обрабатываются на вашем компьютере. Пароли приложение не читает. Защищённое видео не скачивается."));
         body.Children.Add(Card(about));
+        body.Children.Add(BuildClientUpdateCard());
 
         var capabilities = Vertical(8);
         capabilities.Children.Add(SectionHeading("Что умеет VideoGrabber"));

@@ -440,6 +440,7 @@ app.MapDeliveryEndpoints();
 app.MapRetentionEndpoints();
 app.MapPaymentEndpoints();
 app.MapPromotionEndpoints();
+VideoGrabber.Platform.Api.ClientUpdates.ClientReleaseEndpoints.MapClientReleaseEndpoints(app);
 app.MapSubscriptionEndpoints();
 app.MapYooKassaWebhookEndpoints();
 app.MapJobEndpoints();

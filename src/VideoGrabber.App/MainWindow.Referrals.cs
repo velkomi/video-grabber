@@ -126,7 +126,7 @@ public sealed partial class MainWindow
             _managedReferralsPanel.Children.Add(Details("История бонусов", history));
         }
         _managedReferralsPanel.Children.Add(MutedText("Бонусы не выводятся. RUB и Stars учитываются отдельно. Скидки и бонусы вместе — до 30% цены разовой оплаты."));
-        _managedReferralsPanel.Children.Add(StudioLink("Использовать бонусы и промокод на сайте ↗", "https://videograbber.srv1902378.hstgr.cloud/web/#pricing"));
+        _managedReferralsPanel.Children.Add(StudioLink("Использовать бонусы и промокод на сайте ↗", _activeClientServices.WebsiteBase.AbsoluteUri + "#pricing"));
     }
 
     private static bool SafeReferralLink(Uri uri) => uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo);
