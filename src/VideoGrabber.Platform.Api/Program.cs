@@ -93,7 +93,21 @@ var telegramSecurity = TelegramSecurityOptions.FromConfiguration(builder.Configu
 
 builder.Services.AddSingleton(sessionJwt);
 builder.Services.AddSingleton(telegramSecurity);
-builder.Services.AddSingleton<IMiniAppAssertionValidator>(_ => new MiniAppAssertionValidator(telegramSecurity.BotToken));
+builder.Services.AddSingleton<IMiniAppAssertionValidator>(_ =>
+{
+    var cutoff = builder.Configuration["VG_TELEGRAM_ASSERTION_NOT_BEFORE_UTC"];
+    DateTimeOffset? notBefore = null;
+    if (!string.IsNullOrWhiteSpace(cutoff))
+    {
+        if (!DateTimeOffset.TryParse(cutoff, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed))
+            throw new InvalidOperationException("Telegram assertion cutoff must be a UTC timestamp.");
+        notBefore = parsed.ToUniversalTime();
+    }
+    return new MiniAppAssertionValidator(telegramSecurity.BotToken, notBefore: notBefore);
+});
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(options =>
+    VideoGrabber.Platform.Api.Security.ClientRateLimitPolicies.ConfigureProxyOptions(options, builder.Configuration));
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -150,13 +164,7 @@ builder.Services.AddRateLimiter(options =>
         http.User.FindFirst("account_id")?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
         _ => new FixedWindowRateLimiterOptions { PermitLimit=30, Window=TimeSpan.FromMinutes(1), QueueLimit=0 }));
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddFixedWindowLimiter("auth", limiter =>
-    {
-        limiter.PermitLimit = 20;
-        limiter.Window = TimeSpan.FromMinutes(1);
-        limiter.QueueLimit = 0;
-        limiter.AutoReplenishment = true;
-    });
+    VideoGrabber.Platform.Api.Security.ClientRateLimitPolicies.ConfigureAuthPolicies(options);
 });
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("TelegramBotApi").RemoveAllLoggers();
@@ -326,6 +334,7 @@ builder.Services.AddSingleton(new VideoGrabber.Platform.Api.ProductInformation.D
     builder.Configuration["VG_DOCUMENTS_PATH"] ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot", "info", "content.json")));
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseResponseCompression();
 app.UseDefaultFiles();
 app.UseStaticFiles();

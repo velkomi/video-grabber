@@ -90,6 +90,53 @@ public sealed class TelegramAuthTests
     }
 
     [Fact]
+    public void Equivalent_init_data_has_same_replay_identity()
+    {
+        var validator = new MiniAppAssertionValidator(BotToken);
+        var signed = SignInitData(ValidFields(5005, Now), BotToken);
+        var expected = validator.Validate(signed, Now).AssertionHash;
+        var reordered = string.Join('&', signed.Split('&').Reverse());
+        var encodedAliases = signed.Replace("%7B", "%7b", StringComparison.Ordinal)
+            .Replace("%7D", "%7d", StringComparison.Ordinal)
+            .Replace("auth_date=", "auth%5Fdate=", StringComparison.Ordinal);
+        var hashStart = signed.LastIndexOf("hash=", StringComparison.Ordinal) + 5;
+        var upperHash = signed[..hashStart] + signed[hashStart..].ToUpperInvariant();
+
+        Assert.Equal(expected, validator.Validate(reordered, Now).AssertionHash);
+        Assert.Equal(expected, validator.Validate(encodedAliases, Now).AssertionHash);
+        Assert.Equal(expected, validator.Validate(upperHash, Now).AssertionHash);
+    }
+
+    [Fact]
+    public void Deployment_cutoff_rejects_legacy_assertions_without_deleting_records()
+    {
+        var validator = new MiniAppAssertionValidator(BotToken, notBefore: Now);
+        var old = SignInitData(ValidFields(5005, Now.AddSeconds(-1)), BotToken);
+        var fresh = SignInitData(ValidFields(5005, Now), BotToken);
+        Assert.Throws<UnauthorizedAccessException>(() => validator.Validate(old, Now));
+        Assert.Equal(5005L, validator.Validate(fresh, Now).UserId);
+    }
+
+    [Fact]
+    public async Task Concurrent_equivalent_assertions_issue_one_session()
+    {
+        await using var f = await ApiFixture.StartAsync();
+        var account = await f.AccountAsync("telegram", "5999");
+        using var first = f.TelegramWebClient();
+        using var second = f.TelegramWebClient();
+        var signed = SignInitData(ValidFields(5999, f.Clock.GetUtcNow()), BotToken);
+        var responses = await Task.WhenAll(
+            first.PostAsync("/v1/telegram/session", new StringContent(signed, Encoding.UTF8, "text/plain")),
+            second.PostAsync("/v1/telegram/session", new StringContent(string.Join('&', signed.Split('&').Reverse()), Encoding.UTF8, "text/plain")));
+        try
+        {
+            Assert.Single(responses, response => response.StatusCode == HttpStatusCode.OK);
+            Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Unauthorized);
+        }
+        finally { foreach (var response in responses) response.Dispose(); }
+    }
+
+    [Fact]
     public async Task Telegram_session_maps_existing_numeric_identity_and_rejects_assertion_replay()
     {
         await using var f = await ApiFixture.StartAsync();

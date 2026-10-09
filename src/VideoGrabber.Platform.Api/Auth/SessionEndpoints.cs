@@ -8,7 +8,7 @@ public static class SessionEndpoints
         this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/v1/auth/supabase-config", SupabaseConfigAsync)
-            .RequireRateLimiting("auth");
+            .RequireRateLimiting("auth-config");
         endpoints.MapPost("/v1/auth/supabase-session", SupabaseSessionAsync)
             .RequireRateLimiting("auth");
         endpoints.MapPost("/v1/auth/desktop/start", DesktopStartAsync)
@@ -17,7 +17,7 @@ public static class SessionEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("auth");
         endpoints.MapPost("/v1/auth/desktop/consume", DesktopConsumeAsync)
-            .RequireRateLimiting("auth");
+            .RequireRateLimiting("auth-desktop-poll");
         endpoints.MapPost("/v1/auth/start", StartAsync).RequireRateLimiting("auth");
         endpoints.MapPost("/v1/auth/complete", CompleteAsync).RequireRateLimiting("auth");
         endpoints.MapPost("/v1/auth/refresh", RefreshAsync).RequireRateLimiting("auth");

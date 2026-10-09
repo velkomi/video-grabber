@@ -43,12 +43,14 @@ public sealed class MiniAppAssertionValidator : IMiniAppAssertionValidator
     private static readonly TimeSpan MaxFutureSkew = TimeSpan.FromSeconds(30);
     private readonly byte[] _botToken;
     private readonly TimeSpan _maxAge;
+    private readonly DateTimeOffset _notBefore;
 
-    public MiniAppAssertionValidator(string botToken, TimeSpan? maxAge = null)
+    public MiniAppAssertionValidator(string botToken, TimeSpan? maxAge = null, DateTimeOffset? notBefore = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(botToken);
         _botToken = Encoding.UTF8.GetBytes(botToken);
         _maxAge = maxAge ?? TimeSpan.FromMinutes(5);
+        _notBefore = notBefore ?? DateTimeOffset.MinValue;
         if (_maxAge <= TimeSpan.Zero || _maxAge > TimeSpan.FromHours(1))
             throw new ArgumentOutOfRangeException(nameof(maxAge));
     }
@@ -95,7 +97,7 @@ public sealed class MiniAppAssertionValidator : IMiniAppAssertionValidator
         DateTimeOffset authTime;
         try { authTime = DateTimeOffset.FromUnixTimeSeconds(seconds); }
         catch (ArgumentOutOfRangeException) { throw Denied(); }
-        if (authTime > now + MaxFutureSkew || now - authTime > _maxAge)
+        if (authTime < _notBefore || authTime > now + MaxFutureSkew || now - authTime > _maxAge)
             throw Denied();
 
         long userId;
@@ -112,7 +114,8 @@ public sealed class MiniAppAssertionValidator : IMiniAppAssertionValidator
         catch (JsonException) { throw Denied(); }
 
         var assertionHash = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(initData))).ToLowerInvariant();
+            HMACSHA256.HashData(_botToken, Encoding.UTF8.GetBytes(
+                "VideoGrabber.telegram-assertion:v2\n" + checkString))).ToLowerInvariant();
         return new(userId, authTime, assertionHash);
     }
 
