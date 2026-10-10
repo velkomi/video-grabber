@@ -1574,7 +1574,7 @@ function scheduleThreeHero() {
     if (motion.matches && !visualTestMode) return;
     started = true;
     canvas.hidden = false;
-    import("/web/hero-three.bundle.js?v=referral-orbit-20261010").catch((error) => {
+    import("/web/hero-three.bundle.js?v=play-coins-20261010").catch((error) => {
       console.warn("VideoGrabber Three.js scene unavailable", error);
       canvas.hidden = true;
       canvas.dataset.context = "failed";

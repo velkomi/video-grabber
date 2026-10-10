@@ -535,7 +535,7 @@ async function initThreeHero(visual, canvas) {
     sync: { rootScale: 0.88, rootY: 0.03, cameraZ: 10.95, orbitScale: 0.46 },
     pricing: { rootScale: 0.90, rootY: -0.02, cameraZ: 11.10, orbitScale: 0.34 },
     windows: { rootScale: 0.96, rootY: 0.02, cameraZ: 10.72, orbitScale: 0.22 },
-    bonus: { rootScale: 1.04, rootY: 0.0, cameraZ: 10.0, orbitScale: 0.2 }
+    bonus: { rootScale: 1.28, rootY: 0.0, cameraZ: 10.0, orbitScale: 0.2 }
   };
   const storyAccentHex = {
     hero: 0x4fa3ff,
@@ -1366,38 +1366,33 @@ function createEngravedCard(renderer, spec) {
 
 function createReferralBonus() {
   const group = new THREE.Group();
-  const blue = new THREE.MeshPhysicalMaterial({color:0x155cc0, metalness:.65, roughness:.20,
+  const blue = new THREE.MeshPhysicalMaterial({color:0x227ce0, metalness:.38, roughness:.16,
     clearcoat:1, clearcoatRoughness:.12, envMapIntensity:1.5});
   const silver = new THREE.MeshPhysicalMaterial({color:0xc5dded, metalness:.94, roughness:.18,
     clearcoat:.8, clearcoatRoughness:.14, envMapIntensity:1.6});
-  const navy = new THREE.MeshPhysicalMaterial({color:0x082952, metalness:.6, roughness:.24});
   const disc = (radius,depth,material) => {
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,depth,72),material);
     mesh.rotation.x=Math.PI/2; return mesh;
   };
-  // Two connected PLAY identities: the inviter and their friend.
-  for(const [x,y,z,tilt] of [[-.65,.20,.12,-.13],[.65,-.18,.28,.12]]) {
-    const identity=new THREE.Group(); identity.position.set(x,y,z); identity.rotation.y=tilt;
-    identity.add(disc(.50,.16,silver));
-    const face=disc(.455,.18,blue); face.position.z=.03; identity.add(face);
-    const play=new THREE.Mesh(inflatedTriangleGeometry(.18,.05),silver);
-    play.position.set(.015,0,.15); play.userData.referralPlay=true; identity.add(play);
-    group.add(identity);
-  }
-  const orbit=new THREE.Mesh(new THREE.TorusGeometry(.86,.035,16,112),silver);
-  orbit.scale.set(1.36,.62,1); orbit.rotation.set(.38,.15,-.24); group.add(orbit);
-  for(const [x,y,z] of [[.36,.77,.06],[-.32,-.77,.22]]) {
-    const token=new THREE.Group(); token.position.set(x,y,z); token.rotation.y=-.18;
-    const rim=disc(.22,.09,silver); rim.userData.bonusToken=true; token.add(rim);
-    const face=disc(.185,.10,navy); face.position.z=.015; token.add(face);
-    for(const [width,height] of [[.20,.045],[.045,.20]]) {
-      const plus=new THREE.Mesh(new THREE.BoxGeometry(width,height,.025),silver);
-      plus.position.z=.09; token.add(plus);
-    }
-    group.add(token);
-  }
-  group.rotation.set(.10,-.18,-.04);
-  return {group, controls:[], desktopScale:1, mobileScale:1.2};
+  const rimGeometry = new THREE.TorusGeometry(.48,.032,12,64);
+  const playGeometry = inflatedTriangleGeometry(.17,.045);
+  const addCoin = (x,y,z,rotation,scale=1) => {
+    const coin=new THREE.Group(); coin.position.set(x,y,z); coin.rotation.set(...rotation); coin.scale.setScalar(scale);
+    const edge=disc(.51,.115,silver); edge.userData.bonusToken=true; coin.add(edge);
+    const face=disc(.46,.128,blue); face.position.z=.012; coin.add(face);
+    const rim=new THREE.Mesh(rimGeometry,silver); rim.position.z=.072; coin.add(rim);
+    const play=new THREE.Mesh(playGeometry,silver);
+    play.position.set(.015,0,.097); play.userData.referralPlay=true; coin.add(play);
+    group.add(coin);
+  };
+  // Uneven stacks and scattered PLAY medals read as accumulated referral rewards.
+  for(let i=0;i<5;i++) addCoin(-.48,-.42+i*.12,-.18,[-1.08,.035*i,.09-i*.035]);
+  for(let i=0;i<3;i++) addCoin(.53,-.43+i*.12,-.30,[-1.08,-.04*i,-.10+i*.045]);
+  addCoin(-1.04,-.52,.40,[-1.18,-.12,-.18],.92);
+  addCoin(.82,-.51,.61,[-1.11,.17,.15],.92);
+  addCoin(.08,.07,.78,[-.18,-.25,-.24],1.03);
+  group.rotation.set(.16,-.23,.025);
+  return {group, controls:[], desktopScale:.85, mobileScale:1};
 }
 
 function createFeatureCard(spec, renderer) {

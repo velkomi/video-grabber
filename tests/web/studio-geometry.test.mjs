@@ -16,7 +16,7 @@ test('shared referral materials retain their opacity when prepared and faded int
   gift.group.traverse(mesh=>{if(mesh.material)assert.equal(mesh.material.opacity,1);});
 });
 
-test('referral sculpture connects two play symbols, has bonus tokens and is half the gift size',()=>{
+test('referral sculpture contains a compact pile of volumetric PLAY coins',()=>{
   const gift=context.createReferralBonus(); gift.group.updateMatrixWorld(true);
   const bounds=new THREE.Box3().setFromObject(gift.group); const size=bounds.getSize(new THREE.Vector3());
   assert.ok(size.z>.3, 'real depth');
@@ -24,7 +24,7 @@ test('referral sculpture connects two play symbols, has bonus tokens and is half
   let plays=0,coins=0;
   gift.group.traverse(mesh=>{if(mesh.userData.referralPlay)plays++;if(mesh.userData.bonusToken)coins++;
     if(mesh.geometry) for(const value of mesh.geometry.attributes.position.array) assert.ok(Number.isFinite(value));});
-  assert.equal(plays,2); assert.ok(coins>=2);
+  assert.equal(plays,11); assert.equal(coins,11);
   assert.ok(context.sceneCameraDistance('bonus',1)<context.sceneCameraDistance('hero',1));
 });
 
