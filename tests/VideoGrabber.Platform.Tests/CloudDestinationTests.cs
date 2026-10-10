@@ -10,6 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VideoGrabber.Platform.Api.Jobs;
+using VideoGrabber.Platform.Api.Security;
+using VideoGrabber.Platform.Contracts;
 using Xunit;
 
 namespace VideoGrabber.Platform.Tests;
@@ -17,13 +19,15 @@ namespace VideoGrabber.Platform.Tests;
 public sealed class CloudDestinationTests
 {
     [Theory]
-    [InlineData(null, "true", "true", true, HttpStatusCode.Unauthorized)]
-    [InlineData("customer", "true", "true", false, HttpStatusCode.OK)]
-    [InlineData("owner_admin", "true", "true", true, HttpStatusCode.OK)]
-    [InlineData("customer", "true", "false", true, HttpStatusCode.OK)]
-    [InlineData("owner_admin", null, "true", false, HttpStatusCode.OK)]
+    [InlineData(null, "customer", false, "true", "true", true, HttpStatusCode.Unauthorized)]
+    [InlineData("authenticated", "customer", false, "true", "true", false, HttpStatusCode.OK)]
+    [InlineData("authenticated", "owner_admin", false, "true", "true", true, HttpStatusCode.OK)]
+    [InlineData("owner_admin", "customer", false, "true", "true", false, HttpStatusCode.OK)]
+    [InlineData("authenticated", "customer", false, "true", "false", true, HttpStatusCode.OK)]
+    [InlineData("authenticated", "owner_admin", false, null, "true", false, HttpStatusCode.OK)]
+    [InlineData("authenticated", "owner_admin", true, "true", "true", false, HttpStatusCode.Forbidden)]
     public async Task Cloud_config_enforces_session_feature_flag_and_owner_preview(
-        string? role, string? enabled, string ownerOnly, bool exposed, HttpStatusCode expected)
+        string? tokenRole, string profileRole, bool blocked, string? enabled, string ownerOnly, bool exposed, HttpStatusCode expected)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -35,13 +39,16 @@ public sealed class CloudDestinationTests
         });
         builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, TestAuthentication>("Test", _ => { });
         builder.Services.AddAuthorization();
+        builder.Services.AddSingleton<IAccountStore>(new TestAccountStore(profileRole, blocked));
+        builder.Services.AddRateLimiter(ClientRateLimitPolicies.ConfigureAuthPolicies);
         await using var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();
+        app.UseRateLimiter();
         app.MapCloudDestinationEndpoints();
         await app.StartAsync();
         using var client = app.GetTestClient();
-        if (role is not null) client.DefaultRequestHeaders.Add("X-Test-Role", role);
+        if (tokenRole is not null) client.DefaultRequestHeaders.Add("X-Test-Role", tokenRole);
         using var response = await client.GetAsync("/v1/cloud/config");
         Assert.Equal(expected, response.StatusCode);
         if (expected != HttpStatusCode.OK) return;
@@ -59,7 +66,16 @@ public sealed class CloudDestinationTests
             var role = Request.Headers["X-Test-Role"].ToString();
             if (string.IsNullOrEmpty(role)) return Task.FromResult(AuthenticateResult.NoResult());
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(
-                new ClaimsPrincipal(new ClaimsIdentity([new Claim("role", role)], "Test")), "Test")));
+                new ClaimsPrincipal(new ClaimsIdentity([new Claim("role", role),
+                    new Claim("account_id", "11111111-1111-1111-1111-111111111111")], "Test")), "Test")));
         }
+    }
+
+    private sealed class TestAccountStore(string role, bool blocked) : IAccountStore
+    {
+        public Task<AccountProfile?> ReadAsync(Guid accountId, CancellationToken cancellationToken)
+            => Task.FromResult<AccountProfile?>(new(accountId, role, blocked, ["google"], null));
+        public Task<AccountProfile> ResolveAsync(VerifiedIdentity identity, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
     }
 }
