@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="420" viewBox="0 0 440 420">
+ <defs>
+  <linearGradient id="front" x2=".95" y2="1"><stop stop-color="#438ce0"/><stop offset=".45" stop-color="#1458af"/><stop offset="1" stop-color="#073776"/></linearGradient>
+  <linearGradient id="side" x2="1" y2="1"><stop stop-color="#164f9c"/><stop offset="1" stop-color="#081d4c"/></linearGradient>
+  <linearGradient id="lid" x2=".8" y2="1"><stop stop-color="#8bc3f4"/><stop offset=".4" stop-color="#2766b4"/><stop offset="1" stop-color="#153e84"/></linearGradient>
+  <linearGradient id="metal" x2="1" y2=".8"><stop stop-color="#456688"/><stop offset=".24" stop-color="#ecf6ff"/><stop offset=".5" stop-color="#7897b7"/><stop offset=".7" stop-color="#d0e6f7"/><stop offset="1" stop-color="#486481"/></linearGradient>
+  <radialGradient id="shadow"><stop stop-color="#1857aa" stop-opacity=".24"/><stop offset="1" stop-color="#1857aa" stop-opacity="0"/></radialGradient>
+ </defs>
+ <ellipse cx="223" cy="374" rx="174" ry="24" fill="url(#shadow)"/>
+ <path d="M91 172L252 206L252 359L99 322Q90 320 90 307Z" fill="url(#front)" stroke="#69a4e1" stroke-width="1.5"/>
+ <path d="M252 206L345 151V304Q345 312 338 316L252 359Z" fill="url(#side)" stroke="#24558c"/>
+ <path d="M79 146L179 88L357 128L254 190Z" fill="url(#lid)" stroke="#a2c9e9"/>
+ <path d="M79 146L254 190V211L79 168Z" fill="url(#front)" stroke="#71a7d6"/>
+ <path d="M254 190L357 128V150L254 211Z" fill="url(#side)" stroke="#4784ba"/>
+ <path d="M157 184L182 190V342L157 336Z" fill="url(#metal)"/>
+ <path d="M91 231L252 269V292L91 254Z" fill="url(#metal)"/>
+ <path d="M252 269L345 216V238L252 292Z" fill="url(#metal)"/>
+ <path d="M155 106L180 93L278 174L254 190Z" fill="url(#metal)"/>
+ <path d="M123 120L145 107L319 150L296 163Z" fill="url(#metal)"/>
+ <path d="M217 112C169 50 103 51 116 91C128 127 181 128 217 112Z" fill="none" stroke="url(#metal)" stroke-width="17"/>
+ <path d="M214 111C253 40 319 62 293 98C271 126 237 131 214 111Z" fill="none" stroke="url(#metal)" stroke-width="17"/>
+ <path d="M207 113C173 137 144 153 161 203" fill="none" stroke="url(#metal)" stroke-width="19"/>
+ <path d="M224 113C268 141 295 138 310 169" fill="none" stroke="url(#metal)" stroke-width="18"/>
+ <rect x="198" y="101" width="32" height="24" rx="8" fill="url(#metal)" transform="rotate(12 214 113)"/>
+ <g transform="matrix(1 .235 0 1 139 220)"><rect width="68" height="68" rx="17" fill="url(#metal)"/><rect x="4" y="4" width="60" height="60" rx="14" fill="#092954"/>
+  <path d="M25 18Q23 16 23 20V48Q23 52 26 50L47 37Q50 35 47 33Z" fill="url(#metal)"/>
+ </g>
+</svg>

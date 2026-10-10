@@ -108,6 +108,16 @@
     host.replaceChildren(); host.hidden = controller.disabled;
     if (controller.disabled || !controller.summary) return;
     const document = host.ownerDocument, value = controller.summary;
+    const hasGift = host.dataset?.giftScene === "bonus";
+    if (hasGift) {
+      const copy = node(document, "div", null, "promotion-copy");
+      const gift = node(document, "div", null, "story-slot story-slot-bonus promotion-gift");
+      gift.setAttribute("aria-hidden", "true");
+      const image = node(document, "img", null, "promotion-gift-fallback");
+      image.src = "/assets/bonus-play-gift.svg"; image.alt = "";
+      image.width = 440; image.height = 420;
+      gift.append(image); host.append(copy, gift); host = copy;
+    }
     host.append(node(document, "h3", "Приглашения и бонусы"));
     if (controller.claimMessage) host.append(node(document, "p", controller.claimMessage));
     host.append(node(document, "p", "Другу — 10% на первую разовую оплату подписки. Вам — 10% от оплаченной суммы. Бонусы доступны через 14 дней и действуют 365 дней.", "promotion-note"));
@@ -147,6 +157,7 @@
     }
     if (!value.history?.length) history.append(node(document, "p", "Начислений пока нет.", "promotion-note"));
     host.append(history, node(document, "p", "Бонусы не выводятся. Скидка и бонусы вместе — до 30% цены. RUB и Stars учитываются отдельно.", "promotion-note"));
+    if (hasGift) global.dispatchEvent(new CustomEvent("videograbber:referral-layout"));
   }
   function mountCheckout(host, controller, getRequest, changed = () => {}) {
     const document = host.ownerDocument; host.replaceChildren(); host.hidden = controller.disabled;

@@ -244,6 +244,9 @@ section[id] { scroll-margin-top: 100px; }
 .story-stage[data-story-state="windows"] {
   filter: saturate(1.05);
 }
+.story-stage[data-story-state="bonus"] .hero-art,
+.story-stage[data-story-state="bonus"] .space-haze,
+.story-stage[data-story-state="bonus"] .scene-controls { display:none; }
 
 .hero {
   min-height: 600px;

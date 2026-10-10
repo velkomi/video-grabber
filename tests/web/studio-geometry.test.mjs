@@ -8,6 +8,24 @@ const source = fs.readFileSync(new URL('../../src/VideoGrabber.Platform.Api/wwwr
 const helpers = source.slice(source.indexOf('function visibleSceneTargets('), source.indexOf('function createFeatureCard('));
 const context = vm.createContext({THREE});
 vm.runInContext(helpers, context);
+vm.runInContext(source.slice(source.indexOf('function roundedRectShape('),source.indexOf('function makeCardTexture(')),context);
+vm.runInContext(source.slice(source.indexOf('function prepareStoryArtifact('),source.indexOf('function makeOrbitMaterial(')),context);
+
+test('shared gift materials retain their opacity when prepared and faded into view',()=>{
+  const gift=context.createBonusGift(); context.prepareStoryArtifact(gift.group); context.setStoryArtifactOpacity(gift.group,1);
+  gift.group.traverse(mesh=>{if(mesh.material)assert.equal(mesh.material.opacity,1);});
+});
+
+test('bonus gift is finite volumetric geometry with a raised play badge and fits its camera',()=>{
+  const gift=context.createBonusGift(); gift.group.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(gift.group); const size=bounds.getSize(new THREE.Vector3());
+  assert.ok(size.x>2 && size.y>3 && size.z>2);
+  let badge;
+  gift.group.traverse(mesh=>{if(mesh.userData.giftPlayBadge)badge=mesh;
+    if(mesh.geometry) for(const value of mesh.geometry.attributes.position.array) assert.ok(Number.isFinite(value));});
+  assert.ok(badge); assert.ok(badge.position.z>1.4);
+  assert.ok(context.sceneCameraDistance('bonus',1)<context.sceneCameraDistance('hero',1));
+});
 
 test('hidden meshes and meshes under hidden ancestors cannot trigger scene navigation', () => {
   const root = new THREE.Group();

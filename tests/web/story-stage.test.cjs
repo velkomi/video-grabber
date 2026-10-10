@@ -41,7 +41,12 @@ function harness(initialWidth, viewportHeight = 900) {
     CustomEvent: class {constructor(type, args) {this.type = type; this.detail = args?.detail;}}, requestAnimationFrame: fn => fn(),
     setTimeout: fn => fn(), clearTimeout() {}};
   vm.runInNewContext(code + '\nsetupStoryStage();', context);
-  return {stage, triggers, scroll(value) {scrollY=value; for (const fn of [...(windowEvents.get('scroll') || [])]) fn();}, resize(next) {
+  return {stage, triggers, bonus(visible) {
+    if (visible) { nodes.set('#referral-card', element(1250)); nodes.set('.story-slot-bonus', element(1350)); }
+    else { nodes.delete('#referral-card'); nodes.delete('.story-slot-bonus'); }
+    nodes.set('#pricing', element(2100)); nodes.set('#download', element(2550));
+    for (const fn of [...(windowEvents.get('videograbber:referral-layout') || [])]) fn();
+  }, scroll(value) {scrollY=value; for (const fn of [...(windowEvents.get('scroll') || [])]) fn();}, resize(next) {
     const previous = width; width = next;
     if ((previous <= 1050) !== (next <= 1050)) {
       for (const listener of [...mediaListeners]) if (listener.query.includes('max-width')) listener.fn({matches: next <= 1050});
@@ -82,4 +87,14 @@ test('the final Windows scene activates when scrolling reaches the page end', ()
   const app = harness(1440,900);
   app.scroll(1500);
   assert.equal(app.stage.dataset.storyState,'windows');
+});
+
+test('bonus artwork added after account load receives the shared scene, then releases it on logout',()=>{
+  const app=harness(1440); const initial=app.triggers.size;
+  app.bonus(true); app.scroll(1050);
+  assert.equal(app.stage.dataset.storyState,'bonus');
+  assert.equal(app.triggers.size,initial+1);
+  app.bonus(false);
+  assert.equal(app.stage.dataset.storyState,'sync');
+  assert.equal(app.triggers.size,initial);
 });

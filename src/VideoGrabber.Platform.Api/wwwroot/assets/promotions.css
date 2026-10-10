@@ -1,4 +1,11 @@
 .promotion-card { display: grid; gap: 12px; font: inherit; }
+#referral-card[data-gift-scene].promotion-card { grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr); gap:24px; align-items:center; }
+.promotion-copy { display:grid; gap:12px; min-width:0; }
+#referral-card[data-gift-scene] .promotion-gift { display:block; position:relative; width:100%; height:400px; min-height:400px; align-self:center; pointer-events:none; }
+.promotion-gift-fallback { display:block; width:100%; height:100%; object-fit:contain; }
+.promotion-gift.has-live-gift .promotion-gift-fallback { visibility:hidden; }
+@media(max-width:760px) { #referral-card[data-gift-scene].promotion-card { grid-template-columns:minmax(0,1fr); gap:16px; }
+  #referral-card[data-gift-scene] .promotion-gift { height:300px; min-height:300px; max-width:440px; justify-self:center; } }
 .dashboard-grid .promotion-card { grid-column: 1 / -1; }
 .promotion-card p { max-width: 70ch; }
 .promotion-card[hidden], .promotion-checkout[hidden] { display: none; }

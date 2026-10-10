@@ -49,6 +49,7 @@ async function initThreeHero(visual, canvas) {
   const hideScene = () => {
     canvas.hidden = true;
     visual.classList.remove("three-ready");
+    document.querySelector(".promotion-gift")?.classList.remove("has-live-gift");
   };
   const failScene = (event) => {
     graphicsFailed = true;
@@ -334,7 +335,8 @@ async function initThreeHero(visual, canvas) {
     workflow: 0,
     sync: 0,
     pricing: 0,
-    windows: 0
+    windows: 0,
+    bonus: 0
   };
   let pricingFocusPlan = null;
 
@@ -532,14 +534,16 @@ async function initThreeHero(visual, canvas) {
     workflow: { rootScale: 0.92, rootY: 0.03, cameraZ: 10.85, orbitScale: 0.58 },
     sync: { rootScale: 0.88, rootY: 0.03, cameraZ: 10.95, orbitScale: 0.46 },
     pricing: { rootScale: 0.90, rootY: -0.02, cameraZ: 11.10, orbitScale: 0.34 },
-    windows: { rootScale: 0.96, rootY: 0.02, cameraZ: 10.72, orbitScale: 0.22 }
+    windows: { rootScale: 0.96, rootY: 0.02, cameraZ: 10.72, orbitScale: 0.22 },
+    bonus: { rootScale: 1.04, rootY: 0.0, cameraZ: 10.0, orbitScale: 0.2 }
   };
   const storyAccentHex = {
     hero: 0x4fa3ff,
     workflow: 0x55b8ff,
     sync: 0x55d0ff,
     pricing: 0x9a68ff,
-    windows: 0x5bbcff
+    windows: 0x5bbcff,
+    bonus: 0x59aaff
   };
   let storyState = document.getElementById("story-stage")?.dataset.storyState || "hero";
   let storySectionProgress = 0;
@@ -595,6 +599,7 @@ async function initThreeHero(visual, canvas) {
     canvas.dataset.context = "ready";
     canvas.dataset.frames = String(Number(canvas.dataset.frames || 0) + 1);
     canvas.dataset.storyState = storyState;
+    document.querySelector(".promotion-gift")?.classList.toggle("has-live-gift", storyState === "bonus" && storyOpacity.bonus > .985);
     canvas.dataset.transition = Object.entries(storyOpacity).every(([name, opacity]) =>
       name === storyState ? opacity > .985 : opacity < .015) ? "stable" : "moving";
     const rect = canvas.getBoundingClientRect();
@@ -1051,6 +1056,7 @@ async function initThreeHero(visual, canvas) {
     const next = String(event.detail?.state || "hero");
     if (!Object.prototype.hasOwnProperty.call(storyTargets, next)) return;
     storyState = next;
+    storyTargets[next].cameraZ = sceneCameraDistance(next, camera.aspect);
     storySectionProgress = clamp01(event.detail?.progress || 0);
     setRaycastFeature(null);
 
@@ -1281,6 +1287,7 @@ function createStudioMediaPanel() {
 }
 
 function sceneCameraDistance(state, aspect) {
+  if (state === "bonus") return Math.max(10, 8.5 / aspect);
   return Math.max(state === "hero" ? 12.2 : state === "sync" || state === "windows" ? 15 : 10.6,14.2/aspect);
 }
 
@@ -1357,6 +1364,53 @@ function createEngravedCard(renderer, spec) {
   return card;
 }
 
+function createBonusGift() {
+  const group = new THREE.Group();
+  const blue = new THREE.MeshPhysicalMaterial({ color:0x155cc0, metalness:.65, roughness:.24,
+    clearcoat:1, clearcoatRoughness:.14, envMapIntensity:1.35 });
+  const silver = new THREE.MeshPhysicalMaterial({ color:0xb8d3e9, metalness:.94, roughness:.22,
+    clearcoat:.8, clearcoatRoughness:.16, envMapIntensity:1.5 });
+  const dark = new THREE.MeshPhysicalMaterial({ color:0x082952, metalness:.55, roughness:.3, clearcoat:.7 });
+  const slab = (w,h,d,r,material,x=0,y=0,z=0) => {
+    const geometry = new THREE.ExtrudeGeometry(roundedRectShape(w,h,r), {
+      depth:d, bevelEnabled:true, bevelSize:.035, bevelThickness:.035, bevelSegments:5, curveSegments:18 });
+    geometry.translate(0,0,-d/2);
+    const mesh = new THREE.Mesh(geometry,material); mesh.position.set(x,y,z); group.add(mesh); return mesh;
+  };
+  slab(2.55,2.20,2.25,.16,blue,0,-.22);
+  slab(2.73,.32,2.43,.09,blue,0,1.10);
+  slab(.30,2.20,.028,.035,silver,0,-.22,1.18);
+  slab(2.55,.27,.028,.035,silver,0,.02,1.18);
+  slab(.30,2.20,.028,.035,silver,0,-.22,-1.18);
+  for (const x of [-1.315,1.315]) {
+    const strap = slab(2.25,.27,.025,.03,silver,x,.02); strap.rotation.y=Math.PI/2;
+  }
+  for (const [w,d] of [[.30,2.45],[2.75,.30]]) {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(w,.032,d),silver);
+    strap.position.y=1.30; group.add(strap);
+  }
+  const ribbon = points => {
+    const curve = new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));
+    const geometry = new THREE.ExtrudeGeometry(roundedRectShape(.31,.045,.018),
+      {steps:72,curveSegments:8,bevelEnabled:false,extrudePath:curve});
+    group.add(new THREE.Mesh(geometry,silver));
+  };
+  for (const side of [-1,1]) ribbon([
+    [side*.05,1.43,.02],[side*.72,2.05,-.14],[side*1.12,2.10,.12],
+    [side*.97,1.64,.38],[side*.13,1.43,.19]
+  ]);
+  ribbon([[-.08,1.44,.12],[-.64,1.45,.48],[-.98,1.30,.98],[-.78,.90,1.29]]);
+  ribbon([[.09,1.43,.10],[.66,1.45,.27],[1.04,1.28,.56],[1.23,.91,.84]]);
+  slab(.38,.29,.28,.11,silver,0,1.46,.13);
+  slab(1.12,1.12,.07,.23,silver,0,-.20,1.27);
+  slab(.99,.99,.05,.20,dark,0,-.20,1.35);
+  const play = new THREE.Mesh(inflatedTriangleGeometry(.225,.06),silver);
+  play.position.set(.016,-.20,1.43); play.userData.giftPlayBadge=true; group.add(play);
+  group.rotation.set(.12,-.43,-.035);
+  group.position.y=-.35;
+  return { group, controls:[], desktopScale:1.30, mobileScale:1.15 };
+}
+
 function createFeatureCard(spec, renderer) {
   const group = new THREE.Group();
   group.position.set(...spec.position);
@@ -1429,7 +1483,8 @@ function createStoryArtifacts(renderer) {
     workflow: createWorkflowArtifact(renderer),
     sync: createSyncArtifact(renderer),
     pricing: createPricingArtifact(renderer),
-    windows: createWindowsArtifact(renderer)
+    windows: createWindowsArtifact(renderer),
+    bonus: createBonusGift()
   };
 }
 
@@ -1617,6 +1672,7 @@ function makeStoryLine(points, color) {
 
 function prepareStoryArtifact(group) {
   group.visible = false;
+  const prepared = new Set();
   group.traverse((object) => {
     const materials = Array.isArray(object.material)
       ? object.material
@@ -1625,6 +1681,8 @@ function prepareStoryArtifact(group) {
         : [];
 
     for (const material of materials) {
+      if (prepared.has(material)) continue;
+      prepared.add(material);
       material.transparent = true;
       material.userData.storyBaseOpacity =
         Number.isFinite(material.opacity) ? material.opacity : 1;

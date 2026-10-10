@@ -786,6 +786,7 @@ function signedOut(message = "") {
   promotionController.reset();
   $("#referral-card").replaceChildren();
   $("#referral-card").hidden = true;
+  window.dispatchEvent(new CustomEvent("videograbber:referral-layout"));
   if ($("#promotion-dialog").open) $("#promotion-dialog").close();
   promotionPayment = null;
   visibleJobCount = 5;
@@ -1439,6 +1440,7 @@ function setupStoryStage() {
     { state: "hero", trigger: "#top", slot: ".story-slot-hero", startPercent: 0 },
     { state: "workflow", trigger: "#how", slot: ".story-slot-workflow", startPercent: 42 },
     { state: "sync", trigger: "#app", slot: ".story-slot-sync", startPercent: 42 },
+    { state: "bonus", trigger: "#referral-card", slot: ".story-slot-bonus", startPercent: 42 },
     { state: "pricing", trigger: "#pricing", slot: ".story-slot-pricing", startPercent: 42 },
     { state: "windows", trigger: "#download", slot: ".story-slot-windows", startPercent: 72 }
   ];
@@ -1482,7 +1484,8 @@ function setupStoryStage() {
     let state = "hero";
     for (const definition of definitions.slice(1)) {
       const node = document.querySelector(definition.trigger);
-      if (node && node.getBoundingClientRect().top <= readingLine(definition))
+      const rect = node?.getBoundingClientRect();
+      if (rect && rect.width > 0 && rect.height > 0 && rect.top <= readingLine(definition))
         state = definition.state;
     }
     return state;
@@ -1544,11 +1547,13 @@ function setupStoryStage() {
   };
   compact.addEventListener("change", configure);
   motion.addEventListener("change", configure);
+  window.addEventListener("videograbber:referral-layout", configure);
   window.addEventListener("pagehide", event => {
     cleanup(); gsapApi?.killTweensOf(stage);
     if (!event.persisted) {
       compact.removeEventListener("change", configure);
       motion.removeEventListener("change", configure);
+      window.removeEventListener("videograbber:referral-layout", configure);
     }
   });
   window.addEventListener("pageshow", event => { if (event.persisted) configure(); });
@@ -1568,7 +1573,7 @@ function scheduleThreeHero() {
     if (motion.matches && !visualTestMode) return;
     started = true;
     canvas.hidden = false;
-    import("/web/hero-three.bundle.js?v=webgl-recovery-1").catch((error) => {
+    import("/web/hero-three.bundle.js?v=bonus-gift-20261010").catch((error) => {
       console.warn("VideoGrabber Three.js scene unavailable", error);
       canvas.hidden = true;
       canvas.dataset.context = "failed";
