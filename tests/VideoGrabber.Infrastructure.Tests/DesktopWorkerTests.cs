@@ -9,6 +9,25 @@ namespace VideoGrabber.Infrastructure.Tests;
 
 public sealed class DesktopWorkerTests
 {
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task Challenge_authentication_failure_reaches_session_recovery_without_signing(HttpStatusCode status)
+    {
+        using var http = new HttpClient(new ChallengeFailureHandler(status)) { BaseAddress = new Uri("https://platform.test/") };
+        var signed = false;
+        var client = new DesktopWorkerClient(http, () => "expired-access-token", _ => { signed = true; return []; });
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => client.PollAsync(Guid.NewGuid(), CancellationToken.None));
+        Assert.False(signed);
+    }
+
+    private sealed class ChallengeFailureHandler(HttpStatusCode status) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(status));
+    }
+
     [Fact]
     public async Task Poll_signs_fresh_device_challenge_and_rejects_foreign_scope()
     {

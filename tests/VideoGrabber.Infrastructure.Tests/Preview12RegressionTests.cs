@@ -69,7 +69,7 @@ public sealed class Preview12RegressionTests
             Assert.Equal(root, Path.GetDirectoryName(runner.ObservedWorkingDirectory));
             Assert.StartsWith(".vg-job-", Path.GetFileName(runner.ObservedWorkingDirectory));
             Assert.StartsWith(root, result.OutputPath!, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("59m19s", Path.GetFileName(result.OutputPath!), StringComparison.Ordinal);
+            Assert.Equal("МОДУЛЬ №1 - Часть 3 - День 1 - 720p.mp4", Path.GetFileName(result.OutputPath!));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

@@ -48,6 +48,15 @@ public static class DownloadFileName
             return $"{(int)span.TotalHours:00}h{span.Minutes:00}m{span.Seconds:00}s";
         return $"{span.Minutes:00}m{span.Seconds:00}s";
     }
+
+    public static string DisplayBaseName(string? title)
+    {
+        var value = title ?? "Видео";
+        foreach (var separator in new[] { "⧸", "∕", "⁄", "/", "\\", "|" })
+            value = value.Replace(separator, " — ", StringComparison.Ordinal);
+        return SanitizeBaseName(value);
+    }
+
     public static string BuildSuggested(string? title, int ordinal, string quality)
     {
         var safeTitle = SanitizeBaseName(title);

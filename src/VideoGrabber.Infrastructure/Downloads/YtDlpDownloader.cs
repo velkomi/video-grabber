@@ -70,7 +70,7 @@ public sealed class YtDlpDownloader(
         try
         {
         var outputTemplate = suggestedBase is null
-            ? Path.Combine(jobRoot, "%(title).180B [%(id)s].%(ext)s")
+            ? Path.Combine(jobRoot, "%(title).180B.%(ext)s")
             : Path.Combine(jobRoot, suggestedBase + " - downloading.%(ext)s");
 
         var arguments = new List<string>
@@ -182,8 +182,7 @@ public sealed class YtDlpDownloader(
         var media = await (probe ?? new FfprobeMediaProbe(runner, tools)).ProbeAsync(outputPath, cancellationToken).ConfigureAwait(false);
         if (!DownloadOutputContract.IsSatisfied(request, media))
             return Fail(new(false, "Файл не соответствует ожидаемой длительности или дорожкам."), workspace);
-        var finalBase = suggestedBase ?? DownloadFileName.SanitizeBaseName(Path.GetFileNameWithoutExtension(outputPath));
-        if (media.DurationSeconds > 0) finalBase += " - " + DownloadFileName.DurationTag(media.DurationSeconds);
+        var finalBase = DownloadFileName.DisplayBaseName(suggestedBase ?? Path.GetFileNameWithoutExtension(outputPath));
         var finalOutput = await PromoteVerifiedOutputAsync(workspace, outputPath, finalBase, cancellationToken).ConfigureAwait(false);
         workspace.CleanupVerifiedIntermediates();
         progress?.Report(new DownloadProgress(100, "Готовый файл проверен и сохранён."));
@@ -398,12 +397,20 @@ public sealed class YtDlpDownloader(
     }
 
     private static DownloadResult PreservedFailure(DownloadResult failure, DownloadWorkspace workspace)
-        => failure with { Details = (failure.Details is null ? "" : failure.Details + "\n")
+    {
+        if (workspace.TryCleanupEmpty()) return failure;
+        return failure with { Details = (failure.Details is null ? "" : failure.Details + "\n")
             + "Рабочие файлы сохранены: " + workspace.Root };
+    }
 
     private static void ReportPreservedCancellation(
         DownloadWorkspace workspace, IProgress<DownloadProgress>? progress, OperationCanceledException exception)
     {
+        if (workspace.TryCleanupEmpty())
+        {
+            progress?.Report(new DownloadProgress(null, "Загрузка отменена."));
+            return;
+        }
         exception.Data["JobDirectory"] = workspace.Root;
         progress?.Report(new DownloadProgress(null, "Загрузка отменена. Рабочие файлы сохранены: " + workspace.Root));
     }

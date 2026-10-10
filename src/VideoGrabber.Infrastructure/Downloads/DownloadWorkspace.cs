@@ -131,6 +131,22 @@ public sealed class DownloadWorkspace
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException) { }
     }
 
+    internal bool TryCleanupEmpty()
+    {
+        try
+        {
+            ValidateOwnedPath(Root);
+            if (!Directory.Exists(Root)) return true;
+            if (Directory.EnumerateFileSystemEntries(Root).Any()) return false;
+            Directory.Delete(Root, recursive: false);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     private static void TryMarkHidden(string path)
     {
         try

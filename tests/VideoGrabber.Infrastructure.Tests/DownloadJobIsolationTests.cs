@@ -60,7 +60,7 @@ public sealed class DownloadJobIsolationTests
             Assert.True(result.Success, result.Message);
             Assert.NotNull(result.OutputPath);
             Assert.StartsWith(output, result.OutputPath!, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("01h02m03s", Path.GetFileName(result.OutputPath!), StringComparison.Ordinal);
+            Assert.Equal("01 - Часть 1 - 720p.mp4", Path.GetFileName(result.OutputPath!));
             Assert.Equal(job, Path.GetDirectoryName(runner.ObservedWorkingDirectory));
             Assert.StartsWith(".vg-job-", Path.GetFileName(runner.ObservedWorkingDirectory));
             Assert.False(Directory.Exists(runner.ObservedWorkingDirectory));

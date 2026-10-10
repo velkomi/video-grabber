@@ -21,7 +21,7 @@ public sealed class DesktopWorkerClient(
             HttpMethod.Post, $"/v1/devices/{deviceId:D}/challenge");
         using var challengeResponse = await http.SendAsync(
             challengeRequest, cancellationToken).ConfigureAwait(false);
-        if (challengeResponse.StatusCode == HttpStatusCode.NotFound)
+        if (challengeResponse.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             throw new UnauthorizedAccessException("desktop_device_revoked");
         challengeResponse.EnsureSuccessStatusCode();
         var challenge = await challengeResponse.Content
