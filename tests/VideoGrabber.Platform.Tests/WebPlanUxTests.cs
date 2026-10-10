@@ -103,7 +103,8 @@ public sealed class WebPlanUxTests
         Assert.Contains("Всё из Unlimited Video", html);
         Assert.Contains("Скачать установщик", html);
         Assert.Contains("Portable ZIP", html);
-        Assert.Contains("/assets/videograbber-studio-hero.webp", html);
+        Assert.DoesNotContain("/assets/videograbber-studio-hero.webp", html);
+        Assert.DoesNotContain("class=\"hero-art\"", html);
         Assert.Contains("hero-art-shell", html);
         Assert.Contains("id=\"hero-three\"", html);
         Assert.Contains("id=\"story-stage\"", html);
@@ -289,7 +290,7 @@ public sealed class WebPlanUxTests
         Assert.Contains("scrollProgress * 0.20", heroThree);
         Assert.Contains("new THREE.MeshStandardMaterial", heroThree);
         Assert.Contains("new THREE.PointLight(0xf1d5b6", heroThree);
-        Assert.Contains(".hero-visual.three-ready .hero-art", styles);
+        Assert.Contains(".hero-visual.three-ready .hero-three-canvas", styles);
         Assert.DoesNotContain("Интерактивная 3D-сцена", html, StringComparison.Ordinal);
         Assert.DoesNotContain("windows-orb", html, StringComparison.Ordinal);
         Assert.DoesNotContain("sync-art", html, StringComparison.Ordinal);
