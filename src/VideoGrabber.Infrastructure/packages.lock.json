@@ -25,7 +25,7 @@
       "videograbber.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.65-rc.1, )"
         }
       },
       "videograbber.platform.contracts": {

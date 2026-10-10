@@ -95,7 +95,7 @@
       "videograbber.core": {
         "type": "Project",
         "dependencies": {
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )"
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.65-rc.1, )"
         }
       },
       "videograbber.infrastructure": {
@@ -103,8 +103,8 @@
         "dependencies": {
           "Altcha": "[1.1.0, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.0, )",
-          "VideoGrabber.Core": "[0.1.10-preview.64-rc.1, )",
-          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.64-rc.1, )"
+          "VideoGrabber.Core": "[0.1.10-preview.65-rc.1, )",
+          "VideoGrabber.Platform.Contracts": "[0.1.10-preview.65-rc.1, )"
         }
       },
       "videograbber.platform.contracts": {
