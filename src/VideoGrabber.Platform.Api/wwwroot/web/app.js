@@ -778,6 +778,7 @@ async function loadDashboard() {
   } catch {
     $("#referral-card").hidden = false;
     $("#referral-card").textContent = "Бонусы временно недоступны. Обновите аккаунт позже.";
+    window.dispatchEvent(new CustomEvent("videograbber:referral-layout"));
   }
   setTimeout(() => window.ScrollTrigger?.refresh?.(), 0);
 }
@@ -1484,6 +1485,7 @@ function setupStoryStage() {
     let state = "hero";
     for (const definition of definitions.slice(1)) {
       const node = document.querySelector(definition.trigger);
+      if (!document.querySelector(definition.slot)) continue;
       const rect = node?.getBoundingClientRect();
       if (rect && rect.width > 0 && rect.height > 0 && rect.top <= readingLine(definition))
         state = definition.state;

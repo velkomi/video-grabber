@@ -106,7 +106,10 @@
   }
   function renderSummary(host, controller) {
     host.replaceChildren(); host.hidden = controller.disabled;
-    if (controller.disabled || !controller.summary) return;
+    if (controller.disabled || !controller.summary) {
+      if (host.dataset?.giftScene === "bonus") global.dispatchEvent(new CustomEvent("videograbber:referral-layout"));
+      return;
+    }
     const document = host.ownerDocument, value = controller.summary;
     const hasGift = host.dataset?.giftScene === "bonus";
     if (hasGift) {
