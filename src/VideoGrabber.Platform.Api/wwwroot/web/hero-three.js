@@ -1364,51 +1364,40 @@ function createEngravedCard(renderer, spec) {
   return card;
 }
 
-function createBonusGift() {
+function createReferralBonus() {
   const group = new THREE.Group();
-  const blue = new THREE.MeshPhysicalMaterial({ color:0x155cc0, metalness:.65, roughness:.24,
-    clearcoat:1, clearcoatRoughness:.14, envMapIntensity:1.35 });
-  const silver = new THREE.MeshPhysicalMaterial({ color:0xb8d3e9, metalness:.94, roughness:.22,
-    clearcoat:.8, clearcoatRoughness:.16, envMapIntensity:1.5 });
-  const dark = new THREE.MeshPhysicalMaterial({ color:0x082952, metalness:.55, roughness:.3, clearcoat:.7 });
-  const slab = (w,h,d,r,material,x=0,y=0,z=0) => {
-    const geometry = new THREE.ExtrudeGeometry(roundedRectShape(w,h,r), {
-      depth:d, bevelEnabled:true, bevelSize:.035, bevelThickness:.035, bevelSegments:5, curveSegments:18 });
-    geometry.translate(0,0,-d/2);
-    const mesh = new THREE.Mesh(geometry,material); mesh.position.set(x,y,z); group.add(mesh); return mesh;
+  const blue = new THREE.MeshPhysicalMaterial({color:0x155cc0, metalness:.65, roughness:.20,
+    clearcoat:1, clearcoatRoughness:.12, envMapIntensity:1.5});
+  const silver = new THREE.MeshPhysicalMaterial({color:0xc5dded, metalness:.94, roughness:.18,
+    clearcoat:.8, clearcoatRoughness:.14, envMapIntensity:1.6});
+  const navy = new THREE.MeshPhysicalMaterial({color:0x082952, metalness:.6, roughness:.24});
+  const disc = (radius,depth,material) => {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,depth,72),material);
+    mesh.rotation.x=Math.PI/2; return mesh;
   };
-  slab(2.55,2.20,2.25,.16,blue,0,-.22);
-  slab(2.73,.32,2.43,.09,blue,0,1.10);
-  slab(.30,2.20,.028,.035,silver,0,-.22,1.18);
-  slab(2.55,.27,.028,.035,silver,0,.02,1.18);
-  slab(.30,2.20,.028,.035,silver,0,-.22,-1.18);
-  for (const x of [-1.315,1.315]) {
-    const strap = slab(2.25,.27,.025,.03,silver,x,.02); strap.rotation.y=Math.PI/2;
+  // Two connected PLAY identities: the inviter and their friend.
+  for(const [x,y,z,tilt] of [[-.65,.20,.12,-.13],[.65,-.18,.28,.12]]) {
+    const identity=new THREE.Group(); identity.position.set(x,y,z); identity.rotation.y=tilt;
+    identity.add(disc(.50,.16,silver));
+    const face=disc(.455,.18,blue); face.position.z=.03; identity.add(face);
+    const play=new THREE.Mesh(inflatedTriangleGeometry(.18,.05),silver);
+    play.position.set(.015,0,.15); play.userData.referralPlay=true; identity.add(play);
+    group.add(identity);
   }
-  for (const [w,d] of [[.30,2.45],[2.75,.30]]) {
-    const strap = new THREE.Mesh(new THREE.BoxGeometry(w,.032,d),silver);
-    strap.position.y=1.30; group.add(strap);
+  const orbit=new THREE.Mesh(new THREE.TorusGeometry(.86,.035,16,112),silver);
+  orbit.scale.set(1.36,.62,1); orbit.rotation.set(.38,.15,-.24); group.add(orbit);
+  for(const [x,y,z] of [[.36,.77,.06],[-.32,-.77,.22]]) {
+    const token=new THREE.Group(); token.position.set(x,y,z); token.rotation.y=-.18;
+    const rim=disc(.22,.09,silver); rim.userData.bonusToken=true; token.add(rim);
+    const face=disc(.185,.10,navy); face.position.z=.015; token.add(face);
+    for(const [width,height] of [[.20,.045],[.045,.20]]) {
+      const plus=new THREE.Mesh(new THREE.BoxGeometry(width,height,.025),silver);
+      plus.position.z=.09; token.add(plus);
+    }
+    group.add(token);
   }
-  const ribbon = points => {
-    const curve = new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));
-    const geometry = new THREE.ExtrudeGeometry(roundedRectShape(.31,.045,.018),
-      {steps:72,curveSegments:8,bevelEnabled:false,extrudePath:curve});
-    group.add(new THREE.Mesh(geometry,silver));
-  };
-  for (const side of [-1,1]) ribbon([
-    [side*.05,1.43,.02],[side*.72,2.05,-.14],[side*1.12,2.10,.12],
-    [side*.97,1.64,.38],[side*.13,1.43,.19]
-  ]);
-  ribbon([[-.08,1.44,.12],[-.64,1.45,.48],[-.98,1.30,.98],[-.78,.90,1.29]]);
-  ribbon([[.09,1.43,.10],[.66,1.45,.27],[1.04,1.28,.56],[1.23,.91,.84]]);
-  slab(.38,.29,.28,.11,silver,0,1.46,.13);
-  slab(1.12,1.12,.07,.23,silver,0,-.20,1.27);
-  slab(.99,.99,.05,.20,dark,0,-.20,1.35);
-  const play = new THREE.Mesh(inflatedTriangleGeometry(.225,.06),silver);
-  play.position.set(.016,-.20,1.43); play.userData.giftPlayBadge=true; group.add(play);
-  group.rotation.set(.12,-.43,-.035);
-  group.position.y=-.35;
-  return { group, controls:[], desktopScale:1.30, mobileScale:1.15 };
+  group.rotation.set(.10,-.18,-.04);
+  return {group, controls:[], desktopScale:1, mobileScale:1.2};
 }
 
 function createFeatureCard(spec, renderer) {
@@ -1484,7 +1473,7 @@ function createStoryArtifacts(renderer) {
     sync: createSyncArtifact(renderer),
     pricing: createPricingArtifact(renderer),
     windows: createWindowsArtifact(renderer),
-    bonus: createBonusGift()
+    bonus: createReferralBonus()
   };
 }
 

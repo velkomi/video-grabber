@@ -116,10 +116,7 @@
       const copy = node(document, "div", null, "promotion-copy");
       const gift = node(document, "div", null, "story-slot story-slot-bonus promotion-gift");
       gift.setAttribute("aria-hidden", "true");
-      const image = node(document, "img", null, "promotion-gift-fallback");
-      image.src = "/assets/bonus-play-gift.svg"; image.alt = "";
-      image.width = 440; image.height = 420;
-      gift.append(image); host.append(copy, gift); host = copy;
+      host.append(copy, gift); host = copy;
     }
     host.append(node(document, "h3", "Приглашения и бонусы"));
     if (controller.claimMessage) host.append(node(document, "p", controller.claimMessage));

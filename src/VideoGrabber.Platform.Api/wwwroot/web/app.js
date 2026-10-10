@@ -1564,8 +1564,7 @@ function setupStoryStage() {
 
 function scheduleThreeHero() {
   const canvas = $("#hero-three");
-  const art = document.querySelector(".hero-art");
-  if (!canvas || !art) return;
+  if (!canvas) return;
 
   const motion = matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -1575,7 +1574,7 @@ function scheduleThreeHero() {
     if (motion.matches && !visualTestMode) return;
     started = true;
     canvas.hidden = false;
-    import("/web/hero-three.bundle.js?v=bonus-gift-20261010").catch((error) => {
+    import("/web/hero-three.bundle.js?v=referral-orbit-20261010").catch((error) => {
       console.warn("VideoGrabber Three.js scene unavailable", error);
       canvas.hidden = true;
       canvas.dataset.context = "failed";
@@ -1593,11 +1592,7 @@ function scheduleThreeHero() {
     setTimeout(startImport, 240);
   };
 
-  if (art.complete) schedule();
-  else {
-    art.addEventListener("load", schedule, { once: true });
-    art.addEventListener("error", schedule, { once: true });
-  }
+  schedule();
   const update = () => { if (!motion.matches && !started) schedule(); };
   motion.addEventListener("change", update);
   window.addEventListener("pagehide", event => { if (!event.persisted) motion.removeEventListener("change", update); });

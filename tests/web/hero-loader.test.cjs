@@ -14,9 +14,8 @@ test('an idle import queued before reduced motion does not start until normal mo
   const imports = [];
   const motion = {get matches() {return reduced;}, addEventListener(_,fn) {changes.push(fn);}, removeEventListener() {}};
   const canvas = {hidden:false};
-  const art = {complete:true};
   const context = {$: selector => selector === '#hero-three' ? canvas : {classList:{remove() {}}},
-    document:{querySelector: () => art}, matchMedia: () => motion, visualTestMode:false,
+    document:{querySelector: () => null}, matchMedia: () => motion, visualTestMode:false,
     window:{requestIdleCallback() {},addEventListener() {}},
     requestIdleCallback: fn => callbacks.push(fn),
     loadBundle: () => {imports.push(reduced); return Promise.resolve();}};

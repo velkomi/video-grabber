@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 const file = path.join(__dirname, '../../src/VideoGrabber.Platform.Api/wwwroot/assets/promotions.js');
 function setup() {
-  const context = { URL, URLSearchParams, Date, Error, crypto: require('node:crypto').webcrypto };
+  const context = { URL, URLSearchParams, Date, Error, CustomEvent:class {}, dispatchEvent() {}, crypto: require('node:crypto').webcrypto };
   context.globalThis = context;
   vm.runInNewContext(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '', context);
   assert.ok(context.VideoGrabberPromotions, 'shared promotion controller must exist');
@@ -85,6 +85,15 @@ class Element {
   all() { return [this, ...this.children.flatMap(c => c.all())]; }
 }
 function host() { const document = { createElement(tag) { return new Element(document, tag); } }; return new Element(document, 'section'); }
+
+test('the bonus scene reserves space without a picture; Mini App remains a text card',async()=>{
+  const p=setup(),c=p.createController(async()=>summary); await c.load();
+  const web=host(); web.dataset={giftScene:'bonus'}; p.renderSummary(web,c);
+  assert.ok(web.all().some(x=>x.className==='story-slot story-slot-bonus promotion-gift'));
+  assert.equal(web.all().filter(x=>x.tagName==='img').length,0);
+  const mini=host(); p.renderSummary(mini,c);
+  assert.equal(mini.all().filter(x=>x.className?.includes('story-slot')).length,0);
+});
 test('summary renders real pending/available/history, safe text and accessible copying; disabled card disappears', async () => {
   const p = setup(); const c = p.createController(async () => ({ ...summary, history: [{ kind: '<script>', amount: { minorUnits: 1000, currency: 'RUB' }, createdAt: '2026-10-08', availableAt: '2026-10-22', expiresAt: '2027-10-22' }] }));
   await c.load(); const card = host(); p.renderSummary(card, c);
