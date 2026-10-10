@@ -176,8 +176,19 @@
                 <select id="download-target">
                   <option value="browser" selected>На это устройство через браузер</option>
                   <option value="desktop">На мой Windows-компьютер</option>
+                  <option id="google-drive-option" value="google_drive" hidden disabled>На мой Google Диск</option>
                 </select>
               </label>
+              <div id="google-drive-field" hidden>
+                <p class="field-note">Подключите свой диск. Файлы сохранятся в папку VideoGrabber.</p>
+                <div class="dialog-actions">
+                  <button id="google-drive-connect" class="button button-quiet" type="button" disabled>Подключить Google Диск</button>
+                  <button id="google-drive-disconnect" class="text-button" type="button" hidden>Отключить</button>
+                </div>
+                <p id="google-drive-status" class="field-note" role="status"></p>
+                <label class="field-note promotion-check"><input id="google-drive-local-copy" type="checkbox">Также открыть файл для сохранения на компьютер</label>
+                <button id="google-drive-cancel" class="text-button" type="button" hidden>Отменить передачу</button>
+              </div>
               <div id="device-field" hidden>
                 <label>Компьютер
                   <select id="device-select"></select>
@@ -403,7 +414,8 @@
   <script src="/web/vendor/ScrollTrigger-3.15.0.min.js" defer></script>
   <script src="/web/diagnostics.js?v=webgl-recovery-1" defer></script>
   <script src="/assets/document-consents.js?v=information-20261009" defer></script>
-  <script src="/web/app.js?v=play-coins-20261010" defer></script>
+  <script src="/web/google-drive.js?v=cloud-preview-20261010" defer></script>
+  <script src="/web/app.js?v=cloud-preview-20261010" defer></script>
   <script src="/web/scene-actions.js?v=unified-studio-20261008" defer></script>
 </body>
 </html>

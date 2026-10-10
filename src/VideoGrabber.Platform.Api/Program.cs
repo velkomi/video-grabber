@@ -481,6 +481,7 @@ app.MapJobEventEndpoints();
 app.MapAttemptEndpoints();
 app.MapSourceEndpoints();
 app.MapDirectDownloadEndpoints();
+app.MapCloudDestinationEndpoints();
 app.MapArtifactUploadEndpoints();
 app.MapPlatformHealthEndpoints();
 app.MapOperationsEndpoints();

@@ -37,6 +37,78 @@ const promotions = window.VideoGrabberPromotions;
 const promotionController = promotions.createController(api, promotions.referralCode);
 let promotionPayment = null;
 let promotionForm = null;
+const googleDrive = window.VideoGrabberGoogleDrive?.createClient();
+let googleDriveConfig = null;
+let googleDriveSdk = null;
+let googleDriveAbort = null;
+
+function cloudMessage(error) {
+  return ({ cloud_quota_exceeded: "На Google Диске недостаточно места.",
+    cloud_file_too_large: "Размер файла превышает ограничение Google Диска.",
+    cloud_consent_required: "Подключите Google Диск ещё раз.",
+    cloud_account_changed: "Аккаунт изменился. Подключите свой диск ещё раз.",
+    cloud_upload_interrupted: "Передача прервалась. Повторите сохранение.",
+    cloud_verification_failed: "Не удалось подтвердить сохранение файла.",
+    cloud_source_unavailable: "Этот источник не разрешает передачу через браузер. Попробуйте Windows-приложение.",
+    desktop_execution_required: "Для этой ссылки пока нужна подготовка в Windows-приложении.",
+    cloud_sdk_unavailable: "Не удалось открыть подключение Google. Попробуйте позже." })[error.message] ||
+    (error.name === "AbortError" ? "Передача отменена." : "Не удалось сохранить файл на Google Диск. Попробуйте ещё раз.");
+}
+
+function ensureGoogleDriveSdk() {
+  if (googleDriveSdk) return googleDriveSdk;
+  googleDriveSdk = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    const timeout = setTimeout(() => { script.remove(); reject(new Error("cloud_sdk_unavailable")); }, 20000);
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.onload = () => { clearTimeout(timeout); window.google?.accounts?.oauth2 ? resolve() : reject(new Error("cloud_sdk_unavailable")); };
+    script.onerror = () => { clearTimeout(timeout); reject(new Error("cloud_sdk_unavailable")); };
+    document.head.append(script);
+  }).catch(error => { googleDriveSdk = null; throw error; });
+  return googleDriveSdk;
+}
+
+function formatCloudBytes(bytes) {
+  return (Number(bytes * 100n / (1024n ** 3n)) / 100).toLocaleString() + " ГБ";
+}
+
+async function renderGoogleDriveQuota(accountId) {
+  const quota = await googleDrive.readQuota(accountId);
+  if (state.profile?.accountId !== accountId) return;
+  $("#google-drive-status").textContent = (quota.email || quota.name || "Google Диск") + " · " +
+    (quota.free === null ? "свободное место не указано" : "Свободно: " + formatCloudBytes(quota.free));
+  $("#google-drive-connect").textContent = "Выбрать другой аккаунт";
+  $("#google-drive-disconnect").hidden = false;
+}
+
+function connectGoogleDrive() {
+  const accountId = state.profile?.accountId;
+  if (!accountId || !googleDriveConfig?.enabled || !window.google?.accounts?.oauth2) return;
+  const client = window.google.accounts.oauth2.initTokenClient({
+    client_id: googleDriveConfig.clientId, scope: window.VideoGrabberGoogleDrive.scope,
+    include_granted_scopes: false,
+    callback: async response => {
+      if (state.profile?.accountId !== accountId) return;
+      try { googleDrive.connect(response, accountId); await renderGoogleDriveQuota(accountId); }
+      catch (error) { googleDrive.clear(); $("#google-drive-status").textContent = cloudMessage(error); }
+    },
+    error_callback: () => { $("#google-drive-status").textContent = "Подключение не завершено. Нажмите кнопку ещё раз."; }
+  });
+  client.requestAccessToken({ prompt: "select_account" });
+}
+
+async function loadCloudConfig() {
+  const accountId = state.profile?.accountId;
+  try {
+    const config = (await api("/v1/cloud/config")).google;
+    googleDriveConfig = state.profile?.accountId === accountId ? config : null;
+  } catch { googleDriveConfig = null; }
+  const available = !!googleDrive && googleDriveConfig?.enabled;
+  $("#google-drive-option").hidden = !available;
+  $("#google-drive-option").disabled = !available;
+  if (!available && $("#download-target").value === "google_drive") $("#download-target").value = "browser";
+}
 
 function setStatus(selector, text, kind = "") {
   const node = $(selector);
@@ -59,6 +131,16 @@ function saveSession(session) {
 }
 
 function clearSession() {
+  googleDrive?.clear();
+  googleDriveAbort?.abort();
+  googleDriveConfig = null;
+  $("#google-drive-option").hidden = true;
+  $("#google-drive-option").disabled = true;
+  $("#google-drive-field").hidden = true;
+  $("#google-drive-status").textContent = "";
+  $("#google-drive-connect").textContent = "Подключить Google Диск";
+  $("#google-drive-disconnect").hidden = true;
+  if ($("#download-target").value === "google_drive") $("#download-target").value = "browser";
   sessionStorage.removeItem(keys.access);
   sessionStorage.removeItem(keys.refresh);
   sessionStorage.removeItem(keys.auth);
@@ -574,6 +656,9 @@ function renderCourseHint() {
   const kind = $("#operation").value;
   const target = $("#download-target");
   const browserOption = target.querySelector('option[value="browser"]');
+  const cloudOption = $("#google-drive-option");
+  cloudOption.disabled = !googleDriveConfig?.enabled || kind !== "download";
+  if (kind !== "download" && target.value === "google_drive") target.value = "desktop";
 
   if (kind === "course_download") {
     browserOption.disabled = true;
@@ -588,7 +673,9 @@ function renderCourseHint() {
         ? "MP3 подготавливается в Windows-приложении. Выберите свой компьютер."
         : "MP3 относится к расширенным функциям. Нажмите «Скачать», чтобы увидеть подходящий тариф.";
     } else {
-      $("#course-hint").textContent = $("#download-target").value === "browser"
+      $("#course-hint").textContent = target.value === "google_drive"
+        ? "Готовый видеофайл будет сохранён на ваш Google Диск. Оставьте вкладку открытой до завершения."
+        : $("#download-target").value === "browser"
         ? "Обычное видео скачивается прямо через сайт. Windows-приложение можно не открывать."
         : "Видео будет отправлено в выбранный Windows VideoGrabber и сохранено в его локальную папку.";
     }
@@ -650,7 +737,21 @@ function renderSelectedDevice() {
   const submit = $("#submit-job");
 
   field.hidden = target !== "desktop";
-  $("#quality").disabled = target === "browser";
+  $("#quality").disabled = target !== "desktop";
+  $("#google-drive-field").hidden = target !== "google_drive";
+
+  if (target === "google_drive") {
+    pill.className = "pill online";
+    pill.textContent = "Личный Google Диск";
+    submit.disabled = jobSubmissionLocked || directRequestInFlight;
+    submit.textContent = "Сохранить на Google Диск";
+    if (googleDriveConfig?.enabled && !window.google?.accounts?.oauth2) {
+      $("#google-drive-connect").disabled = true;
+      ensureGoogleDriveSdk().then(() => { $("#google-drive-connect").disabled = false; })
+        .catch(error => { $("#google-drive-status").textContent = cloudMessage(error); });
+    }
+    return;
+  }
 
   if (target === "browser") {
     pill.className = "pill online";
@@ -753,6 +854,7 @@ async function loadDashboard() {
   state.devices = devices;
   state.jobs = jobs;
   state.subscriptions = subscriptions;
+  await loadCloudConfig();
 
   try {
     state.paymentProducts = await api("/v1/payment-products");
@@ -973,6 +1075,40 @@ async function submitJobInternal(event) {
   try {
     let source;
     let quality = requestedQuality;
+
+    if (target === "google_drive") {
+      const accountId = state.profile?.accountId;
+      if (!googleDrive?.connected(accountId)) {
+        setStatus("#job-status", "Сначала подключите свой Google Диск.");
+        return;
+      }
+      directRequestInFlight = true;
+      googleDriveAbort = new AbortController();
+      $("#google-drive-cancel").hidden = false;
+      $("#submit-job").disabled = true;
+      try {
+        const direct = await api("/v1/direct-downloads", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source: url, intentId: await directRequestIntent(url) }) });
+        sessionStorage.removeItem(keys.directIntent);
+        const saved = await googleDrive.upload({ accountId, url: direct.url, bytes: direct.bytes,
+          mediaType: direct.mediaType, signal: googleDriveAbort.signal,
+          onProgress: ({ sent, total }) => setStatus("#job-status", "Сохранение на Google Диск: " + Number(sent * 100n / total) + "%") });
+        const link = document.createElement("a");
+        link.className = "button button-primary"; link.href = saved.url;
+        link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "Открыть на Google Диске";
+        $("#result-actions").replaceChildren(link);
+        if ($("#google-drive-local-copy").checked) {
+          const local = document.createElement("a");
+          local.className = "button button-quiet"; local.href = direct.url;
+          local.target = "_blank"; local.rel = "noopener noreferrer"; local.textContent = "Сохранить на компьютер";
+          $("#result-actions").append(local);
+        }
+        setStatus("#job-status", "Файл сохранён на вашем Google Диске.", "success");
+        try { await renderGoogleDriveQuota(accountId); } catch {}
+      } catch (error) { setStatus("#job-status", cloudMessage(error), "error"); }
+      finally { googleDriveAbort = null; directRequestInFlight = false; $("#google-drive-cancel").hidden = true; renderSelectedDevice(); }
+      return;
+    }
 
     if (target === "browser") {
       if (kind !== "download") {
@@ -1729,6 +1865,14 @@ async function start() {
   $("#download-form").addEventListener("submit", submitJob);
   $("#operation").addEventListener("change", renderCourseHint);
   $("#download-target").addEventListener("change", renderCourseHint);
+  $("#google-drive-connect").addEventListener("click", connectGoogleDrive);
+  $("#google-drive-disconnect").addEventListener("click", () => {
+    googleDrive?.clear(); googleDriveAbort?.abort();
+    $("#google-drive-status").textContent = "Google Диск отключён в этой вкладке.";
+    $("#google-drive-connect").textContent = "Подключить Google Диск";
+    $("#google-drive-disconnect").hidden = true;
+  });
+  $("#google-drive-cancel").addEventListener("click", () => googleDriveAbort?.abort());
   $("#device-select").addEventListener("change", renderSelectedDevice);
   $("#jobs-more").addEventListener("click", () => { visibleJobCount += 5; renderJobs(); });
   $("#jobs-collapse").addEventListener("click", () => { visibleJobCount = 5; renderJobs(); });

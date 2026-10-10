@@ -18,9 +18,9 @@ public static class BrowserSecurityHeaders
                 // Report-only rollout measures existing WebGL/auth/Telegram flows before enforcement.
                 headers["Content-Security-Policy-Report-Only"] =
                     "default-src 'self'; base-uri 'self'; object-src 'none'; " +
-                    "script-src 'self' 'unsafe-inline' https://telegram.org https://esm.sh; " +
+                    "script-src 'self' 'unsafe-inline' https://telegram.org https://esm.sh https://accounts.google.com; " +
                     "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; " +
-                    "font-src 'self' data:; connect-src 'self' https://*.supabase.co https://esm.sh https://telegram.org; " +
+                    "font-src 'self' data:; connect-src 'self' https://*.supabase.co https://esm.sh https://telegram.org https://www.googleapis.com https://accounts.google.com; " +
                     "worker-src 'self' blob:; frame-src 'self' https://accounts.google.com https://telegram.org https://web.telegram.org; " +
                     "frame-ancestors " + ancestors + "; form-action 'self' https://accounts.google.com; " +
                     "report-uri /v1/security/csp-report";
