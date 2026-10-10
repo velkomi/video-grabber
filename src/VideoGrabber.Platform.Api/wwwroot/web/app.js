@@ -745,9 +745,10 @@ function renderSelectedDevice() {
     pill.textContent = "Личный Google Диск";
     submit.disabled = jobSubmissionLocked || directRequestInFlight;
     submit.textContent = "Сохранить на Google Диск";
-    if (googleDriveConfig?.enabled && !window.google?.accounts?.oauth2) {
-      $("#google-drive-connect").disabled = true;
-      ensureGoogleDriveSdk().then(() => { $("#google-drive-connect").disabled = false; })
+    if (googleDriveConfig?.enabled) {
+      const ready = !!window.google?.accounts?.oauth2;
+      $("#google-drive-connect").disabled = !ready;
+      if (!ready) ensureGoogleDriveSdk().then(() => { $("#google-drive-connect").disabled = false; })
         .catch(error => { $("#google-drive-status").textContent = cloudMessage(error); });
     }
     return;
